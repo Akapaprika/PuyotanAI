@@ -10,7 +10,8 @@ enum class Cell : std::uint8_t {
     Red,
     Green,
     Blue,
-    Yellow
+    Yellow,
+    Ojama
 };
 
 struct GameState {
