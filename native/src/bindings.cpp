@@ -3,6 +3,7 @@
 #include "../include/engine/game_state.hpp"
 #include "../include/engine/board.hpp"
 #include "../include/engine/gravity.hpp"
+#include "../include/engine/chain.hpp"
 
 using namespace puyotan;
 
@@ -28,6 +29,11 @@ PYBIND11_MODULE(puyotan_native, m) {
     // ---- Gravity ----
     pybind11::class_<Gravity>(m, "Gravity")
         .def_static("execute", &Gravity::execute);
+
+    // ---- Chain ----
+    pybind11::class_<Chain>(m, "Chain")
+        .def_static("execute",      &Chain::execute)
+        .def_static("executeChain", &Chain::executeChain);
 
     // ---- AI interfaces ----
     pybind11::class_<GameState>(m, "GameState").def(pybind11::init<>());
