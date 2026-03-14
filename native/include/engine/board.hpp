@@ -29,6 +29,17 @@ enum class Cell : uint8_t {
 };
 
 // ============================================================
+// Rotation
+//   Represents the orientation of the sub puyo relative to the axis puyo.
+// ============================================================
+enum class Rotation : int {
+    Up    = 0,
+    Right = 1,
+    Down  = 2,
+    Left  = 3,
+};
+
+// ============================================================
 // BitBoard
 //   128-bit bitfield representing the positions of one piece
 //   color on the 6×14 Puyotan β playing field.
@@ -175,8 +186,11 @@ public:
     const BitBoard& getBitboard(Cell color) const;
 
     /// Overwrites the BitBoard for color.  Cell::Empty is undefined behaviour.
-    /// Also updates the global occupancy mask.
-    void setBitboard(Cell color, const BitBoard& bb);
+    /// @param update_occupancy If false, avoids recalculating the shared mask (useful for bulk updates).
+    void setBitboard(Cell color, const BitBoard& bb, bool update_occupancy = true);
+
+    /// Manually sets the shared occupancy BitBoard.
+    void updateOccupancy(const BitBoard& bb) { occupancy_ = bb; }
 
     /// Returns a combined BitBoard representing all occupied cells.
     /// Includes Ojama and all 4 colors.

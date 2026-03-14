@@ -36,7 +36,8 @@ namespace puyotan {
 class Gravity {
 public:
     /// Applies gravity and cleans up the spawn row.
-    static bool execute(Board& board);
+    /// Returns the total distance fallen across all puyos in all columns.
+    static int execute(Board& board);
 };
 
 } // namespace puyotan

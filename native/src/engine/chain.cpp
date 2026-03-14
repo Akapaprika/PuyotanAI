@@ -5,6 +5,7 @@
 
 #include "config/engine_config.hpp"
 #include "engine/gravity.hpp"
+#include <algorithm>
 
 namespace puyotan {
 
@@ -13,7 +14,6 @@ BitBoard Chain::findGroups(const BitBoard& color_board, int min_size) {
     BitBoard remaining = color_board;
 
     while (!remaining.empty()) {
-        // Pick one bit to start a flood fill
         uint64_t start_lo = 0;
         uint64_t start_hi = 0;
         
@@ -26,21 +26,16 @@ BitBoard Chain::findGroups(const BitBoard& color_board, int min_size) {
         BitBoard current_group(start_lo, start_hi);
         BitBoard last_group;
 
-        // Flood fill: expand current_group until no new neighbors are found
         while (current_group != last_group) {
             last_group = current_group;
-            // Expand in 4 directions
             BitBoard expanded = current_group;
             expanded |= current_group.shiftUp();
             expanded |= current_group.shiftDown();
             expanded |= current_group.shiftLeft();
             expanded |= current_group.shiftRight();
-            
-            // Limit expansion to the same color
             current_group = expanded & color_board;
         }
 
-        // Count bits in the group
         int count = 0;
         #ifdef _MSC_VER
             count = (int)(__popcnt64(current_group.lo) + __popcnt64(current_group.hi));
@@ -52,19 +47,18 @@ BitBoard Chain::findGroups(const BitBoard& color_board, int min_size) {
             erased_total |= current_group;
         }
 
-        // Remove the processed group from remaining
         remaining &= ~current_group;
     }
 
     return erased_total;
 }
 
-bool Chain::execute(Board& board, uint8_t color_mask) {
+Chain::StepResult Chain::execute(Board& board, int chain_number, uint8_t color_mask) {
+    StepResult result;
     BitBoard total_erased_color;
 
     // 1. Find all color groups to erase
     for (int i = 0; i < config::Rule::kColors; ++i) {
-        // Optimization: skip colors not in the mask
         if (!(color_mask & (1 << i))) {
             continue;
         }
@@ -75,22 +69,60 @@ bool Chain::execute(Board& board, uint8_t color_mask) {
             continue;
         }
 
-        const BitBoard erased = findGroups(color_bb, config::Rule::kConnectCount);
-        
-        if (!erased.empty()) {
-            total_erased_color |= erased;
-            board.setBitboard(c, color_bb & ~erased);
+        // We need to call findGroups repeatedly or get counts per group for bonuses
+        // For simplicity, we'll re-implement a bit of findGroups logic here to get per-group bonuses
+        BitBoard remaining = color_bb;
+        bool color_erased = false;
+
+        while (!remaining.empty()) {
+            uint64_t start_lo = 0;
+            uint64_t start_hi = 0;
+            if (remaining.lo != 0) start_lo = remaining.lo & -(int64_t)remaining.lo;
+            else start_hi = remaining.hi & -(int64_t)remaining.hi;
+
+            BitBoard current_group(start_lo, start_hi);
+            BitBoard last_group;
+            while (current_group != last_group) {
+                last_group = current_group;
+                BitBoard expanded = current_group;
+                expanded |= current_group.shiftUp();
+                expanded |= current_group.shiftDown();
+                expanded |= current_group.shiftLeft();
+                expanded |= current_group.shiftRight();
+                current_group = expanded & color_bb;
+            }
+
+            int count = 0;
+            #ifdef _MSC_VER
+                count = (int)(__popcnt64(current_group.lo) + __popcnt64(current_group.hi));
+            #else
+                count = __builtin_popcountll(current_group.lo) + __builtin_popcountll(current_group.hi);
+            #endif
+
+            if (count >= config::Rule::kConnectCount) {
+                result.num_erased += count;
+                result.group_bonus += config::Score::getGroupBonus(count);
+                total_erased_color |= current_group;
+                color_erased = true;
+            }
+            remaining &= ~current_group;
+        }
+
+        if (color_erased) {
+            ++result.num_colors;
+            board.setBitboard(c, color_bb & ~total_erased_color);
         }
     }
 
-    if (total_erased_color.empty()) {
-        return false;
+    if (result.num_erased == 0) {
+        return result;
     }
+
+    result.erased = true;
 
     // 2. Erase adjacent Ojama puyos
     const BitBoard ojama_bb = board.getBitboard(Cell::Ojama);
     if (!ojama_bb.empty()) {
-        // Expand erased area by 1 to catch adjacent Ojamas
         BitBoard adjacent_mask = total_erased_color.shiftUp();
         adjacent_mask |= total_erased_color.shiftDown();
         adjacent_mask |= total_erased_color.shiftLeft();
@@ -102,28 +134,43 @@ bool Chain::execute(Board& board, uint8_t color_mask) {
         }
     }
 
-    return true;
+    // 3. Calculate score
+    int chain_bonus = config::Score::getChainBonus(chain_number);
+    int color_bonus = config::Score::getColorBonus(result.num_colors);
+    int total_bonus = chain_bonus + result.group_bonus + color_bonus;
+    if (total_bonus < 1) total_bonus = 1;
+
+    result.score = (result.num_erased * 10) * total_bonus;
+
+    return result;
 }
 
-int Chain::executeChain(Board& board, uint8_t first_color_mask) {
-    int chain_count = 0;
+Chain::ChainResult Chain::executeChain(Board& board, uint8_t first_color_mask) {
+    ChainResult result;
     
-    // Initial gravity to settle anything floating
     Gravity::execute(board);
 
-    // First pass can use the optimized mask
-    if (execute(board, first_color_mask)) {
-        ++chain_count;
+    // Step 1
+    StepResult step = execute(board, 1, first_color_mask);
+    if (step.erased) {
+        result.total_score += step.score;
+        result.max_chain = 1;
+        result.total_erased += step.num_erased;
         Gravity::execute(board);
         
-        // Subsequent passes must check all colors
-        while (execute(board, 0x0Fu)) {
-            ++chain_count;
+        // Step 2+
+        while (true) {
+            step = execute(board, result.max_chain + 1, 0x0Fu);
+            if (!step.erased) break;
+            
+            result.total_score += step.score;
+            ++result.max_chain;
+            result.total_erased += step.num_erased;
             Gravity::execute(board);
         }
     }
 
-    return chain_count;
+    return result;
 }
 
 } // namespace puyotan

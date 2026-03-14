@@ -18,10 +18,9 @@ public:
 
     /**
      * Executes one move: places a piece, applies gravity, and processes chains.
-     * @param x The column to place the axis puyo (0..5).
-     * @param direction The rotation of the sub puyo (0: up, 1: right, 2: down, 3: left).
+     * @param rotation The rotation of the sub puyo relative to the axis (Up, Right, Down, Left).
      */
-    void step(int x, int direction);
+    void step(int x, Rotation rotation);
 
     /**
      * Checks if the death condition is met (spawn point obscured).
@@ -37,6 +36,7 @@ public:
     const Board& getBoard() const { return board_; }
     const Tsumo& getTsumo() const { return tsumo_; }
     int getTsumoIndex() const { return tsumo_index_; }
+    int getTotalScore() const { return total_score_; }
     
     /**
      * Returns the piece at the current tsumo index.
@@ -47,6 +47,7 @@ private:
     Board board_;
     Tsumo tsumo_;
     int tsumo_index_ = 0;
+    int total_score_ = 0;
     bool is_game_over_ = false;
 
     /**
