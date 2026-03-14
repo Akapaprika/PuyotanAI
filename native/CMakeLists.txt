@@ -13,7 +13,6 @@ pybind11_add_module(puyotan_native ${SOURCES})
 
 target_compile_features(puyotan_native PRIVATE cxx_std_20)
 set_target_properties(puyotan_native PROPERTIES CXX_EXTENSIONS OFF)
-
 target_include_directories(puyotan_native PRIVATE include)
 
 # ===== MSVC 最適化設定 =====
