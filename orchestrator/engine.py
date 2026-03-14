@@ -31,14 +31,10 @@ class PuyotanEngine:
         """Resets the game with a new seed."""
         self.simulator.reset(seed)
 
-    def move(self, x, direction):
-        """
-        Executes a move.
-        x: column (0-5)
-        direction: rotation (0: up, 1: right, 2: down, 3: left)
-        """
+    def move(self, x, rotation):
+        """Places a piece at column x with specified rotation."""
         if not self.simulator.isGameOver():
-            self.simulator.step(x, direction)
+            self.simulator.step(x, rotation)
             return True
         return False
 
@@ -82,12 +78,18 @@ if __name__ == "__main__":
     print("Starting Puyotan Engine Demo...")
     engine = PuyotanEngine(seed=1)
     
-    # Place 3 pieces randomly
-    moves = [(3, 0), (2, 1), (4, 3), (2, 1), (5, 2), (3, 1)]
-    for x, d in moves:
+    # Demo: Place a few pieces
+    moves = [
+        (3, p.Rotation.Up),
+        (2, p.Rotation.Right),
+        (4, p.Rotation.Left),
+        (3, p.Rotation.Down),
+    ]
+
+    for x, rot in moves:
         piece = engine.get_current_piece()
-        print(f"Step {engine.get_tsumo_index()}: Piece(axis={piece.axis}, sub={piece.sub}) -> x={x}, dir={d}")
-        engine.move(x, d)
+        print(f"Step {engine.get_tsumo_index()}: Piece(axis={piece.axis}, sub={piece.sub}) -> x={x}, rot={rot}")
+        engine.move(x, rot)
         engine.print_board()
         print(f"Total Score: {engine.get_total_score()}")
         print()

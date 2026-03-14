@@ -1,18 +1,18 @@
 #pragma once
 
-#include "engine/game_state.hpp"
+#include "engine/board.hpp"
 
 namespace puyotan {
 
-// プレイヤーが行う着手（列選択）を表す
+// プレイヤーが行う着手（列選択と回転）を表す
 struct Move {
-    int column;
+    int x;
+    Rotation rotation;
 };
 
-// 与えられたゲーム状態から、AIが最適な着手を選択する
+// 与えられた盤面状態から、AIが最適な着手を選択する
 //
-// @param state 現在のゲーム状態
-// @return 選択された着手
-Move chooseMove(const GameState& state);
+// @param board 現在の盤面
+Move chooseMove(const Board& board);
 
 }

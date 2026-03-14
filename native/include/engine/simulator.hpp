@@ -18,10 +18,9 @@ public:
 
     /**
      * Executes one move: places a piece, applies gravity, and processes chains.
-     * @param x The column to place the axis puyo (0..5).
-     * @param direction The rotation of the sub puyo (0: up, 1: right, 2: down, 3: left).
+     * @param rotation The rotation of the sub puyo relative to the axis (Up, Right, Down, Left).
      */
-    void step(int x, int direction);
+    void step(int x, Rotation rotation);
 
     /**
      * Checks if the death condition is met (spawn point obscured).

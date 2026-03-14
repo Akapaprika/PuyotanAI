@@ -41,13 +41,15 @@ const BitBoard& Board::getBitboard(Cell color) const {
     return boards_[toIndex(color)];
 }
 
-void Board::setBitboard(Cell color, const BitBoard& bb) {
+void Board::setBitboard(Cell color, const BitBoard& bb, bool update_occupancy) {
     boards_[toIndex(color)] = bb;
     
-    // Re-calculate combined occupancy. 
-    occupancy_ = boards_[0];
-    for (int i = 1; i < config::Board::kNumColors; ++i) {
-        occupancy_ |= boards_[i];
+    if (update_occupancy) {
+        // Re-calculate combined occupancy. 
+        occupancy_ = boards_[0];
+        for (int i = 1; i < config::Board::kNumColors; ++i) {
+            occupancy_ |= boards_[i];
+        }
     }
 }
 

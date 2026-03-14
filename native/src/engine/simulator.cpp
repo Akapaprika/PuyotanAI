@@ -20,7 +20,7 @@ PuyoPiece Simulator::getCurrentPiece() const {
     return tsumo_.get(tsumo_index_);
 }
 
-void Simulator::step(int x, int direction) {
+void Simulator::step(int x, Rotation rotation) {
     if (is_game_over_) {
         return;
     }
@@ -32,42 +32,45 @@ void Simulator::step(int x, int direction) {
     // Sub direction: 0:up, 1:right, 2:down, 3:left
     static constexpr int kDx[] = {0, 1, 0, -1};
     int x_axis = x;
-    int x_sub = x + kDx[direction & 3];
+    int x_sub = x + kDx[static_cast<int>(rotation) & 3];
 
     // 2. Initial safety check
     if (x_axis < 0 || x_axis >= config::Board::kWidth) {
         return;
     }
     if (x_sub < 0 || x_sub >= config::Board::kWidth) {
-        // If sub is out of bounds, we might want to ignore the move or clip it.
-        // Original Puyotan allows some kicks, but here we just ignore invalid moves for simplicity.
         return;
     }
 
+    int drop_dist = 0;
+
     // 2. Place on spawn row (14th row)
-    // In puyo, usually we place sub, then axis, or both.
-    // If direction is vertical (0 or 2), they might share the same column.
-    if (direction == 0) {
+    if (rotation == Rotation::Up) {
         // sub is above axis
         board_.placePiece(x_axis, piece.axis);
-        Gravity::execute(board_); // drop axis
+        int d1 = Gravity::execute(board_); // drop axis
         board_.placePiece(x_sub,  piece.sub);
-        Gravity::execute(board_); // drop sub
-    } else if (direction == 2) {
+        int d2 = Gravity::execute(board_); // drop sub
+        // piece drop distance is the maximum distance any of its parts fell
+        drop_dist = std::max(d1, d2);
+    } else if (rotation == Rotation::Down) {
         // axis is above sub
         board_.placePiece(x_sub,  piece.sub);
-        Gravity::execute(board_); // drop sub
+        int d1 = Gravity::execute(board_); // drop sub
         board_.placePiece(x_axis, piece.axis);
-        Gravity::execute(board_); // drop axis
+        int d2 = Gravity::execute(board_); // drop axis
+        drop_dist = std::max(d1, d2);
     } else {
         // horizontal
         board_.placePiece(x_axis, piece.axis);
         board_.placePiece(x_sub,  piece.sub);
-        Gravity::execute(board_);
+        drop_dist = Gravity::execute(board_);
     }
 
+    // Add soft drop bonus
+    total_score_ += drop_dist * config::Score::kSoftDropBonusPerGrid;
+
     // 3. Process chains
-    // Optimization: only check colors of the piece in the first pass
     uint8_t color_mask = (1 << static_cast<int>(piece.axis)) | (1 << static_cast<int>(piece.sub));
     Chain::ChainResult result = Chain::executeChain(board_, color_mask);
     total_score_ += result.total_score;

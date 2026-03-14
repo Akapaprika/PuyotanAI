@@ -2,9 +2,9 @@
 
 namespace puyotan {
 
-Move chooseMove(const GameState& state) {
-    // とりあえず仮実装（1列目に固定）
-    return Move{0};
+Move chooseMove(const Board& board) {
+    // とりあえず仮実装（3列目、上向きに固定）
+    return Move{3, Rotation::Up};
 }
 
 }

@@ -16,11 +16,11 @@ static constexpr BitBoard kFullMask {
     config::Board::kHiMask
 };
 
-bool Gravity::execute(Board& board) {
-    bool moved = false;
+int Gravity::execute(Board& board) {
+    int steps = 0;
     BitBoard occupied = board.getOccupied();
 
-    for (int step = 0; step < config::Board::kHeight; ++step) {
+    for (int s = 0; s < config::Board::kHeight; ++s) {
         // Build 'can_fall' mask: 
         // A puyo can fall if there is an empty space directly below it.
         const BitBoard can_fall = occupied & (~occupied & kFullMask).shiftUp();
@@ -29,7 +29,8 @@ bool Gravity::execute(Board& board) {
             break;
         }
 
-        moved = true;
+        // Increment steps for each grid row everything falls together
+        ++steps;
 
         // Update combined occupancy incrementally.
         // Falling bits drop one row; staying bits are unchanged.
@@ -39,15 +40,10 @@ bool Gravity::execute(Board& board) {
         for (int i = 0; i < config::Board::kNumColors; ++i) {
             const Cell c = static_cast<Cell>(i);
             const BitBoard bb = board.getBitboard(c);
-            board.setBitboard(c, (bb & ~can_fall) | (bb & can_fall).shiftDown());
+            board.setBitboard(c, (bb & ~can_fall) | (bb & can_fall).shiftDown(), false);
         }
+        board.updateOccupancy(occupied);
     }
-
-    // Update the board's permanent occupancy mask after settlement.
-    // (setBitboard already updates it internally, but the loop settles it step-by-step).
-    // Actually, board.setBitboard re-calculates it, which is safe but slightly slow 
-    // inside the loop. Let's optimize setBitboard if needed later, but for now 
-    // we must also handle the spawn-row erasure.
 
     // Erase any piece left in the invisible spawn row.
     const BitBoard keep = ~kSpawnRowMask;
@@ -56,7 +52,7 @@ bool Gravity::execute(Board& board) {
         board.setBitboard(c, board.getBitboard(c) & keep);
     }
 
-    return moved;
+    return steps;
 }
 
 } // namespace puyotan
