@@ -2,49 +2,63 @@
 
 namespace puyotan {
 
+// ============================================================
+// Cell-level read
+//   Scan all 5 color boards; return the first hit.
+//   Loop is short (5 iterations) and branch-free inside each
+//   BitBoard::get() — the compiler typically unrolls it fully.
+// ============================================================
 Cell Board::get(int x, int y) const {
-    if (board_red_.get(x, y)) return Cell::Red;
-    if (board_green_.get(x, y)) return Cell::Green;
-    if (board_blue_.get(x, y)) return Cell::Blue;
-    if (board_yellow_.get(x, y)) return Cell::Yellow;
-    if (board_ojama_.get(x, y)) return Cell::Ojama;
+    for (int i = 0; i < kNumCellColors; ++i) {
+        if (boards_[i].get(x, y))
+            return static_cast<Cell>(i + 1); // +1 because Cell::Empty==0
+    }
     return Cell::Empty;
 }
 
+// ============================================================
+// Cell-level write
+//   Clear the cell first (all color planes), then set only the
+//   target plane.  Uses array index instead of switch.
+// ============================================================
 void Board::set(int x, int y, Cell color) {
-    // First clear any existing color
-    clear(x, y);
-
-    switch (color) {
-        case Cell::Red: board_red_.set(x, y); break;
-        case Cell::Green: board_green_.set(x, y); break;
-        case Cell::Blue: board_blue_.set(x, y); break;
-        case Cell::Yellow: board_yellow_.set(x, y); break;
-        case Cell::Ojama: board_ojama_.set(x, y); break;
-        case Cell::Empty: break;
-    }
+    clear(x, y); // reset all planes at this cell
+    if (color != Cell::Empty)
+        boards_[idx(color)].set(x, y);
 }
 
+// ============================================================
+// Cell-level clear
+//   Clear the bit for (x, y) in every color plane.
+//   No branches: every plane is unconditionally visited.
+//   This is safe because at most one plane can be set per cell.
+// ============================================================
 void Board::clear(int x, int y) {
-    board_red_.clear(x, y);
-    board_green_.clear(x, y);
-    board_blue_.clear(x, y);
-    board_yellow_.clear(x, y);
-    board_ojama_.clear(x, y);
+    for (auto& bb : boards_)
+        bb.clear(x, y);
 }
 
+// ============================================================
+// Place a puyo at the invisible spawn row (row 13, 0-indexed).
+//   Bounds check: valid columns are 0 through kWidth-1.
+//   After calling this, run Gravity::execute() to drop the piece.
+// ============================================================
+void Board::place_piece(int col, Cell color) {
+    // column must be in [0, kWidth)
+    if (static_cast<unsigned>(col) < static_cast<unsigned>(config::Board::kWidth))
+        set(col, config::Board::kSpawnRow, color);
+}
+
+// ============================================================
+// BitBoard-level read/write (used by Gravity, Chain, etc.)
+//   Direct array indexing – no switch, no branch.
+// ============================================================
 const BitBoard& Board::get_bitboard(Cell color) const {
-    switch (color) {
-        case Cell::Red: return board_red_;
-        case Cell::Green: return board_green_;
-        case Cell::Blue: return board_blue_;
-        case Cell::Yellow: return board_yellow_;
-        case Cell::Ojama: return board_ojama_;
-        default: {
-            static BitBoard empty_board;
-            return empty_board;
-        }
-    }
+    return boards_[idx(color)];
 }
 
+void Board::set_bitboard(Cell color, const BitBoard& bb) {
+    boards_[idx(color)] = bb;
 }
+
+} // namespace puyotan
