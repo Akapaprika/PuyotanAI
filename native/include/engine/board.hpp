@@ -69,26 +69,29 @@ struct BitBoard {
 
     /// Returns true if the bit at (x, y) is set.
     bool get(int x, int y) const {
-        if (x < config::Board::kColsInLo)
+        if (x < config::Board::kColsInLo) {
             return (lo >> (x * config::Board::kBitsPerCol + y)) & 1;
-        else
+        } else {
             return (hi >> ((x - config::Board::kColsInLo) * config::Board::kBitsPerCol + y)) & 1;
+        }
     }
 
     /// Sets the bit at (x, y).
     void set(int x, int y) {
-        if (x < config::Board::kColsInLo)
+        if (x < config::Board::kColsInLo) {
             lo |=  (1ULL << (x * config::Board::kBitsPerCol + y));
-        else
+        } else {
             hi |=  (1ULL << ((x - config::Board::kColsInLo) * config::Board::kBitsPerCol + y));
+        }
     }
 
     /// Clears the bit at (x, y).
     void clear(int x, int y) {
-        if (x < config::Board::kColsInLo)
+        if (x < config::Board::kColsInLo) {
             lo &= ~(1ULL << (x * config::Board::kBitsPerCol + y));
-        else
+        } else {
             hi &= ~(1ULL << ((x - config::Board::kColsInLo) * config::Board::kBitsPerCol + y));
+        }
     }
 
     // ---- Validity masks (aliases from engine_config, named kCamelCase) ----

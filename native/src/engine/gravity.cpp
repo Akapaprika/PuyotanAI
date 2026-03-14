@@ -22,13 +22,16 @@ bool Gravity::execute(Board& board) {
     for (int step = 0; step < config::Board::kHeight; ++step) {
         // Build combined occupancy by OR-ing all color planes.
         BitBoard occupied;
-        for (int i = 0; i < config::Board::kNumColors; ++i)
+        for (int i = 0; i < config::Board::kNumColors; ++i) {
             occupied |= board.getBitboard(static_cast<Cell>(i));
+        }
 
         // ~occupied has garbage in unused bits → mask to valid cells.
         BitBoard can_fall = occupied & (~occupied & kFullMask).shiftUp();
 
-        if (can_fall.empty()) break;
+        if (can_fall.empty()) {
+            break;
+        }
 
         moved = true;
 
