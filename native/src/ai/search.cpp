@@ -2,9 +2,8 @@
 
 namespace puyotan {
 
-Move choose_move(const GameState& state)
-{
-    // とりあえず仮実装
+Move chooseMove(const GameState& state) {
+    // とりあえず仮実装（1列目に固定）
     return Move{0};
 }
 

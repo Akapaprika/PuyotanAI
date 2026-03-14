@@ -11,7 +11,7 @@ import puyotan_native
 
 def choose_move():
     state = puyotan_native.GameState()
-    move = puyotan_native.choose_move(state)
+    move = puyotan_native.chooseMove(state)
     return move.column
 
 print(choose_move())

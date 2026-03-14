@@ -1,13 +1,14 @@
 #pragma once
-#include <array>
-#include <cstdint>  // for std::uint8_t used in Cell enum
-#include "../config/engine_config.hpp"
-#include "board.hpp"  // for Cell enum
+
+#include "engine/board.hpp"
+#include "config/engine_config.hpp"
 
 namespace puyotan {
 
+// GameState: 盤面全体のスナップショット
+// Cell enumはboard.hppで定義済み。重複定義を避けるためここでは定義しない。
 struct GameState {
-    std::array<std::array<Cell, config::Board::kWidth>, config::Board::kHeight> board;
+    Board board;
 };
 
-}
+} // namespace puyotan
