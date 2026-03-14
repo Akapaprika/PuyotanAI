@@ -60,8 +60,8 @@ int Tsumo::nextInt(int max) {
 }
 
 Cell Tsumo::nextKind() {
-    // Next._nextKind() calls nextInt(4)
-    switch (nextInt(4)) {
+    // Next._nextKind() calls nextInt(Rule::kColors)
+    switch (nextInt(config::Rule::kColors)) {
         case 0: return Cell::Red;
         case 1: return Cell::Green;
         case 2: return Cell::Blue;
