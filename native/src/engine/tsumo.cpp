@@ -75,8 +75,7 @@ void Tsumo::fillPool() {
     pool_.reserve(config::Rule::kTsumoPoolSize);
     
     // We need a temporary copy of the seed or we just update the member seed_
-    // In JS, constructor takes seed and next() updates this.y.
-    // Next.init() uses the random object.
+    // In JS, constructor takes seed and next() uses the random object.
     
     for (int i = 0; i < config::Rule::kTsumoPoolSize; ++i) {
         Cell axis = nextKind();

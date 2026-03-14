@@ -30,9 +30,11 @@ void Board::clear(int x, int y) {
 }
 
 void Board::placePiece(int col, Cell color) {
-    if (static_cast<unsigned>(col) < static_cast<unsigned>(config::Board::kWidth)) {
-        set(col, config::Board::kSpawnRow, color);
+    if (col < 0 || col >= config::Board::kWidth) {
+        return;
     }
+    // spawn row is kSpawnRow
+    set(col, config::Board::kSpawnRow, color);
 }
 
 const BitBoard& Board::getBitboard(Cell color) const {
@@ -43,11 +45,9 @@ void Board::setBitboard(Cell color, const BitBoard& bb) {
     boards_[toIndex(color)] = bb;
     
     // Re-calculate combined occupancy. 
-    // This is occasionally called (e.g. at the end of setBitboard batch), 
-    // so we re-OR everything.
-    occupancy_ = BitBoard{};
-    for (const auto& plane : boards_) {
-        occupancy_ |= plane;
+    occupancy_ = boards_[0];
+    for (int i = 1; i < config::Board::kNumColors; ++i) {
+        occupancy_ |= boards_[i];
     }
 }
 

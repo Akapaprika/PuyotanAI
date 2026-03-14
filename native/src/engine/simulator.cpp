@@ -74,7 +74,7 @@ void Simulator::step(int x, int direction) {
     updateGameOver();
 
     // 5. Advance tsumo
-    tsumo_index_++;
+    ++tsumo_index_;
 }
 
 void Simulator::updateGameOver() {

@@ -23,7 +23,7 @@ bool Gravity::execute(Board& board) {
     for (int step = 0; step < config::Board::kHeight; ++step) {
         // Build 'can_fall' mask: 
         // A puyo can fall if there is an empty space directly below it.
-        BitBoard can_fall = occupied & (~occupied & kFullMask).shiftUp();
+        const BitBoard can_fall = occupied & (~occupied & kFullMask).shiftUp();
 
         if (can_fall.empty()) {
             break;
@@ -37,8 +37,8 @@ bool Gravity::execute(Board& board) {
 
         // Update individual color planes.
         for (int i = 0; i < config::Board::kNumColors; ++i) {
-            Cell c = static_cast<Cell>(i);
-            BitBoard bb = board.getBitboard(c);
+            const Cell c = static_cast<Cell>(i);
+            const BitBoard bb = board.getBitboard(c);
             board.setBitboard(c, (bb & ~can_fall) | (bb & can_fall).shiftDown());
         }
     }
