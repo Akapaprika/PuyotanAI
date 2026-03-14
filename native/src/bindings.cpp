@@ -5,6 +5,7 @@
 #include "../include/engine/gravity.hpp"
 #include "../include/engine/chain.hpp"
 #include "../include/engine/tsumo.hpp"
+#include "../include/engine/simulator.hpp"
 
 using namespace puyotan;
 
@@ -31,6 +32,16 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("get",      &Tsumo::get)
         .def("setSeed",  &Tsumo::setSeed)
         .def("getSeed",  &Tsumo::getSeed);
+
+    // ---- Simulator ----
+    pybind11::class_<Simulator>(m, "Simulator")
+        .def(pybind11::init<uint32_t>(), pybind11::arg("seed") = 0)
+        .def("step",             &Simulator::step)
+        .def("reset",            &Simulator::reset)
+        .def("isGameOver",       &Simulator::isGameOver)
+        .def("getBoard",         &Simulator::getBoard, pybind11::return_value_policy::reference_internal)
+        .def("getTsumoIndex",    &Simulator::getTsumoIndex)
+        .def("getCurrentPiece",  &Simulator::getCurrentPiece);
 
     // ---- Board ----
     pybind11::class_<Board>(m, "Board")

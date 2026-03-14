@@ -55,6 +55,8 @@ namespace Rule {
     constexpr int kColors       = 4;  // number of normal puyo colors
     constexpr int kPuyosPerPiece = 2; // number of puyos in each falling piece (tsumo)
     constexpr int kTsumoPoolSize = 1000; // size of pre-generated tsumo pool
+    constexpr int kDeathCol     = 2;  // column index for death check (1-indexed: 3)
+    constexpr int kDeathRow     = 11; // row index for death check (1-indexed: 12)
 }
 
 } // namespace puyotan::config
