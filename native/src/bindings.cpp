@@ -9,12 +9,12 @@ using namespace puyotan;
 PYBIND11_MODULE(puyotan_native, m) {
     // ---- Cell enum ----
     pybind11::enum_<Cell>(m, "Cell")
-        .value("Empty",  Cell::Empty)
         .value("Red",    Cell::Red)
         .value("Green",  Cell::Green)
         .value("Blue",   Cell::Blue)
         .value("Yellow", Cell::Yellow)
         .value("Ojama",  Cell::Ojama)
+        .value("Empty",  Cell::Empty)
         .export_values();
 
     // ---- Board ----
@@ -23,14 +23,13 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("get",         &Board::get)
         .def("set",         &Board::set)
         .def("clear",       &Board::clear)
-        .def("place_piece", &Board::place_piece);
+        .def("placePiece",  &Board::placePiece);
 
     // ---- Gravity ----
-    // execute(board) → bool (True if any piece moved)
     pybind11::class_<Gravity>(m, "Gravity")
         .def_static("execute", &Gravity::execute);
 
-    // ---- Existing AI interfaces ----
+    // ---- AI interfaces ----
     pybind11::class_<GameState>(m, "GameState").def(pybind11::init<>());
     pybind11::class_<Move>(m, "Move").def_readwrite("column", &Move::column);
     m.def("choose_move", &choose_move);
