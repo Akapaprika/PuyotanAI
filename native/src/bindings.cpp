@@ -4,6 +4,7 @@
 #include "../include/engine/board.hpp"
 #include "../include/engine/gravity.hpp"
 #include "../include/engine/chain.hpp"
+#include "../include/engine/tsumo.hpp"
 
 using namespace puyotan;
 
@@ -17,6 +18,19 @@ PYBIND11_MODULE(puyotan_native, m) {
         .value("Ojama",  Cell::Ojama)
         .value("Empty",  Cell::Empty)
         .export_values();
+
+    // ---- PuyoPiece (Struct) ----
+    pybind11::class_<PuyoPiece>(m, "PuyoPiece")
+        .def(pybind11::init<>())
+        .def_readwrite("axis", &PuyoPiece::axis)
+        .def_readwrite("sub",  &PuyoPiece::sub);
+
+    // ---- Tsumo ----
+    pybind11::class_<Tsumo>(m, "Tsumo")
+        .def(pybind11::init<uint32_t>(), pybind11::arg("seed") = 0)
+        .def("get",      &Tsumo::get)
+        .def("setSeed",  &Tsumo::setSeed)
+        .def("getSeed",  &Tsumo::getSeed);
 
     // ---- Board ----
     pybind11::class_<Board>(m, "Board")
