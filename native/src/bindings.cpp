@@ -1,6 +1,4 @@
-#include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include "../include/ai/search.hpp"
 #include "../include/engine/board.hpp"
 #include "../include/engine/gravity.hpp"
 #include "../include/engine/chain.hpp"
@@ -81,11 +79,4 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_static("executeChain", [](Board& b, uint8_t mask) { return Chain::executeChain(b, mask); },
             pybind11::arg("board"), pybind11::arg("first_color_mask") = 0x0F)
         .def_static("findGroups",   &Chain::findGroups);
-
-    // ---- AI interfaces ----
-    pybind11::class_<Move>(m, "Move")
-        .def_readwrite("x", &Move::x)
-        .def_readwrite("rotation", &Move::rotation);
-    
-    m.def("chooseMove", &chooseMove);
 }
