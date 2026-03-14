@@ -175,13 +175,23 @@ public:
     const BitBoard& getBitboard(Cell color) const;
 
     /// Overwrites the BitBoard for color.  Cell::Empty is undefined behaviour.
+    /// Also updates the global occupancy mask.
     void setBitboard(Cell color, const BitBoard& bb);
+
+    /// Returns a combined BitBoard representing all occupied cells.
+    /// Includes Ojama and all 4 colors.
+    const BitBoard& getOccupied() const {
+        return occupancy_;
+    }
 
 private:
     // Direct index: boards_[static_cast<int>(Cell::Red)]   = Red plane
     //               boards_[static_cast<int>(Cell::Ojama)] = Ojama plane
     // Cell values Red(0)..Ojama(4) are contiguous — no offset needed.
     std::array<BitBoard, config::Board::kNumColors> boards_{};
+    
+    // Combined occupancy mask for performance (Gravity, get).
+    BitBoard occupancy_{};
 
     // Converts a Cell to the boards_[] index.
     // Cell values are already 0-based so this is just a cast.

@@ -29,16 +29,11 @@ void Simulator::step(int x, int direction) {
     // 1. Determine spawn positions
     // Axis is always at x.
     // Sub direction: 0:up, 1:right, 2:down, 3:left
+    static constexpr int kDx[] = {0, 1, 0, -1};
     int x_axis = x;
-    int x_sub = x;
-    
-    if (direction == 1) {
-        x_sub = x + 1;
-    } else if (direction == 3) {
-        x_sub = x - 1;
-    }
+    int x_sub = x + kDx[direction & 3];
 
-    // Clip to board width (very basic safety)
+    // 2. Initial safety check
     if (x_axis < 0 || x_axis >= config::Board::kWidth) {
         return;
     }

@@ -70,6 +70,10 @@ bool Chain::execute(Board& board) {
     for (int i = 0; i < config::Rule::kColors; ++i) {
         Cell c = static_cast<Cell>(i);
         BitBoard color_bb = board.getBitboard(c);
+        if (color_bb.empty()) {
+            continue;
+        }
+
         BitBoard erased = findGroups(color_bb, config::Rule::kConnectCount);
         
         if (!erased.empty()) {
