@@ -21,30 +21,41 @@ namespace Board {
     constexpr int kNumColors    = 5;   // Red, Green, Blue, Yellow, Ojama
 
     // --------------------------------------------------------
-    // BitBoard masks: 14 rows × 16 bits/col
-    //   lo covers cols 0-3: each 16-bit lane -> 14 bits valid
-    //     0x3FFF = 0b0011_1111_1111_1111 (bits 0-13)
-    //   hi covers cols 4-5: lower two 16-bit lanes only
+    // BitBoard masks: Calculated from kTotalRows and kBitsPerCol
+    //   Each column uses kBitsPerCol (16) bits.
+    //   Only kTotalRows (14) bits are valid within each column lane.
     // --------------------------------------------------------
-    constexpr uint64_t kLoMask  = 0x3FFF'3FFF'3FFF'3FFFull; // cols 0-3
-    constexpr uint64_t kHiMask  = 0x0000'0000'3FFF'3FFFull; // cols 4-5
+    
+    // Generates a 14-bit mask: (1 << 14) - 1 = 0x3FFF
+    static constexpr uint64_t kColMask = (1ULL << kTotalRows) - 1;
+
+    // lo covers cols 0-3: [lane0 | lane1 | lane2 | lane3]
+    constexpr uint64_t kLoMask = kColMask | 
+                                 (kColMask << (1 * kBitsPerCol)) | 
+                                 (kColMask << (2 * kBitsPerCol)) | 
+                                 (kColMask << (3 * kBitsPerCol));
+
+    // hi covers cols 4-5: [lane0 | lane1]
+    constexpr uint64_t kHiMask = kColMask | 
+                                 (kColMask << (1 * kBitsPerCol));
 
     // Mask isolating row 13 (spawn row) across all columns.
-    // Each column's bit-13 is at position: col*16 + 13.
-    //   lo: cols 0-3 -> bits 13, 29, 45, 61
-    //   hi: cols 4-5 -> bits 13, 29 (within hi's own 64-bit word)
-    constexpr uint64_t kLoSpawnMask =
-        (1ULL << 13) | (1ULL << 29) | (1ULL << 45) | (1ULL << 61);
-    constexpr uint64_t kHiSpawnMask =
-        (1ULL << 13) | (1ULL << 29);
+    constexpr uint64_t kLoSpawnMask = (1ULL << kSpawnRow) | 
+                                      (1ULL << (kSpawnRow + 1 * kBitsPerCol)) | 
+                                      (1ULL << (kSpawnRow + 2 * kBitsPerCol)) | 
+                                      (1ULL << (kSpawnRow + 3 * kBitsPerCol));
+
+    constexpr uint64_t kHiSpawnMask = (1ULL << kSpawnRow) | 
+                                      (1ULL << (kSpawnRow + 1 * kBitsPerCol));
+
+    // Mask isolating the full 16-bit lane of a column.
+    static constexpr uint64_t kFullLaneMask = (1ULL << kBitsPerCol) - 1;
 
     // Mask isolating col 3 within lo (top 16-bit lane of lo).
-    // Used when transferring col 3 → col 4 in shift_right.
-    constexpr uint64_t kLoCol3Mask  = 0xFFFF'0000'0000'0000ull;
+    constexpr uint64_t kLoCol3Mask  = kFullLaneMask << (3 * kBitsPerCol);
 
     // Mask isolating col 4 within hi (bottom 16-bit lane of hi).
-    // Used when transferring col 4 → col 3 in shift_left.
-    constexpr uint64_t kHiCol4Mask  = 0x0000'0000'0000'FFFFull;
+    constexpr uint64_t kHiCol4Mask  = kFullLaneMask;
 }
 
 // ============================================================
@@ -55,6 +66,8 @@ namespace Rule {
     constexpr int kColors       = 4;  // number of normal puyo colors
     constexpr int kPuyosPerPiece = 2; // number of puyos in each falling piece (tsumo)
     constexpr int kTsumoPoolSize = 1000; // size of pre-generated tsumo pool
+    constexpr int kDeathCol     = 2;  // column index for death check (1-indexed: 3)
+    constexpr int kDeathRow     = 11; // row index for death check (1-indexed: 12)
 }
 
 } // namespace puyotan::config

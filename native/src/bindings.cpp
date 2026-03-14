@@ -5,6 +5,7 @@
 #include "../include/engine/gravity.hpp"
 #include "../include/engine/chain.hpp"
 #include "../include/engine/tsumo.hpp"
+#include "../include/engine/simulator.hpp"
 
 using namespace puyotan;
 
@@ -32,6 +33,16 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("setSeed",  &Tsumo::setSeed)
         .def("getSeed",  &Tsumo::getSeed);
 
+    // ---- Simulator ----
+    pybind11::class_<Simulator>(m, "Simulator")
+        .def(pybind11::init<uint32_t>(), pybind11::arg("seed") = 0)
+        .def("step",             &Simulator::step)
+        .def("reset",            &Simulator::reset)
+        .def("isGameOver",       &Simulator::isGameOver)
+        .def("getBoard",         &Simulator::getBoard, pybind11::return_value_policy::reference_internal)
+        .def("getTsumoIndex",    &Simulator::getTsumoIndex)
+        .def("getCurrentPiece",  &Simulator::getCurrentPiece);
+
     // ---- Board ----
     pybind11::class_<Board>(m, "Board")
         .def(pybind11::init<>())
@@ -46,8 +57,9 @@ PYBIND11_MODULE(puyotan_native, m) {
 
     // ---- Chain ----
     pybind11::class_<Chain>(m, "Chain")
-        .def_static("execute",      &Chain::execute)
-        .def_static("executeChain", &Chain::executeChain);
+        .def_static("execute",      &Chain::execute,      pybind11::arg("board"), pybind11::arg("color_mask") = 0x0F)
+        .def_static("executeChain", &Chain::executeChain, pybind11::arg("board"), pybind11::arg("first_color_mask") = 0x0F)
+        .def_static("findGroups",   &Chain::findGroups);
 
     // ---- AI interfaces ----
     pybind11::class_<GameState>(m, "GameState").def(pybind11::init<>());

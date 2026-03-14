@@ -2,7 +2,6 @@
 #ifdef _MSC_VER
 #include <intrin.h>
 #endif
-#include <iostream>
 
 #include "config/engine_config.hpp"
 #include "engine/gravity.hpp"
@@ -43,8 +42,6 @@ BitBoard Chain::findGroups(const BitBoard& color_board, int min_size) {
 
         // Count bits in the group
         int count = 0;
-        // Optimization: Use __builtin_popcount or equivalent if available, 
-        // but for now simple bit counting (popcount) is used.
         #ifdef _MSC_VER
             count = (int)(__popcnt64(current_group.lo) + __popcnt64(current_group.hi));
         #else
@@ -62,15 +59,23 @@ BitBoard Chain::findGroups(const BitBoard& color_board, int min_size) {
     return erased_total;
 }
 
-bool Chain::execute(Board& board) {
+bool Chain::execute(Board& board, uint8_t color_mask) {
     BitBoard total_erased_color;
 
     // 1. Find all color groups to erase
-    // Rule::kColors is 4 (Red, Green, Blue, Yellow)
     for (int i = 0; i < config::Rule::kColors; ++i) {
-        Cell c = static_cast<Cell>(i);
-        BitBoard color_bb = board.getBitboard(c);
-        BitBoard erased = findGroups(color_bb, config::Rule::kConnectCount);
+        // Optimization: skip colors not in the mask
+        if (!(color_mask & (1 << i))) {
+            continue;
+        }
+
+        const Cell c = static_cast<Cell>(i);
+        const BitBoard color_bb = board.getBitboard(c);
+        if (color_bb.empty()) {
+            continue;
+        }
+
+        const BitBoard erased = findGroups(color_bb, config::Rule::kConnectCount);
         
         if (!erased.empty()) {
             total_erased_color |= erased;
@@ -83,16 +88,15 @@ bool Chain::execute(Board& board) {
     }
 
     // 2. Erase adjacent Ojama puyos
-    BitBoard ojama_bb = board.getBitboard(Cell::Ojama);
+    const BitBoard ojama_bb = board.getBitboard(Cell::Ojama);
     if (!ojama_bb.empty()) {
         // Expand erased area by 1 to catch adjacent Ojamas
-        BitBoard adjacent_mask;
-        adjacent_mask |= total_erased_color.shiftUp();
+        BitBoard adjacent_mask = total_erased_color.shiftUp();
         adjacent_mask |= total_erased_color.shiftDown();
         adjacent_mask |= total_erased_color.shiftLeft();
         adjacent_mask |= total_erased_color.shiftRight();
 
-        BitBoard erased_ojama = ojama_bb & adjacent_mask;
+        const BitBoard erased_ojama = ojama_bb & adjacent_mask;
         if (!erased_ojama.empty()) {
             board.setBitboard(Cell::Ojama, ojama_bb & ~erased_ojama);
         }
@@ -101,16 +105,22 @@ bool Chain::execute(Board& board) {
     return true;
 }
 
-int Chain::executeChain(Board& board) {
+int Chain::executeChain(Board& board, uint8_t first_color_mask) {
     int chain_count = 0;
     
     // Initial gravity to settle anything floating
     Gravity::execute(board);
 
-    while (execute(board)) {
-        chain_count++;
-        // Settle pieces after erasure
+    // First pass can use the optimized mask
+    if (execute(board, first_color_mask)) {
+        ++chain_count;
         Gravity::execute(board);
+        
+        // Subsequent passes must check all colors
+        while (execute(board, 0x0Fu)) {
+            ++chain_count;
+            Gravity::execute(board);
+        }
     }
 
     return chain_count;
