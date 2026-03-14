@@ -53,6 +53,8 @@ namespace Board {
 namespace Rule {
     constexpr int kConnectCount = 4;  // minimum group size to fire
     constexpr int kColors       = 4;  // number of normal puyo colors
+    constexpr int kPuyosPerPiece = 2; // number of puyos in each falling piece (tsumo)
+    constexpr int kTsumoPoolSize = 1000; // size of pre-generated tsumo pool
 }
 
 } // namespace puyotan::config
