@@ -54,6 +54,9 @@ class PuyotanEngine:
     def get_tsumo_index(self):
         return self.simulator.getTsumoIndex()
 
+    def get_total_score(self):
+        return self.simulator.getTotalScore()
+
     def print_board(self):
         """Simple ASCII representation of the board."""
         board = self.get_board()
@@ -80,12 +83,13 @@ if __name__ == "__main__":
     engine = PuyotanEngine(seed=1)
     
     # Place 3 pieces randomly
-    moves = [(3, 0), (2, 1), (4, 3)]
+    moves = [(3, 0), (2, 1), (4, 3), (2, 1), (5, 2), (3, 1)]
     for x, d in moves:
         piece = engine.get_current_piece()
         print(f"Step {engine.get_tsumo_index()}: Piece(axis={piece.axis}, sub={piece.sub}) -> x={x}, dir={d}")
         engine.move(x, d)
         engine.print_board()
+        print(f"Total Score: {engine.get_total_score()}")
         print()
 
     if engine.is_game_over():

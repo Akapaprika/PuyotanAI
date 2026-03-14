@@ -12,6 +12,7 @@ void Simulator::reset(uint32_t seed) {
     board_ = Board();
     tsumo_.setSeed(seed);
     tsumo_index_ = 0;
+    total_score_ = 0;
     is_game_over_ = false;
 }
 
@@ -68,7 +69,8 @@ void Simulator::step(int x, int direction) {
     // 3. Process chains
     // Optimization: only check colors of the piece in the first pass
     uint8_t color_mask = (1 << static_cast<int>(piece.axis)) | (1 << static_cast<int>(piece.sub));
-    Chain::executeChain(board_, color_mask);
+    Chain::ChainResult result = Chain::executeChain(board_, color_mask);
+    total_score_ += result.total_score;
 
     // 4. Check death condition
     updateGameOver();

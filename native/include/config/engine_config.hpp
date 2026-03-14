@@ -70,4 +70,51 @@ namespace Rule {
     constexpr int kDeathRow     = 11; // row index for death check (1-indexed: 12)
 }
 
+// ============================================================
+// Score constants (Standard Puyo Puyo Rules)
+// ============================================================
+namespace Score {
+    // Chain bonus: 0, 8, 16, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 480, 512
+    constexpr int kChainBonuses[] = {
+        0, 8, 16, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 480, 512
+    };
+
+    // Color bonus: count of colors erased in one step
+    // 1 color: 0, 2 colors: 3, 3 colors: 6, 4 colors: 12, 5 colors: 24...
+    constexpr int kColorBonuses[] = {
+        0, 0, 3, 6, 12, 24
+    };
+
+    // Group bonus: size of group erased (index is size - 4)
+    // 4: 0, 5: 2, 6: 3, 7: 4, 8: 5, 9: 6, 10: 7, 11+: 10
+    constexpr int kGroupBonuses[] = {
+        0, 2, 3, 4, 5, 6, 7, 10
+    };
+
+    static constexpr int getChainBonus(int chain) {
+        int idx = (chain < 1) ? 0 : (chain - 1);
+        if (idx >= (int)(sizeof(kChainBonuses) / sizeof(int))) {
+            return kChainBonuses[(sizeof(kChainBonuses) / sizeof(int)) - 1];
+        }
+        return kChainBonuses[idx];
+    }
+
+    static constexpr int getColorBonus(int count) {
+        if (count < 1) return 0;
+        if (count >= (int)(sizeof(kColorBonuses) / sizeof(int))) {
+            return kColorBonuses[(sizeof(kColorBonuses) / sizeof(int)) - 1];
+        }
+        return kColorBonuses[count];
+    }
+
+    static constexpr int getGroupBonus(int size) {
+        int idx = size - 4;
+        if (idx < 0) return 0;
+        if (idx >= (int)(sizeof(kGroupBonuses) / sizeof(int))) {
+            return kGroupBonuses[(sizeof(kGroupBonuses) / sizeof(int)) - 1];
+        }
+        return kGroupBonuses[idx];
+    }
+}
+
 } // namespace puyotan::config

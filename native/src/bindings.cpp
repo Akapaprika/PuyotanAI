@@ -39,6 +39,7 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("step",             &Simulator::step)
         .def("reset",            &Simulator::reset)
         .def("isGameOver",       &Simulator::isGameOver)
+        .def("getTotalScore",    &Simulator::getTotalScore)
         .def("getBoard",         &Simulator::getBoard, pybind11::return_value_policy::reference_internal)
         .def("getTsumoIndex",    &Simulator::getTsumoIndex)
         .def("getCurrentPiece",  &Simulator::getCurrentPiece);

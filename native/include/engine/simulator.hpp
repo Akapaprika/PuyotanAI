@@ -37,6 +37,7 @@ public:
     const Board& getBoard() const { return board_; }
     const Tsumo& getTsumo() const { return tsumo_; }
     int getTsumoIndex() const { return tsumo_index_; }
+    int getTotalScore() const { return total_score_; }
     
     /**
      * Returns the piece at the current tsumo index.
@@ -47,6 +48,7 @@ private:
     Board board_;
     Tsumo tsumo_;
     int tsumo_index_ = 0;
+    int total_score_ = 0;
     bool is_game_over_ = false;
 
     /**
