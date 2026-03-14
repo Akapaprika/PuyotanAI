@@ -66,7 +66,9 @@ void Simulator::step(int x, int direction) {
     }
 
     // 3. Process chains
-    Chain::executeChain(board_);
+    // Optimization: only check colors of the piece in the first pass
+    uint8_t color_mask = (1 << static_cast<int>(piece.axis)) | (1 << static_cast<int>(piece.sub));
+    Chain::executeChain(board_, color_mask);
 
     // 4. Check death condition
     updateGameOver();

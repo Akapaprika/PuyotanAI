@@ -62,12 +62,17 @@ BitBoard Chain::findGroups(const BitBoard& color_board, int min_size) {
     return erased_total;
 }
 
-bool Chain::execute(Board& board) {
+bool Chain::execute(Board& board, uint8_t color_mask) {
     BitBoard total_erased_color;
 
     // 1. Find all color groups to erase
     // Rule::kColors is 4 (Red, Green, Blue, Yellow)
     for (int i = 0; i < config::Rule::kColors; ++i) {
+        // Optimization: skip colors not in the mask
+        if (!(color_mask & (1 << i))) {
+            continue;
+        }
+
         Cell c = static_cast<Cell>(i);
         BitBoard color_bb = board.getBitboard(c);
         if (color_bb.empty()) {
@@ -105,16 +110,22 @@ bool Chain::execute(Board& board) {
     return true;
 }
 
-int Chain::executeChain(Board& board) {
+int Chain::executeChain(Board& board, uint8_t first_color_mask) {
     int chain_count = 0;
     
     // Initial gravity to settle anything floating
     Gravity::execute(board);
 
-    while (execute(board)) {
+    // First pass can use the optimized mask
+    if (execute(board, first_color_mask)) {
         chain_count++;
-        // Settle pieces after erasure
         Gravity::execute(board);
+        
+        // Subsequent passes must check all colors
+        while (execute(board, 0x0F)) {
+            chain_count++;
+            Gravity::execute(board);
+        }
     }
 
     return chain_count;

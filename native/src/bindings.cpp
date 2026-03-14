@@ -57,8 +57,9 @@ PYBIND11_MODULE(puyotan_native, m) {
 
     // ---- Chain ----
     pybind11::class_<Chain>(m, "Chain")
-        .def_static("execute",      &Chain::execute)
-        .def_static("executeChain", &Chain::executeChain);
+        .def_static("execute",      &Chain::execute,      pybind11::arg("board"), pybind11::arg("color_mask") = 0x0F)
+        .def_static("executeChain", &Chain::executeChain, pybind11::arg("board"), pybind11::arg("first_color_mask") = 0x0F)
+        .def_static("findGroups",   &Chain::findGroups);
 
     // ---- AI interfaces ----
     pybind11::class_<GameState>(m, "GameState").def(pybind11::init<>());

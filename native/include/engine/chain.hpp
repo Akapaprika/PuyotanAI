@@ -19,15 +19,17 @@ public:
     // Erases those groups and any adjacent Ojama puyos.
     //
     // @param board The board to process.
+    // @param color_mask Bitmask of colors to check (0x0F = all 4 colors).
     // @return true if any puyo (color or Ojama) was erased.
-    static bool execute(Board& board);
+    static bool execute(Board& board, uint8_t color_mask = 0x0F);
 
     // Executes the full chain sequence:
     // Repeatedly applies Gravity -> Erase -> Gravity until the board is stable.
     //
     // @param board The board to process.
+    // @param first_color_mask Optimization: check only these colors in the first pass.
     // @return The total number of chain steps executed (number of times erasures occurred).
-    static int executeChain(Board& board);
+    static int executeChain(Board& board, uint8_t first_color_mask = 0x0F);
 
     // Finds all groups in a single color's BitBoard that have at least
     // min_size connected bits.
