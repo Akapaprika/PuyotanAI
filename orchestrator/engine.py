@@ -1,17 +1,94 @@
 import sys
+import os
 from pathlib import Path
 
+# Add the native library path
 BASE_DIR = Path(__file__).resolve().parent.parent
 DIST_DIR = BASE_DIR / "native" / "dist"
 
-sys.path.append(str(DIST_DIR))
+if DIST_DIR.exists():
+    sys.path.insert(0, str(DIST_DIR))
+else:
+    # Fallback for development if dist doesn't exist yet
+    DEBUG_DIR = BASE_DIR / "native" / "build" / "Debug"
+    if DEBUG_DIR.exists():
+        sys.path.insert(0, str(DEBUG_DIR))
 
-import puyotan_native
+try:
+    import puyotan_native as p
+except ImportError as e:
+    print(f"Error: Could not import puyotan_native. Make sure to build the project first.\n{e}")
+    sys.exit(1)
 
+class PuyotanEngine:
+    """
+    High-level Python wrapper for the Puyotan C++ engine.
+    """
+    def __init__(self, seed=0):
+        self.simulator = p.Simulator(seed)
 
-def choose_move():
-    state = puyotan_native.GameState()
-    move = puyotan_native.chooseMove(state)
-    return move.column
+    def reset(self, seed=0):
+        """Resets the game with a new seed."""
+        self.simulator.reset(seed)
 
-print(choose_move())
+    def move(self, x, direction):
+        """
+        Executes a move.
+        x: column (0-5)
+        direction: rotation (0: up, 1: right, 2: down, 3: left)
+        """
+        if not self.simulator.isGameOver():
+            self.simulator.step(x, direction)
+            return True
+        return False
+
+    def is_game_over(self):
+        return self.simulator.isGameOver()
+
+    def get_board(self):
+        return self.simulator.getBoard()
+
+    def get_current_piece(self):
+        return self.simulator.getCurrentPiece()
+
+    def get_tsumo_index(self):
+        return self.simulator.getTsumoIndex()
+
+    def print_board(self):
+        """Simple ASCII representation of the board."""
+        board = self.get_board()
+        chars = {
+            p.Cell.Red: "R",
+            p.Cell.Green: "G",
+            p.Cell.Blue: "B",
+            p.Cell.Yellow: "Y",
+            p.Cell.Ojama: "O",
+            p.Cell.Empty: "."
+        }
+        
+        # Rows 0 to 12 are visible
+        for y in range(12, -1, -1):
+            line = ""
+            for x in range(6):
+                line += chars.get(board.get(x, y), "?")
+            print(line)
+        print("-" * 6)
+
+if __name__ == "__main__":
+    # Simple demo
+    print("Starting Puyotan Engine Demo...")
+    engine = PuyotanEngine(seed=1)
+    
+    # Place 3 pieces randomly
+    moves = [(3, 0), (2, 1), (4, 3)]
+    for x, d in moves:
+        piece = engine.get_current_piece()
+        print(f"Step {engine.get_tsumo_index()}: Piece(axis={piece.axis}, sub={piece.sub}) -> x={x}, dir={d}")
+        engine.move(x, d)
+        engine.print_board()
+        print()
+
+    if engine.is_game_over():
+        print("Game Over!")
+    else:
+        print("Demo finished successfully.")
