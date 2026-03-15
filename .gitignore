@@ -6,4 +6,4 @@ memo.md
 # Python
 __pycache__/
 *.pyc
-tests/
+tests/*.txt
