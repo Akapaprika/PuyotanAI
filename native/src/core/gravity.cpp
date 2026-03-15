@@ -4,17 +4,10 @@ namespace puyotan {
 
 namespace {
 
-// Internal mask covering the visible field plus the spawn row
-constexpr BitBoard kFullMask{
-    config::Board::kLoMask,
-    config::Board::kHiMask
-};
-
 // Mask covering only row 13 (spawn row)
-constexpr BitBoard kSpawnRowMask{
-    config::Board::kLoSpawnMask,
-    config::Board::kHiSpawnMask
-};
+BitBoard kSpawnRowMask() {
+    return { config::Board::kLoSpawnMask, config::Board::kHiSpawnMask };
+}
 
 } // namespace
 
@@ -23,7 +16,7 @@ int Gravity::execute(Board& board) {
     BitBoard occupied = board.getOccupied();
 
     for (int s = 0; s < config::Board::kTotalRows; ++s) {
-        const BitBoard can_fall = occupied & (~occupied & kFullMask).shiftUp();
+        const BitBoard can_fall = occupied & (~occupied & BitBoard::kFullMask()).shiftUp();
 
         if (can_fall.empty()) {
             break;
@@ -41,7 +34,7 @@ int Gravity::execute(Board& board) {
     }
 
     // Clear rows 13 and above (spawn row and buffer).
-    static constexpr BitBoard kKeepMask{
+    static const BitBoard kKeepMask{
         config::Board::kLoVisibleMask,
         config::Board::kHiVisibleMask
     };

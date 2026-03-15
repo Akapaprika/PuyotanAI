@@ -1,6 +1,6 @@
 #include <puyotan/game/tsumo.hpp>
-#include <cmath>
-#include <algorithm>
+#include <puyotan/common/config.hpp>
+#include <cstdlib>
 
 namespace puyotan {
 

@@ -22,14 +22,15 @@ namespace Board {
 
     // --------------------------------------------------------
     // BitBoard masks: Calculated from kTotalRows and kBitsPerCol
-    //   Each column uses kBitsPerCol (16) bits.
-    //   Only kTotalRows (14) bits are valid within each column lane.
+    //   In the new 128-bit unified BitBoard:
+    //   Lo (bits 0-63):   Cols 0, 1, 2, 3
+    //   Hi (bits 64-127): Cols 4, 5
     // --------------------------------------------------------
     
-    // Generates a 14-bit mask: (1 << 14) - 1 = 0x3FFF
+    // Mask for a single 16-bit column lane (bits 0-14 used by visible + spawn rows)
     static constexpr uint64_t kColMask = (1ULL << kTotalRows) - 1;
 
-    // Mask for only visible rows (0-12)
+    // Mask for only visible rows (0-12) in a single lane
     static constexpr uint64_t kVisibleColMask = (1ULL << kHeight) - 1;
 
     // lo covers cols 0-3: [lane0 | lane1 | lane2 | lane3]
@@ -43,14 +44,12 @@ namespace Board {
                                         (kVisibleColMask << (2 * kBitsPerCol)) | 
                                         (kVisibleColMask << (3 * kBitsPerCol));
 
-    // hi covers cols 4-5: [lane0 | lane1]
+    // hi covers cols 4-5: [lane4 | lane5] (bits 0-31 of hi)
     constexpr uint64_t kHiMask = kColMask | 
                                  (kColMask << (1 * kBitsPerCol));
 
     constexpr uint64_t kHiVisibleMask = kVisibleColMask | 
                                         (kVisibleColMask << (1 * kBitsPerCol));
-
-    // Mask isolating row 13 (spawn row) across all columns.
 
     // Mask isolating row 13 (spawn row) across all columns.
     constexpr uint64_t kLoSpawnMask = (1ULL << kSpawnRow) | 
@@ -63,12 +62,6 @@ namespace Board {
 
     // Mask isolating the full 16-bit lane of a column.
     static constexpr uint64_t kFullLaneMask = (1ULL << kBitsPerCol) - 1;
-
-    // Mask isolating col 3 within lo (top 16-bit lane of lo).
-    constexpr uint64_t kLoCol3Mask  = kFullLaneMask << (3 * kBitsPerCol);
-
-    // Mask isolating col 4 within hi (bottom 16-bit lane of hi).
-    constexpr uint64_t kHiCol4Mask  = kFullLaneMask;
 }
 
 // ============================================================

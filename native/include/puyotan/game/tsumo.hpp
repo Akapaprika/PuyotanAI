@@ -2,7 +2,7 @@
 
 #include <vector>
 #include <cstdint>
-#include <puyotan/core/board.hpp>
+#include <puyotan/common/types.hpp>
 
 namespace puyotan {
 
