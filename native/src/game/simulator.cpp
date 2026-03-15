@@ -3,6 +3,7 @@
 #include <puyotan/core/chain.hpp>
 #include <puyotan/game/scorer.hpp>
 #include <algorithm>
+#include <cstdint>
 
 namespace puyotan {
 
@@ -70,12 +71,42 @@ void Simulator::step(int x, Rotation rotation) {
 }
 
 void Simulator::updateGameOver() {
-    if (board_.getBitboard(Cell::Red).get(config::Rule::kDeathCol, config::Rule::kDeathRow) ||
-        board_.getBitboard(Cell::Green).get(config::Rule::kDeathCol, config::Rule::kDeathRow) ||
-        board_.getBitboard(Cell::Blue).get(config::Rule::kDeathCol, config::Rule::kDeathRow) ||
-        board_.getBitboard(Cell::Yellow).get(config::Rule::kDeathCol, config::Rule::kDeathRow)) {
+    // Check the occupancy board once — faster than checking all 4 color planes.
+    if (board_.getOccupied().get(config::Rule::kDeathCol, config::Rule::kDeathRow)) {
         is_game_over_ = true;
     }
 }
 
+int64_t Simulator::runBatch(int num_games, uint32_t seed) {
+    // Move pattern matching tests/benchmark.py:
+    //   6 moves at col 5, 6 at col 4, 6 at col 3, then col 2 until game over.
+    int64_t total_steps = 0;
+    for (int i = 0; i < num_games; ++i) {
+        reset(seed);
+
+        // Phase 1: col 5 × 6
+        for (int j = 0; j < 6 && !is_game_over_; ++j) {
+            step(5, Rotation::Up);
+            ++total_steps;
+        }
+        // Phase 2: col 4 × 6
+        for (int j = 0; j < 6 && !is_game_over_; ++j) {
+            step(4, Rotation::Up);
+            ++total_steps;
+        }
+        // Phase 3: col 3 × 6
+        for (int j = 0; j < 6 && !is_game_over_; ++j) {
+            step(3, Rotation::Up);
+            ++total_steps;
+        }
+        // Phase 4: col 2 until game over
+        while (!is_game_over_) {
+            step(2, Rotation::Up);
+            ++total_steps;
+        }
+    }
+    return total_steps;
+}
+
 } // namespace puyotan
+

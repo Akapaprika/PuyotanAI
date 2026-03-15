@@ -65,7 +65,8 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("erased",      &ErasureData::erased)
         .def_readwrite("num_erased",  &ErasureData::num_erased)
         .def_readwrite("num_colors",  &ErasureData::num_colors)
-        .def_readwrite("group_sizes", &ErasureData::group_sizes);
+        .def_readwrite("num_groups",  &ErasureData::num_groups)
+        .def_property_readonly("group_sizes", &ErasureData::group_sizes_vec);
 
     pybind11::class_<Gravity>(m, "Gravity")
         .def_static("execute", &Gravity::execute);
@@ -92,6 +93,9 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("step", &Simulator::step)
         .def("reset", &Simulator::reset)
         .def("getCurrentPiece", &Simulator::getCurrentPiece)
+        .def("runBatch", &Simulator::runBatch,
+             pybind11::arg("num_games"), pybind11::arg("seed") = 1,
+             pybind11::call_guard<pybind11::gil_scoped_release>())
         .def_property_readonly("is_game_over", &Simulator::isGameOver)
         .def_property_readonly("board", &Simulator::getBoard)
         .def_property_readonly("tsumo", &Simulator::getTsumo)

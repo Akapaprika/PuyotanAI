@@ -1,4 +1,5 @@
 #include <puyotan/core/chain.hpp>
+#include <vector>
 
 namespace puyotan {
 
@@ -7,15 +8,12 @@ std::vector<BitBoard> Chain::findGroups(const BitBoard& color_board, int min_siz
     BitBoard remaining = color_board;
 
     while (!remaining.empty()) {
-        // Pick a puyo as a seed using the LSB trick (branchless candidate extraction)
         BitBoard seed = remaining.extractLSB();
-        
-        // Flood-fill to find group
+
         BitBoard group = seed;
         BitBoard last_group;
         do {
             last_group = group;
-            // Expand group in all 4 directions efficiently
             group |= group.shiftUp();
             group |= group.shiftDown();
             group |= group.shiftLeft();
@@ -23,12 +21,10 @@ std::vector<BitBoard> Chain::findGroups(const BitBoard& color_board, int min_siz
             group &= color_board;
         } while (group != last_group);
 
-        // Record group if it meets the size requirement
         if (group.popcount() >= min_size) {
             result.push_back(group);
         }
-        
-        // Remove the entire processed group (regardless of size) from the search board
+
         remaining &= ~group;
     }
     return result;
@@ -50,21 +46,44 @@ ErasureData Chain::execute(Board& board, uint8_t color_mask) {
             continue;
         }
 
-        // Single pass: find groups and collect metadata
-        std::vector<BitBoard> groups = findGroups(color_board, config::Rule::kConnectCount);
-        if (!groups.empty()) {
+        // --- Inline group flood-fill (avoids returning a std::vector<BitBoard>) ---
+        BitBoard remaining = color_board;
+        BitBoard color_erased;
+
+        while (!remaining.empty()) {
+            BitBoard seed = remaining.extractLSB();
+
+            // Flood-fill
+            BitBoard group = seed;
+            BitBoard prev;
+            do {
+                prev = group;
+                group |= group.shiftUp();
+                group |= group.shiftDown();
+                group |= group.shiftLeft();
+                group |= group.shiftRight();
+                group &= color_board;
+            } while (group != prev);
+
+            const int sz = group.popcount();
+            if (sz >= config::Rule::kConnectCount) {
+                // Record this group for scoring (no heap allocation)
+                if (data.num_groups < static_cast<uint8_t>(data.group_sizes.size())) {
+                    data.group_sizes[data.num_groups++] = static_cast<uint8_t>(sz);
+                }
+                data.num_erased += sz;
+                color_erased |= group;
+            }
+
+            remaining &= ~group;
+        }
+
+        if (!color_erased.empty()) {
             data.erased = true;
             data.num_colors++;
-            
-            for (const auto& group : groups) {
-                int sz = group.popcount();
-                data.group_sizes.push_back(sz);
-                data.num_erased += sz;
-                total_erased_mask |= group;
-            }
-            
-            // Update the board for this color
-            board.setBitboard(c, color_board & ~total_erased_mask, true);
+            total_erased_mask |= color_erased;
+            // Defer occupancy update — done in one pass after all colors are processed
+            board.setBitboard(c, color_board & ~color_erased, false);
         }
     }
 
@@ -72,18 +91,24 @@ ErasureData Chain::execute(Board& board, uint8_t color_mask) {
     if (data.erased) {
         const BitBoard ojama = board.getBitboard(Cell::Ojama);
         if (!ojama.empty()) {
-            // Expansion for adjacent Ojama (O(1) SIMD)
             BitBoard adj = total_erased_mask;
             adj |= total_erased_mask.shiftUp();
             adj |= total_erased_mask.shiftDown();
             adj |= total_erased_mask.shiftLeft();
             adj |= total_erased_mask.shiftRight();
-            
+
             const BitBoard ojama_to_erase = ojama & adj;
             if (!ojama_to_erase.empty()) {
-                board.setBitboard(Cell::Ojama, ojama & ~ojama_to_erase, true);
+                board.setBitboard(Cell::Ojama, ojama & ~ojama_to_erase, false);
             }
         }
+
+        // Recompute occupancy ONCE after all boards have been updated
+        BitBoard occ = board.getBitboard(Cell::Red);
+        for (int i = 1; i < config::Board::kNumColors; ++i) {
+            occ |= board.getBitboard(static_cast<Cell>(i));
+        }
+        board.updateOccupancy(occ);
     }
 
     return data;

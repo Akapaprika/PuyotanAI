@@ -35,6 +35,13 @@ public:
     
     PuyoPiece getCurrentPiece() const;
 
+    /**
+     * Runs num_games full games in pure C++ using the benchmark move pattern:
+     *   - 6 moves at col 5, 6 at col 4, 6 at col 3, then col 2 until game over.
+     * Returns total steps executed (for throughput calculation).
+     */
+    int64_t runBatch(int num_games, uint32_t seed);
+
 private:
     Board board_;
     Tsumo tsumo_;

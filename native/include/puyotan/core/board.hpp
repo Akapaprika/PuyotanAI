@@ -11,6 +11,7 @@
 #else
 #include <x86intrin.h>
 #endif
+#include <immintrin.h> // BMI2 (_pext_u32) + SSE2/SSE4.1
 
 namespace puyotan {
 
@@ -149,6 +150,8 @@ public:
     const BitBoard& getOccupied() const { return occupancy_; }
 
 private:
+    friend class Gravity; // Allow direct lane access for O(1) per-column gravity
+
     std::array<BitBoard, config::Board::kNumColors> boards_{};
     BitBoard occupancy_{};
 

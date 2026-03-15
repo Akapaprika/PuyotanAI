@@ -23,8 +23,8 @@ public:
         int chain_bonus = getChainBonus(chain_number);
         int color_bonus = getColorBonus(data.num_colors);
         int group_bonus = 0;
-        for (int size : data.group_sizes) {
-            group_bonus += getGroupBonus(size);
+        for (int g = 0; g < data.num_groups; ++g) {
+            group_bonus += getGroupBonus(data.group_sizes[g]);
         }
 
         int total_bonus = chain_bonus + color_bonus + group_bonus;
