@@ -1,29 +1,25 @@
 #pragma once
 
-#include "engine/board.hpp"
-#include "engine/tsumo.hpp"
+#include <puyotan/core/board.hpp>
+#include <puyotan/game/tsumo.hpp>
 
 namespace puyotan {
 
 /**
  * Simulator
- *   Integrates Board, Tsumo, and game rules to simulate a full game.
+ *   High-level game simulation integrating board, tsumo, and rules.
  */
 class Simulator {
 public:
-    /**
-     * @param seed Random seed for Tsumo generation.
-     */
     explicit Simulator(uint32_t seed = 0);
 
     /**
      * Executes one move: places a piece, applies gravity, and processes chains.
-     * @param rotation The rotation of the sub puyo relative to the axis (Up, Right, Down, Left).
      */
     void step(int x, Rotation rotation);
 
     /**
-     * Checks if the death condition is met (spawn point obscured).
+     * Checks if the death condition is met.
      */
     bool isGameOver() const { return is_game_over_; }
 
@@ -32,15 +28,11 @@ public:
      */
     void reset(uint32_t seed);
 
-    // ---- Accessors ----
     const Board& getBoard() const { return board_; }
     const Tsumo& getTsumo() const { return tsumo_; }
     int getTsumoIndex() const { return tsumo_index_; }
     int getTotalScore() const { return total_score_; }
     
-    /**
-     * Returns the piece at the current tsumo index.
-     */
     PuyoPiece getCurrentPiece() const;
 
 private:
@@ -50,9 +42,6 @@ private:
     int total_score_ = 0;
     bool is_game_over_ = false;
 
-    /**
-     * Updates is_game_over_ based on the death condition.
-     */
     void updateGameOver();
 };
 

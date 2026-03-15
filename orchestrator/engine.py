@@ -33,25 +33,25 @@ class PuyotanEngine:
 
     def move(self, x, rotation):
         """Places a piece at column x with specified rotation."""
-        if not self.simulator.isGameOver():
+        if not self.simulator.is_game_over:
             self.simulator.step(x, rotation)
             return True
         return False
 
     def is_game_over(self):
-        return self.simulator.isGameOver()
+        return self.simulator.is_game_over
 
     def get_board(self):
-        return self.simulator.getBoard()
+        return self.simulator.board
 
     def get_current_piece(self):
         return self.simulator.getCurrentPiece()
 
     def get_tsumo_index(self):
-        return self.simulator.getTsumoIndex()
+        return self.simulator.tsumo_index
 
     def get_total_score(self):
-        return self.simulator.getTotalScore()
+        return self.simulator.total_score
 
     def print_board(self):
         """Simple ASCII representation of the board."""
@@ -83,7 +83,7 @@ if __name__ == "__main__":
         (3, p.Rotation.Up),
         (2, p.Rotation.Right),
         (4, p.Rotation.Left),
-        (3, p.Rotation.Down),
+        (2, p.Rotation.Down),
     ]
 
     for x, rot in moves:
