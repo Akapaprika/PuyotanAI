@@ -1,4 +1,4 @@
-#include "engine/board.hpp"
+#include <puyotan/core/board.hpp>
 
 namespace puyotan {
 
@@ -33,8 +33,38 @@ void Board::placePiece(int col, Cell color) {
     if (col < 0 || col >= config::Board::kWidth) {
         return;
     }
-    // spawn row is kSpawnRow
     set(col, config::Board::kSpawnRow, color);
+}
+
+int Board::getDropDistance(int x, int y) const {
+    if (x < 0 || x >= config::Board::kWidth || y <= 0) {
+        return 0;
+    }
+
+    int start_y = std::min(y, (int)config::Board::kHeight);
+
+    const uint64_t lanes[2] = { occupancy_.lo, occupancy_.hi };
+
+    int idx = (x >= config::Board::kColsInLo);
+    int shift = (x - idx * config::Board::kColsInLo) * config::Board::kBitsPerCol;
+
+    uint64_t column_lane = lanes[idx] >> shift;
+
+    uint64_t below_mask = (1ULL << start_y) - 1ULL;
+    uint64_t obstacles = column_lane & below_mask;
+
+    if (obstacles == 0) {
+        return start_y;
+    }
+
+#ifdef _MSC_VER
+    unsigned long highest_row;
+    _BitScanReverse64(&highest_row, obstacles);
+#else
+    int highest_row = 63 - __builtin_clzll(obstacles);
+#endif
+
+    return start_y - (int)highest_row - 1;
 }
 
 const BitBoard& Board::getBitboard(Cell color) const {
@@ -43,9 +73,7 @@ const BitBoard& Board::getBitboard(Cell color) const {
 
 void Board::setBitboard(Cell color, const BitBoard& bb, bool update_occupancy) {
     boards_[toIndex(color)] = bb;
-    
     if (update_occupancy) {
-        // Re-calculate combined occupancy. 
         occupancy_ = boards_[0];
         for (int i = 1; i < config::Board::kNumColors; ++i) {
             occupancy_ |= boards_[i];

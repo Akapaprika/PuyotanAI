@@ -12,9 +12,9 @@ namespace puyotan::config {
 // ============================================================
 namespace Board {
     constexpr int kWidth        = 6;   // number of columns
-    constexpr int kHeight       = 13;  // visible rows (1-indexed: rows 1-13)
     constexpr int kSpawnRow     = 13;  // 0-indexed invisible 14th row
-    constexpr int kTotalRows    = 14;  // kHeight + 1 (spawn row)
+    constexpr int kHeight       = 13;  // visible rows (0-12)
+    constexpr int kTotalRows    = 15;  // visible + spawn + sub-puyo (up rotation)
     constexpr int kBitsPerCol   = 16;  // bits allocated per column in the BitBoard
     constexpr int kColsInLo     = 4;   // columns 0-3 packed into lo (uint64_t)
     constexpr int kColsInHi     = 2;   // columns 4-5 packed into hi (uint64_t)
@@ -22,12 +22,16 @@ namespace Board {
 
     // --------------------------------------------------------
     // BitBoard masks: Calculated from kTotalRows and kBitsPerCol
-    //   Each column uses kBitsPerCol (16) bits.
-    //   Only kTotalRows (14) bits are valid within each column lane.
+    //   In the new 128-bit unified BitBoard:
+    //   Lo (bits 0-63):   Cols 0, 1, 2, 3
+    //   Hi (bits 64-127): Cols 4, 5
     // --------------------------------------------------------
     
-    // Generates a 14-bit mask: (1 << 14) - 1 = 0x3FFF
+    // Mask for a single 16-bit column lane (bits 0-14 used by visible + spawn rows)
     static constexpr uint64_t kColMask = (1ULL << kTotalRows) - 1;
+
+    // Mask for only visible rows (0-12) in a single lane
+    static constexpr uint64_t kVisibleColMask = (1ULL << kHeight) - 1;
 
     // lo covers cols 0-3: [lane0 | lane1 | lane2 | lane3]
     constexpr uint64_t kLoMask = kColMask | 
@@ -35,9 +39,17 @@ namespace Board {
                                  (kColMask << (2 * kBitsPerCol)) | 
                                  (kColMask << (3 * kBitsPerCol));
 
-    // hi covers cols 4-5: [lane0 | lane1]
+    constexpr uint64_t kLoVisibleMask = kVisibleColMask | 
+                                        (kVisibleColMask << (1 * kBitsPerCol)) | 
+                                        (kVisibleColMask << (2 * kBitsPerCol)) | 
+                                        (kVisibleColMask << (3 * kBitsPerCol));
+
+    // hi covers cols 4-5: [lane4 | lane5] (bits 0-31 of hi)
     constexpr uint64_t kHiMask = kColMask | 
                                  (kColMask << (1 * kBitsPerCol));
+
+    constexpr uint64_t kHiVisibleMask = kVisibleColMask | 
+                                        (kVisibleColMask << (1 * kBitsPerCol));
 
     // Mask isolating row 13 (spawn row) across all columns.
     constexpr uint64_t kLoSpawnMask = (1ULL << kSpawnRow) | 
@@ -50,12 +62,6 @@ namespace Board {
 
     // Mask isolating the full 16-bit lane of a column.
     static constexpr uint64_t kFullLaneMask = (1ULL << kBitsPerCol) - 1;
-
-    // Mask isolating col 3 within lo (top 16-bit lane of lo).
-    constexpr uint64_t kLoCol3Mask  = kFullLaneMask << (3 * kBitsPerCol);
-
-    // Mask isolating col 4 within hi (bottom 16-bit lane of hi).
-    constexpr uint64_t kHiCol4Mask  = kFullLaneMask;
 }
 
 // ============================================================
@@ -84,47 +90,16 @@ namespace Score {
     constexpr int kChainBonusesSize = static_cast<int>(sizeof(kChainBonuses) / sizeof(kChainBonuses[0]));
 
     // Color bonus: count of colors erased in one step
-    // 1 color: 0, 2 colors: 3, 3 colors: 6, 4 colors: 12, 5 colors: 24...
     constexpr int kColorBonuses[] = {
         0, 0, 3, 6, 12, 24
     };
     constexpr int kColorBonusesSize = static_cast<int>(sizeof(kColorBonuses) / sizeof(kColorBonuses[0]));
 
     // Group bonus: size of group erased (index is size - config::Rule::kConnectCount)
-    // index 0 (size 4): 0, 5: 2, 6: 3, 7: 4, 8: 5, 9: 6, 10: 7, 11+: 10
     constexpr int kGroupBonuses[] = {
         0, 2, 3, 4, 5, 6, 7, 10
     };
     constexpr int kGroupBonusesSize = static_cast<int>(sizeof(kGroupBonuses) / sizeof(kGroupBonuses[0]));
-
-    static constexpr int getChainBonus(int chain) {
-        int idx = (chain < 1) ? 0 : (chain - 1);
-        if (idx >= kChainBonusesSize) {
-            return kChainBonuses[kChainBonusesSize - 1];
-        }
-        return kChainBonuses[idx];
-    }
-
-    static constexpr int getColorBonus(int count) {
-        if (count < 1) {
-            return 0;
-        }
-        if (count >= kColorBonusesSize) {
-            return kColorBonuses[kColorBonusesSize - 1];
-        }
-        return kColorBonuses[count];
-    }
-
-    static constexpr int getGroupBonus(int size) {
-        int idx = size - config::Rule::kConnectCount;
-        if (idx < 0) {
-            return 0;
-        }
-        if (idx >= kGroupBonusesSize) {
-            return kGroupBonuses[kGroupBonusesSize - 1];
-        }
-        return kGroupBonuses[idx];
-    }
 }
 
 } // namespace puyotan::config
