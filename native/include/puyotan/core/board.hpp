@@ -30,97 +30,91 @@ struct alignas(16) BitBoard {
     constexpr BitBoard(uint64_t l, uint64_t h) : lo(l), hi(h) {}
     BitBoard(__m128i m) : m128(m) {}
 
-    bool      operator==(const BitBoard& o) const { 
-        // _mm_testc_si128 can be used for equality too, but lo/hi comparison is fine.
-        return lo == o.lo && hi == o.hi; 
-    }
-    bool      operator!=(const BitBoard& o) const { return !(*this == o); }
-    BitBoard  operator& (const BitBoard& o) const { return _mm_and_si128(m128, o.m128); }
-    BitBoard  operator| (const BitBoard& o) const { return _mm_or_si128(m128, o.m128); }
-    BitBoard  operator^ (const BitBoard& o) const { return _mm_xor_si128(m128, o.m128); }
-    BitBoard  operator~ ()                  const { 
-        return _mm_xor_si128(m128, _mm_set1_epi32(0xFFFFFFFF)); 
-    }
-    BitBoard& operator&=(const BitBoard& o)       { m128 = _mm_and_si128(m128, o.m128); return *this; }
-    BitBoard& operator|=(const BitBoard& o)       { m128 = _mm_or_si128(m128, o.m128); return *this; }
-    BitBoard& operator^=(const BitBoard& o)       { m128 = _mm_xor_si128(m128, o.m128); return *this; }
+    // -----------------------------------------------------------------------
+    // Operators — __forceinline prevents deoptimization on monomorphic hot paths.
+    // -----------------------------------------------------------------------
+    [[nodiscard]] __forceinline bool     operator==(const BitBoard& o) const { return lo == o.lo && hi == o.hi; }
+    [[nodiscard]] __forceinline bool     operator!=(const BitBoard& o) const { return lo != o.lo || hi != o.hi; }
+    [[nodiscard]] __forceinline BitBoard operator& (const BitBoard& o) const { return _mm_and_si128(m128, o.m128); }
+    [[nodiscard]] __forceinline BitBoard operator| (const BitBoard& o) const { return _mm_or_si128(m128, o.m128); }
+    [[nodiscard]] __forceinline BitBoard operator^ (const BitBoard& o) const { return _mm_xor_si128(m128, o.m128); }
+    [[nodiscard]] __forceinline BitBoard operator~ ()                  const { return _mm_xor_si128(m128, _mm_set1_epi32(-1)); }
+    __forceinline BitBoard& operator&=(const BitBoard& o) { m128 = _mm_and_si128(m128, o.m128); return *this; }
+    __forceinline BitBoard& operator|=(const BitBoard& o) { m128 = _mm_or_si128(m128, o.m128);  return *this; }
+    __forceinline BitBoard& operator^=(const BitBoard& o) { m128 = _mm_xor_si128(m128, o.m128); return *this; }
 
-    bool empty() const { 
-        // PTEST (SSE4.1) is the fastest way to check for all-zeros.
-        return _mm_testz_si128(m128, m128);
-    }
+    // PTEST (SSE4.1): single instruction — tests if all bits are zero.
+    [[nodiscard]] __forceinline bool empty() const { return _mm_testz_si128(m128, m128) != 0; }
 
-    bool get(int x, int y) const {
-        const uint64_t* data = &lo;
-        // word_idx = x / 4 (x >> 2), local_col = x % 4 (x & 3)
-        // bit_offset = local_col * 16 + y
-        return (data[x >> 2] >> (((x & 3) << 4) | y)) & 1;
+    // Branchless bit access: word = lo/hi, bit offset = (col%4)*16 + row
+    [[nodiscard]] __forceinline bool get(int x, int y) const {
+        return ((&lo)[x >> 2] >> (((x & 3) << 4) | y)) & 1;
     }
-
-    void set(int x, int y) {
-        uint64_t* data = &lo;
-        data[x >> 2] |= (1ULL << (((x & 3) << 4) | y));
+    __forceinline void set(int x, int y) {
+        (&lo)[x >> 2] |= (1ULL << (((x & 3) << 4) | y));
+    }
+    __forceinline void clear(int x, int y) {
+        (&lo)[x >> 2] &= ~(1ULL << (((x & 3) << 4) | y));
     }
 
-    void clear(int x, int y) {
-        uint64_t* data = &lo;
-        data[x >> 2] &= ~(1ULL << (((x & 3) << 4) | y));
-    }
-
-    int popcount() const {
+    [[nodiscard]] __forceinline int popcount() const {
 #ifdef _MSC_VER
-        return (int)(__popcnt64(lo) + __popcnt64(hi));
+        return static_cast<int>(__popcnt64(lo) + __popcnt64(hi));
 #else
         return __builtin_popcountll(lo) + __builtin_popcountll(hi);
 #endif
     }
 
     /**
-     * Extracts the least significant bit as a BitBoard.
+     * Extracts the least significant set bit as a BitBoard (x & -x).
+     * Simplified: if lo==0 and hi==0, hi&-hi = 0 & 0 = 0, so result is {0,0} correctly.
      */
-    BitBoard extractLSB() const {
+    [[nodiscard]] __forceinline BitBoard extractLSB() const {
         if (lo != 0) {
-            return { lo & (uint64_t)(-(int64_t)lo), 0 };
-        } else if (hi != 0) {
-            return { 0, hi & (uint64_t)(-(int64_t)hi) };
+            return { lo & static_cast<uint64_t>(-static_cast<int64_t>(lo)), 0ULL };
         }
-        return { 0, 0 };
+        return { 0ULL, hi & static_cast<uint64_t>(-static_cast<int64_t>(hi)) };
     }
 
-    static BitBoard kLoMask()      { return { config::Board::kLoMask, 0 }; }
-    static BitBoard kHiMask()      { return { 0, config::Board::kHiMask }; }
-    static BitBoard kFullMask()    { return { config::Board::kLoMask, config::Board::kHiMask }; }
+    // -----------------------------------------------------------------------
+    // Static masks — compile-time constants
+    // -----------------------------------------------------------------------
+    static BitBoard kLoMask()   { return { config::Board::kLoMask, 0 }; }
+    static BitBoard kHiMask()   { return { 0, config::Board::kHiMask }; }
+    static BitBoard kFullMask() { return { config::Board::kLoMask, config::Board::kHiMask }; }
 
-    BitBoard shiftUp() const { 
-        // Parallel 64-bit shifts (no scalar fallback).
-        return _mm_and_si128(
-            _mm_slli_epi64(m128, 1),
-            kFullMask().m128
-        );
+    // -----------------------------------------------------------------------
+    // Shift operations — kFullMask stored as static local for guaranteed
+    // register-caching by the compiler (no reconstruction per call).
+    // -----------------------------------------------------------------------
+    [[nodiscard]] __forceinline BitBoard shiftUp() const {
+        static const __m128i kMask = _mm_set_epi64x(
+            static_cast<int64_t>(config::Board::kHiMask),
+            static_cast<int64_t>(config::Board::kLoMask));
+        return _mm_and_si128(_mm_slli_epi64(m128, 1), kMask);
     }
 
-    BitBoard shiftDown() const {
-        // Parallel 64-bit shifts.
-        return _mm_and_si128(
-            _mm_srli_epi64(m128, 1),
-            kFullMask().m128
-        );
+    [[nodiscard]] __forceinline BitBoard shiftDown() const {
+        static const __m128i kMask = _mm_set_epi64x(
+            static_cast<int64_t>(config::Board::kHiMask),
+            static_cast<int64_t>(config::Board::kLoMask));
+        return _mm_and_si128(_mm_srli_epi64(m128, 1), kMask);
     }
 
-    BitBoard shiftRight() const {
-        // Shift entire 128-bit register by 16 bits (2 bytes).
-        return _mm_and_si128(
-            _mm_slli_si128(m128, 2),
-            kFullMask().m128
-        );
+    [[nodiscard]] __forceinline BitBoard shiftRight() const {
+        // Shift whole register left by 2 bytes (= one 16-bit column lane right in display).
+        static const __m128i kMask = _mm_set_epi64x(
+            static_cast<int64_t>(config::Board::kHiMask),
+            static_cast<int64_t>(config::Board::kLoMask));
+        return _mm_and_si128(_mm_slli_si128(m128, 2), kMask);
     }
 
-    BitBoard shiftLeft() const {
-        // Shift entire 128-bit register by 16 bits (2 bytes) right.
-        return _mm_and_si128(
-            _mm_srli_si128(m128, 2),
-            kFullMask().m128
-        );
+    [[nodiscard]] __forceinline BitBoard shiftLeft() const {
+        // Shift whole register right by 2 bytes.
+        static const __m128i kMask = _mm_set_epi64x(
+            static_cast<int64_t>(config::Board::kHiMask),
+            static_cast<int64_t>(config::Board::kLoMask));
+        return _mm_and_si128(_mm_srli_si128(m128, 2), kMask);
     }
 };
 

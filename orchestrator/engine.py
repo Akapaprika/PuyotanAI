@@ -79,11 +79,20 @@ if __name__ == "__main__":
     engine = PuyotanEngine(seed=1)
     
     # Demo: Place a few pieces
+    # moves = [
+    #     (3, p.Rotation.Up),
+    #     (2, p.Rotation.Right),
+    #     (4, p.Rotation.Left),
+    #     (2, p.Rotation.Down),
+    # ]
+
     moves = [
-        (3, p.Rotation.Up),
-        (2, p.Rotation.Right),
-        (4, p.Rotation.Left),
-        (2, p.Rotation.Down),
+        (2, p.Rotation.Up),
+        (2, p.Rotation.Up),
+        (2, p.Rotation.Up),
+        (2, p.Rotation.Up),
+        (2, p.Rotation.Up),
+        (2, p.Rotation.Right)
     ]
 
     for x, rot in moves:
@@ -96,5 +105,5 @@ if __name__ == "__main__":
 
     if engine.is_game_over():
         print("Game Over!")
-    else:
-        print("Demo finished successfully.")
+
+    print("Demo finished successfully.")

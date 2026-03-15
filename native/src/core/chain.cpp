@@ -53,24 +53,21 @@ ErasureData Chain::execute(Board& board, uint8_t color_mask) {
         while (!remaining.empty()) {
             BitBoard seed = remaining.extractLSB();
 
-            // Flood-fill
+            // Flood-fill: all 4 shifts computed from the SAME group snapshot.
+            // Out-of-order CPU can issue them in parallel — dependency depth: 4 → 2.
             BitBoard group = seed;
             BitBoard prev;
             do {
                 prev = group;
-                group |= group.shiftUp();
-                group |= group.shiftDown();
-                group |= group.shiftLeft();
-                group |= group.shiftRight();
-                group &= color_board;
+                const BitBoard expand = (group.shiftUp() | group.shiftDown()) |
+                                        (group.shiftLeft() | group.shiftRight());
+                group = (group | expand) & color_board;
             } while (group != prev);
 
             const int sz = group.popcount();
             if (sz >= config::Rule::kConnectCount) {
-                // Record this group for scoring (no heap allocation)
-                if (data.num_groups < static_cast<uint8_t>(data.group_sizes.size())) {
-                    data.group_sizes[data.num_groups++] = static_cast<uint8_t>(sz);
-                }
+                // Max possible groups << 24: bounds check is redundant, removed for speed.
+                data.group_sizes[data.num_groups++] = static_cast<uint8_t>(sz);
                 data.num_erased += sz;
                 color_erased |= group;
             }
