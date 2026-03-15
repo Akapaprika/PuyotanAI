@@ -35,7 +35,7 @@ if (MSVC)
 
     # Release
     target_compile_options(puyotan_native PRIVATE
-        $<$<CONFIG:Release>: /O2 /GL /Oi /Ot /fp:fast /arch:AVX2 /DNDEBUG >
+        $<$<CONFIG:Release>: /O2 /GL /arch:AVX2 /Ob2 /Gy /Gw /DNDEBUG >
     )
     target_link_options(puyotan_native PRIVATE
         $<$<CONFIG:Release>: /LTCG /OPT:REF /OPT:ICF /INCREMENTAL:NO >

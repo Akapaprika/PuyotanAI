@@ -25,7 +25,7 @@ void Simulator::step(int x, Rotation rotation) {
     if (is_game_over_) return;
 
     PuyoPiece piece = getCurrentPiece();
-    tsumo_index_++;
+    ++tsumo_index_;
 
     // 1. Initial Gravity (Soft Drop) Calculation
     // We calculate distances BEFORE placement to avoid puyos blocking each other.
@@ -62,7 +62,7 @@ void Simulator::step(int x, Rotation rotation) {
         ErasureData data = Chain::execute(board_);
         if (!data.erased) break;
 
-        chain_count++;
+        ++chain_count;
         total_score_ += Scorer::calculateStepScore(data, chain_count);
         Gravity::execute(board_);
     }

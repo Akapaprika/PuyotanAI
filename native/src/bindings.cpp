@@ -73,8 +73,7 @@ PYBIND11_MODULE(puyotan_native, m) {
 
     pybind11::class_<Chain>(m, "Chain")
         .def_static("execute", &Chain::execute,
-            pybind11::arg("board"), pybind11::arg("color_mask") = 0x0F)
-        .def_static("findGroups", &Chain::findGroups);
+            pybind11::arg("board"), pybind11::arg("color_mask") = 0x0F);
 
     /**
      * @brief Bind Game logic

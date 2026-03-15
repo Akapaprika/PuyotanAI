@@ -42,11 +42,6 @@ public:
      */
     static ErasureData execute(Board& board, uint8_t color_mask = 0x0F);
 
-    /**
-     * Finds connected groups in a single color's BitBoard.
-     * @return A vector of BitBoards, each representing one connected group.
-     */
-    static std::vector<BitBoard> findGroups(const BitBoard& color_board, int min_size);
 };
 
 } // namespace puyotan
