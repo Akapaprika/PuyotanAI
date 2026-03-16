@@ -151,6 +151,7 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("canStepNextFrame", &puyotan::PuyotanMatch::canStepNextFrame)
         .def("stepNextFrame", &puyotan::PuyotanMatch::stepNextFrame)
         .def("getPlayer", &puyotan::PuyotanMatch::getPlayer)
+        .def("getPiece", &puyotan::PuyotanMatch::getPiece)
         .def_property_readonly("frame", &puyotan::PuyotanMatch::getFrame)
         .def_property_readonly("status", &puyotan::PuyotanMatch::getStatus)
         .def_property_readonly("status_text", &puyotan::PuyotanMatch::getStatusText);

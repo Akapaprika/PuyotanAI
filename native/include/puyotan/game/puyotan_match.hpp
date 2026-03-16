@@ -39,6 +39,9 @@ public:
     void stepNextFrame();
 
     const PuyotanPlayer& getPlayer(int id) const { return players_[id]; }
+    PuyoPiece getPiece(int player_id, int index_offset) const {
+        return tsumo_.get(players_[player_id].active_next_pos + index_offset);
+    }
     int getFrame() const { return frame_; }
     MatchStatus getStatus() const { return status_; }
     std::string getStatusText() const;
