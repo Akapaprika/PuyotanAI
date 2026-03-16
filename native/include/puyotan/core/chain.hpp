@@ -42,6 +42,12 @@ public:
      */
     static ErasureData execute(Board& board, uint8_t color_mask = 0x0F);
 
+    /**
+     * Checks if any groups can be erased.
+     * @param board The board to check.
+     * @return True if at least one group can be fired.
+     */
+    static bool canFire(const Board& board);
 };
 
 } // namespace puyotan

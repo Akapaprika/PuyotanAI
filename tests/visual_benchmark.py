@@ -19,14 +19,17 @@ except ImportError as e:
     print(f"Error: Could not import puyotan_native. Make sure to build the project first.\n{e}")
     sys.exit(1)
 
-def print_game_state(simulator, step_num, x, rot):
+import argparse
+
+def print_game_state(match, player_id=0):
     """
-    Prints the board and game information in the style of orchestrator/engine.py
+    Prints the board and game information including frame count.
     """
-    board = simulator.board
-    current_piece = simulator.getCurrentPiece()
-    score = simulator.total_score
-    is_over = simulator.is_game_over
+    player = match.getPlayer(player_id)
+    board = player.field
+    score = player.score
+    status = match.status_text
+    frame = match.frame
     
     chars = {
         p.Cell.Red: "R",
@@ -37,8 +40,8 @@ def print_game_state(simulator, step_num, x, rot):
         p.Cell.Empty: "."
     }
     
-    print(f"Step {step_num}: Moved to x={x}, rot={rot}")
-    print(f"Total Score: {score}")
+    print(f"--- Frame: {frame} | Status: {status} ---")
+    print(f"Player {player_id + 1} Score: {score}")
     
     # Rows 0 to 12 are visible
     for y in range(12, -1, -1):
@@ -48,47 +51,56 @@ def print_game_state(simulator, step_num, x, rot):
         print(line)
     print("    " + "-" * 6)
     print("      012345")
-    
-    if is_over:
-        print("!!! GAME OVER !!!")
-    else:
-        print(f"Next Piece: Axis={chars.get(current_piece.axis)}, Sub={chars.get(current_piece.sub)}")
     print()
 
-def run_visual_benchmark(seed=1):
-    print(f"Starting Visual Benchmark (Seed={seed})...")
+def run_visual_benchmark(seed=1, speed=0.05):
+    print(f"Starting Visual Benchmark with Frame Info (Seed={seed})...")
     print("-" * 40)
     
-    sim = p.Simulator(seed)
-    step_num = 0
+    match = p.PuyotanMatch(seed)
+    match.start()
     
-    # Move pattern from tests/benchmark.py
-    # 6 moves at col 5, 6 at col 4, 6 at col 3, then col 2 until game over.
+    # Move plan: col 5x6, col 4x6, col 3x6, then col 2 until death
+    # This matches the move sequence logic in benchmark.py
     move_plan = []
-    for _ in range(6): move_plan.append(5)
-    for _ in range(6): move_plan.append(4)
-    for _ in range(6): move_plan.append(3)
+    move_plan += [5] * 6
+    move_plan += [4] * 6
+    move_plan += [3] * 6
     
-    # Phase 1-3
-    for x in move_plan:
-        if sim.is_game_over: break
-        step_num += 1
-        sim.step(x, p.Rotation.Up)
-        print_game_state(sim, step_num, x, p.Rotation.Up)
-        # Use simple input to pause if needed, but for now just print all
-        # time.sleep(0.1)
+    move_idx = 0
+    
+    while match.status == p.MatchStatus.PLAYING:
+        p1 = match.getPlayer(0)
+        p2 = match.getPlayer(1)
 
-    # Phase 4: col 2 until game over
-    while not sim.is_game_over:
-        step_num += 1
-        x = 2
-        sim.step(x, p.Rotation.Up)
-        print_game_state(sim, step_num, x, p.Rotation.Up)
-        if step_num > 100: # Safety break
-            print("Safety break: Step count exceeded 100")
+        # 1. Fill P1 action if needed
+        if match.frame not in p1.action_histories:
+            x = move_plan[move_idx] if move_idx < len(move_plan) else 2
+            if match.setAction(0, p.Action(p.ActionType.PUT, x, p.Rotation.Up)):
+                move_idx += 1
+
+        # 2. Fill P2 action if needed
+        if match.frame not in p2.action_histories:
+            match.setAction(1, p.Action(p.ActionType.PASS, 0, p.Rotation.Up))
+
+        # 3. Advance frame when both inputs are ready
+        if match.canStepNextFrame():
+            match.stepNextFrame()
+            if speed > 0:
+                print_game_state(match, 0)
+                time.sleep(speed)
+
+        if match.frame > 500: # Safety break
+            print("Safety break: Frame count exceeded 500")
             break
 
-    print(f"Benchmark finished in {step_num} steps.")
+    print(f"Benchmark finished at frame {match.frame}.")
+    print(f"Final Status: {match.status_text}")
 
 if __name__ == "__main__":
-    run_visual_benchmark(seed=1)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument("--speed", type=float, default=0.05)
+    args = parser.parse_args()
+    
+    run_visual_benchmark(seed=args.seed, speed=args.speed)

@@ -93,4 +93,49 @@ ErasureData Chain::execute(Board& board, uint8_t color_mask) {
     return data;
 }
 
+bool Chain::canFire(const Board& board) {
+    for (int i = 0; i < config::Rule::kColors; ++i) {
+        const Cell c = static_cast<Cell>(i);
+        const BitBoard color_board = board.getBitboard(c);
+        if (color_board.empty()) continue;
+
+        const BitBoard U = color_board.shiftUp();
+        const BitBoard D = color_board.shiftDown();
+        const BitBoard L = color_board.shiftLeft();
+        const BitBoard R = color_board.shiftRight();
+
+        const BitBoard ud_and = U & D;
+        const BitBoard ud_or  = U | D;
+        const BitBoard lr_and = L & R;
+        const BitBoard lr_or  = L | R;
+        BitBoard has_2 = color_board & (ud_and | lr_and | (ud_or & lr_or));
+
+        if (has_2.empty()) continue;
+
+        // If has_2 is not empty, there might be a 4-group.
+        // We need to verify at least one group size >= 4.
+        BitBoard remaining = color_board;
+        while (!has_2.empty()) {
+            BitBoard seed = has_2.extractLSB();
+            if (!(remaining & seed).empty()) {
+                BitBoard group = seed;
+                BitBoard prev;
+                do {
+                    prev = group;
+                    const BitBoard expand = (group.shiftUp() | group.shiftDown()) |
+                                            (group.shiftLeft() | group.shiftRight());
+                    group = (group | expand) & color_board;
+                } while (group != prev);
+
+                if (group.popcount() >= config::Rule::kConnectCount) {
+                    return true;
+                }
+                remaining &= ~group;
+                has_2 &= ~group;
+            }
+        }
+    }
+    return false;
+}
+
 } // namespace puyotan

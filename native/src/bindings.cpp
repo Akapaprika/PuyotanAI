@@ -8,6 +8,7 @@
 #include <puyotan/game/tsumo.hpp>
 #include <puyotan/game/simulator.hpp>
 #include <puyotan/game/scorer.hpp>
+#include <puyotan/game/puyotan_match.hpp>
 
 namespace puyotan {
 
@@ -100,6 +101,59 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_property_readonly("tsumo", &Simulator::getTsumo)
         .def_property_readonly("tsumo_index", &Simulator::getTsumoIndex)
         .def_property_readonly("total_score", &Simulator::getTotalScore);
+
+    /**
+     * @brief Bind Puyotan Match (frame-based)
+     */
+    pybind11::enum_<ActionType>(m, "ActionType")
+        .value("PASS", ActionType::PASS)
+        .value("PUT", ActionType::PUT)
+        .value("CHAIN", ActionType::CHAIN)
+        .value("CHAIN_FALL", ActionType::CHAIN_FALL)
+        .value("OJAMA", ActionType::OJAMA)
+        .export_values();
+
+    pybind11::class_<Action>(m, "Action")
+        .def(pybind11::init<ActionType, int, Rotation>(),
+             pybind11::arg("type") = ActionType::PASS,
+             pybind11::arg("x") = 0,
+             pybind11::arg("rotation") = Rotation::Up)
+        .def_readwrite("type", &Action::type)
+        .def_readwrite("x", &Action::x)
+        .def_readwrite("rotation", &Action::rotation);
+
+    pybind11::class_<ActionState>(m, "ActionState")
+        .def_readwrite("action", &ActionState::action)
+        .def_readwrite("remaining_frame", &ActionState::remaining_frame);
+
+    pybind11::class_<PuyotanPlayer>(m, "PuyotanPlayer")
+        .def_readwrite("field", &PuyotanPlayer::field)
+        .def_readwrite("action_histories", &PuyotanPlayer::action_histories)
+        .def_readwrite("active_next_pos", &PuyotanPlayer::active_next_pos)
+        .def_readwrite("score", &PuyotanPlayer::score)
+        .def_readwrite("used_score", &PuyotanPlayer::used_score)
+        .def_readwrite("non_active_ojama", &PuyotanPlayer::non_active_ojama)
+        .def_readwrite("active_ojama", &PuyotanPlayer::active_ojama)
+        .def_readwrite("chain_count", &PuyotanPlayer::chain_count);
+
+    pybind11::enum_<puyotan::MatchStatus>(m, "MatchStatus")
+        .value("READY", puyotan::MatchStatus::READY)
+        .value("PLAYING", puyotan::MatchStatus::PLAYING)
+        .value("WIN_P1", puyotan::MatchStatus::WIN_P1)
+        .value("WIN_P2", puyotan::MatchStatus::WIN_P2)
+        .value("DRAW", puyotan::MatchStatus::DRAW)
+        .export_values();
+
+    pybind11::class_<puyotan::PuyotanMatch>(m, "PuyotanMatch")
+        .def(pybind11::init<uint32_t>(), pybind11::arg("seed") = 0)
+        .def("start", &puyotan::PuyotanMatch::start)
+        .def("setAction", &puyotan::PuyotanMatch::setAction)
+        .def("canStepNextFrame", &puyotan::PuyotanMatch::canStepNextFrame)
+        .def("stepNextFrame", &puyotan::PuyotanMatch::stepNextFrame)
+        .def("getPlayer", &puyotan::PuyotanMatch::getPlayer)
+        .def_property_readonly("frame", &puyotan::PuyotanMatch::getFrame)
+        .def_property_readonly("status", &puyotan::PuyotanMatch::getStatus)
+        .def_property_readonly("status_text", &puyotan::PuyotanMatch::getStatusText);
 }
 
 } // namespace puyotan
