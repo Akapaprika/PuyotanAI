@@ -82,4 +82,21 @@ int Gravity::execute(Board& board) {
     return 0; // PEXT gravity is non-iterative; step count not applicable.
 }
 
+bool Gravity::canFall(const Board& board) {
+    // A board can fall if there is any '1' bit (occupied) directly above a '0' bit (empty).
+    // We can check all columns in each 64-bit word simultaneously using bitwise shifts.
+    // Mask out bits that would shift across column boundaries (top row 15 of each 16-bit lane).
+    static constexpr uint64_t kBoundaryMask = 0x8000800080008000ULL;
+
+    const uint64_t lo = board.getOccupied().lo;
+    // (word >> 1) moves bits from row y+1 to row y within the same column.
+    // (shifted & ~word) has a bit set if row y+1 was 1 and row y was 0.
+    if (((lo >> 1) & ~kBoundaryMask & ~lo) != 0) return true;
+
+    const uint64_t hi = board.getOccupied().hi;
+    if (((hi >> 1) & ~kBoundaryMask & ~hi) != 0) return true;
+
+    return false;
+}
+
 } // namespace puyotan

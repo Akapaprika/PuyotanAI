@@ -34,4 +34,43 @@ struct PuyoPiece {
     Cell sub;
 };
 
+/**
+ * Action types for Puyotan frame-based management.
+ */
+enum class ActionType : int {
+    PASS = 0,
+    PUT = 1,
+    CHAIN = 2,
+    CHAIN_FALL = 3,
+    OJAMA = 4
+};
+
+/**
+ * Action command from player.
+ */
+struct Action {
+    ActionType type = ActionType::PASS;
+    int x = 0;
+    Rotation rotation = Rotation::Up;
+};
+
+/**
+ * Action state in a specific frame.
+ */
+struct ActionState {
+    Action action;
+    int remaining_frame = 0;
+};
+
+/**
+ * Status of the match.
+ */
+enum class MatchStatus : int {
+    READY = 0,
+    PLAYING = 1,
+    WIN_P1 = 2,
+    WIN_P2 = 3,
+    DRAW = 4
+};
+
 } // namespace puyotan
