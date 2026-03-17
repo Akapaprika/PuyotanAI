@@ -1,58 +1,62 @@
-import pygame
+"""
+gui/main.py
+
+Application entry point.  Constructs the MVVM triad, loads the QSS theme,
+and hands control to the Qt event loop.
+"""
+from __future__ import annotations
+
 import sys
-from . import config
+import os
+from pathlib import Path
+
+# --- Auto-resolve native extension path ---
+# This allows running without $env:PYTHONPATH manual set.
+_PROJECT_ROOT = Path(__file__).parent.parent
+_NATIVE_DIST = _PROJECT_ROOT / "native" / "dist"
+if _NATIVE_DIST.exists() and str(_NATIVE_DIST) not in sys.path:
+    sys.path.insert(0, str(_NATIVE_DIST))
+
+# CRITICAL IMPORT ORDER: We MUST import the model (which imports the C++ puyotan_native extension)
+# BEFORE importing PyQt6. Otherwise, on Windows, loading the PySide/PyQt DLLs first causes 
+# an access violation (segfault) when the pybind11 extension tries to load.
 from .model import GameModel
 from .view_model import PuyotanViewModel
-from .input_handler import GameplayController
-from .view import PuyotanView
-import puyotan_native as p
 
-def main():
-    pygame.init()
-    screen = pygame.display.set_mode((config.WINDOW_WIDTH, config.WINDOW_HEIGHT))
-    pygame.display.set_caption("Puyotan AI GUI (MVVM)")
-    
-    # Enable font system
-    pygame.font.init()
-    font = pygame.font.SysFont(None, 24)
+from PyQt6.QtWidgets import QApplication
 
-    clock = pygame.time.Clock()
-    
-    # Initialize MVVM
-    model = GameModel(seed=42)
-    view_model = PuyotanViewModel(model)
-    controller = GameplayController(view_model)
-    view = PuyotanView(screen, font)
+from .controller import GameplayController
+from .views import MainWindow
 
-    running = True
 
-    while running:
-        current_time = pygame.time.get_ticks()
-        
-        # 1. Handle Events (Controller)
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1: # Left click
-                    for btn in view.buttons:
-                        if btn.rect.collidepoint(event.pos):
-                            controller.handle_button_click(btn.id)
-            else:
-                controller.handle_event(event)
+def _load_qss(relative_path: str) -> str:
+    """Load a QSS stylesheet relative to this package directory."""
+    qss_path = Path(__file__).parent / relative_path
+    try:
+        return qss_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return ""
 
-        # 2. Update Logic (ViewModel)
-        view_model.update(current_time)
 
-        # 3. Render (View)
-        view.draw(view_model)
-        pygame.display.flip()
+def main() -> None:
+    app = QApplication(sys.argv)
+    app.setApplicationName("Puyotan AI")
+    app.setApplicationDisplayName("Puyotan AI — Match Viewer")
 
-        # 4. Tick
-        clock.tick(config.FPS)
+    # Apply global dark theme
+    qss = _load_qss("assets/theme.qss")
+    if qss:
+        app.setStyleSheet(qss)
 
-    pygame.quit()
-    sys.exit()
+    # ── Wire MVVM ──────────────────────────────────────────────────────
+    model   = GameModel(seed=42)
+    vm      = PuyotanViewModel(model)
+    ctrl    = GameplayController(vm)
+    window  = MainWindow(vm, ctrl)
+    window.show()
+
+    sys.exit(app.exec())
+
 
 if __name__ == "__main__":
     main()
