@@ -1,0 +1,85 @@
+/* gui/assets/theme.qss */
+
+QMainWindow {
+    background-color: #1a1b2e;
+}
+
+QWidget {
+    font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Arial, sans-serif;
+    color: #e2e8f0;
+}
+
+QFrame#PlayerCard {
+    background-color: #16213e;
+    border-radius: 8px;
+    border: 1px solid #2d3748;
+}
+
+QLabel {
+    background-color: transparent;
+    border: none;
+    color: #e2e8f0;
+}
+
+QLabel#TitleLabel {
+    font-size: 18px;
+    font-weight: bold;
+    color: #a78bfa;
+}
+
+QLabel#StateLabel {
+    font-size: 14px;
+    font-weight: bold;
+    padding: 4px;
+    border-radius: 4px;
+}
+
+QPushButton {
+    background-color: #4a5568;
+    color: white;
+    border: 1px solid #2d3748;
+    border-radius: 4px;
+    padding: 8px 12px;
+    font-weight: bold;
+    font-size: 14px;
+}
+
+QPushButton:hover {
+    background-color: #7c3aed;
+    border-color: #6d28d9;
+}
+
+QPushButton:pressed {
+    background-color: #5b21b6;
+}
+
+QPushButton#ActionBtn {
+    font-size: 16px;
+}
+
+QSpinBox {
+    background-color: #2d3748;
+    color: white;
+    border: 1px solid #4a5568;
+    border-radius: 4px;
+    padding: 4px;
+    min-width: 60px;
+}
+
+QSpinBox::up-button, QSpinBox::down-button {
+    background-color: #4a5568;
+    width: 16px;
+    border-radius: 2px;
+}
+
+QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+    background-color: #7c3aed;
+}
+
+QToolTip {
+    background-color: #2d3748;
+    color: white;
+    border: 1px solid #4a5568;
+    border-radius: 4px;
+    padding: 4px;
+}
