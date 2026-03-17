@@ -22,6 +22,7 @@ if _NATIVE_DIST.exists() and str(_NATIVE_DIST) not in sys.path:
 # an access violation (segfault) when the pybind11 extension tries to load.
 from .model import GameModel
 from .view_model import PuyotanViewModel
+from . import config
 
 from PyQt6.QtWidgets import QApplication
 
@@ -49,7 +50,7 @@ def main() -> None:
         app.setStyleSheet(qss)
 
     # ── Wire MVVM ──────────────────────────────────────────────────────
-    model   = GameModel(seed=42)
+    model   = GameModel(seed=config.RANDOM_SEED)
     vm      = PuyotanViewModel(model)
     ctrl    = GameplayController(vm)
     window  = MainWindow(vm, ctrl)

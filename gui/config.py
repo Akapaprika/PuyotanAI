@@ -4,6 +4,7 @@ WINDOW_HEIGHT = 700
 FPS = 60
 VIRTUAL_FPS = 1.0     # Virtual frames per second
 VIRTUAL_FRAME_INTERVAL_MS = 100
+RANDOM_SEED = 1
 
 # Grid / Board Dimensions
 CELL_SIZE = 26
