@@ -37,10 +37,6 @@ void Simulator::step(int x, Rotation rotation) {
     //   Down=2:  axis at (x, h+1),   sub at (x,   h)
     //   Left=3:  axis at (x, h_ax),  sub at (x-1, h_sub)
     // -----------------------------------------------------------------------
-    static constexpr int8_t kAxisDy[4] = { 0,  0,  1,  0 }; // Down: axis 1 above floor
-    static constexpr int8_t kSubDx[4]  = { 0,  1,  0, -1 }; // Right/Left: sub is in adjacent col
-    static constexpr int8_t kSubDy[4]  = { 1,  0, -1,  0 }; // Up/Down: sub relative to axis y
-
     const int r = std::to_underlying(rotation);
     const int h_axis = board_.getColumnHeight(x);
 
@@ -63,14 +59,12 @@ void Simulator::step(int x, Rotation rotation) {
 
     total_score_ += std::max(0, drop_dist) * config::Score::kSoftDropBonusPerGrid;
 
-    assert(static_cast<int>(piece.axis) >= 0);
-    assert(static_cast<int>(piece.sub) >= 0);
     uint8_t dirty_colors = (1 << std::to_underlying(piece.axis)) | (1 << std::to_underlying(piece.sub));
 
     int chain_count = 0;
     while (dirty_colors & 0x0F) { // only normal colors chain
         ErasureData data = Chain::execute(board_, dirty_colors & 0x0F);
-        if (!data.erased) break;
+        if (data.num_erased == 0) break;
 
         ++chain_count;
         total_score_ += Scorer::calculateStepScore(data, chain_count);

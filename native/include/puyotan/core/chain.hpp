@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cstdint>
-#include <vector>
 #include <puyotan/core/board.hpp>
 
 namespace puyotan {
@@ -13,18 +12,13 @@ namespace puyotan {
  *   Uses a fixed-size stack array for group_sizes to avoid heap allocation.
  */
 struct ErasureData {
-    bool erased = false;
+    // erased == (num_erased > 0)
     int num_erased = 0;
     int num_colors = 0;
     uint8_t num_groups = 0;
     // Max possible groups in a 6x13 field with min-4 connect = floor(78/4) = 19.
     // We use 24 for alignment / safety headroom.
     std::array<uint8_t, 24> group_sizes{};
-
-    // Python binding compatibility: expose as a vector on demand.
-    std::vector<int> group_sizes_vec() const {
-        return std::vector<int>(group_sizes.begin(), group_sizes.begin() + num_groups);
-    }
 };
 
 /**

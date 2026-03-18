@@ -52,8 +52,7 @@ ErasureData Chain::execute(Board& board, uint8_t color_mask) {
             has_2 &= ~group;
         }
 
-        if (!color_erased.empty()) {
-            data.erased = true;
+        if (color_erased.popcount() > 0) {
             ++data.num_colors;
             total_erased_mask |= color_erased;
             board.setBitboard(c, color_board & ~color_erased, false);
@@ -61,7 +60,7 @@ ErasureData Chain::execute(Board& board, uint8_t color_mask) {
     }
 
     // 2. Handle Ojama erasure if any puyos were cleared
-    if (data.erased) {
+    if (data.num_erased > 0) {
         const BitBoard ojama = board.getBitboard(Cell::Ojama);
         if (!ojama.empty()) {
             BitBoard adj = total_erased_mask;

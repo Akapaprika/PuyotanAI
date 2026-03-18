@@ -95,7 +95,7 @@ void PuyotanMatch::stepNextFrame() {
         auto& p = players_[id];
         auto& current = p.action_histories[frame_ & 255];
         if (current.has_value() && current->remaining_frame > 0) {
-            p.action_histories[(frame_ + 1) & 255] = {current->action, current->remaining_frame - 1};
+            p.action_histories[(frame_ + 1) & 255] = {current->action, static_cast<uint8_t>(current->remaining_frame - 1)};
         }
     }
 
@@ -115,10 +115,6 @@ void PuyotanMatch::stepNextFrame() {
                     assert(x >= 0 && x < config::Board::kWidth);
                     assert(r >= 0 && r < 4);
 
-                    // Branchless placement LUT (Up=0, Right=1, Down=2, Left=3)
-                    static constexpr int8_t kAxisDy[4] = { 0,  0,  1,  0 };
-                    static constexpr int8_t kSubDx[4]  = { 0,  1,  0, -1 };
-                    static constexpr int8_t kSubDy[4]  = { 1,  0, -1,  0 };
 
                     const int h_axis = p.field.getColumnHeight(x);
                     const int sub_dx = kSubDx[r];

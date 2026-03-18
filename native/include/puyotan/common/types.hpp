@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <array>
 
 namespace puyotan {
 
@@ -50,7 +51,7 @@ enum class ActionType : int {
  */
 struct Action {
     ActionType type = ActionType::PASS;
-    int x = 0;
+    int8_t x = 0;           // 0..5 (board width)
     Rotation rotation = Rotation::Up;
 };
 
@@ -59,7 +60,7 @@ struct Action {
  */
 struct ActionState {
     Action action;
-    int remaining_frame = 0;
+    uint8_t remaining_frame = 0; // always 0 or 1
 };
 
 /**
@@ -72,5 +73,14 @@ enum class MatchStatus : int {
     WIN_P2 = 3,
     DRAW = 4
 };
+
+// ---------------------------------------------------------------------------
+// Shared piece-placement LUT — indexed by Rotation (Up=0 Right=1 Down=2 Left=3).
+// Axis: placed at (x, col_height + kAxisDy[r]).
+// Sub:  placed at (x + kSubDx[r], ...).
+// ---------------------------------------------------------------------------
+inline constexpr std::array<int8_t, 4> kAxisDy = { 0,  0,  1,  0 };
+inline constexpr std::array<int8_t, 4> kSubDx  = { 0,  1,  0, -1 };
+inline constexpr std::array<int8_t, 4> kSubDy  = { 1,  0, -1,  0 };
 
 } // namespace puyotan
