@@ -12,7 +12,7 @@ file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
 
 pybind11_add_module(puyotan_native ${SOURCES})
 
-target_compile_features(puyotan_native PRIVATE cxx_std_20)
+target_compile_features(puyotan_native PRIVATE cxx_std_23)
 set_target_properties(puyotan_native PROPERTIES CXX_EXTENSIONS OFF)
 
 # Use unified include directory

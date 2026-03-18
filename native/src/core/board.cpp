@@ -1,4 +1,6 @@
 #include <puyotan/core/board.hpp>
+#include <cassert>
+#include <algorithm>
 
 namespace puyotan {
 
@@ -32,20 +34,15 @@ void Board::clear(int x, int y) {
 
 
 void Board::placePiece(int col, Cell color) {
-    if (col < 0 || col >= config::Board::kWidth) {
-        return;
-    }
+    assert(col >= 0 && col < config::Board::kWidth);
     set(col, config::Board::kSpawnRow, color);
 }
 
 int Board::getDropDistance(int x, int y) const {
-    if (x < 0 || x >= config::Board::kWidth || y <= 0) {
-        return 0;
-    }
+    assert(x >= 0 && x < config::Board::kWidth);
+    assert(y > 0);
     int start_y = std::min(y, (int)config::Board::kHeight);
-    int h = getColumnHeight(x);
-    if (h == 0) return start_y;
-    return start_y - h;
+    return start_y - getColumnHeight(x);
 }
 
 const BitBoard& Board::getBitboard(Cell color) const {

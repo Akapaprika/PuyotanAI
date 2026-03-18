@@ -2,6 +2,8 @@
 
 #include <array>
 #include <cstdint>
+#include <bit>
+#include <cassert>
 
 #include <puyotan/common/types.hpp>
 #include <puyotan/common/config.hpp>
@@ -52,21 +54,23 @@ struct alignas(16) BitBoard {
 
     // Branchless bit access: word = lo/hi, bit offset = (col%4)*16 + row
     [[nodiscard]] __forceinline bool get(int x, int y) const {
+        assert(x >= 0 && x < config::Board::kWidth);
+        assert(y >= 0 && y < config::Board::kHeight + 1);
         return ((&lo)[x >> 2] >> (((x & 3) << 4) | y)) & 1;
     }
     __forceinline void set(int x, int y) {
+        assert(x >= 0 && x < config::Board::kWidth);
+        assert(y >= 0 && y < config::Board::kHeight + 1);
         (&lo)[x >> 2] |= (1ULL << (((x & 3) << 4) | y));
     }
     __forceinline void clear(int x, int y) {
+        assert(x >= 0 && x < config::Board::kWidth);
+        assert(y >= 0 && y < config::Board::kHeight + 1);
         (&lo)[x >> 2] &= ~(1ULL << (((x & 3) << 4) | y));
     }
 
     [[nodiscard]] __forceinline int popcount() const {
-#ifdef _MSC_VER
-        return static_cast<int>(__popcnt64(lo) + __popcnt64(hi));
-#else
-        return __builtin_popcountll(lo) + __builtin_popcountll(hi);
-#endif
+        return static_cast<int>(std::popcount(lo) + std::popcount(hi));
     }
 
     /**
@@ -133,9 +137,10 @@ public:
      * Uses SIMD popcount under the guarantee that there are no floating puyos.
      */
     inline int getColumnHeight(int x) const {
+        assert(x >= 0 && x < config::Board::kWidth);
         uint64_t val = (x < config::Board::kColsInLo) ? occupancy_.lo : occupancy_.hi;
         int shift = (x & 3) << 4; // x % 4 * 16
-        return _mm_popcnt_u32(static_cast<uint32_t>(val >> shift) & static_cast<uint32_t>(config::Board::kColMask));
+        return std::popcount(static_cast<uint32_t>(val >> shift) & static_cast<uint32_t>(config::Board::kColMask));
     }
 
     /**
@@ -143,6 +148,8 @@ public:
      * Assumes gravity execution will be bypassed.
      */
     inline void dropNewPiece(int x, int y, Cell color) {
+        assert(x >= 0 && x < config::Board::kWidth);
+        assert(y >= 0 && y < config::Board::kHeight + 1);
         if (color != Cell::Empty) {
             boards_[toIndex(color)].set(x, y);
             occupancy_.set(x, y);

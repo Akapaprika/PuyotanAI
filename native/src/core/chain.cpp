@@ -3,8 +3,6 @@
 
 namespace puyotan {
 
-
-
 ErasureData Chain::execute(Board& board, uint8_t color_mask) {
     ErasureData data;
     BitBoard total_erased_mask;
@@ -18,14 +16,12 @@ ErasureData Chain::execute(Board& board, uint8_t color_mask) {
         if (color_board.empty()) continue;
 
         // --- Bitwise Connectivity Pruning ('has_2' filter) ---
-        // A puyo is part of a 4-group ONLY if it or a neighbor has at least 2 neighbors.
-        // Neighbors: U, D, L, R. We compute 'at least 2 of 4' using minimized bitwise ops.
         const BitBoard U = color_board.shiftUp();
         const BitBoard D = color_board.shiftDown();
         const BitBoard L = color_board.shiftLeft();
         const BitBoard R = color_board.shiftRight();
 
-        // Optimized 'at least 2 of 4': (U&D) | (L&R) | ((U|D) & (L|R))
+        // 'at least 2 of 4': (U&D) | (L&R) | ((U|D) & (L|R))
         const BitBoard ud_and = U & D;
         const BitBoard ud_or  = U | D;
         const BitBoard lr_and = L & R;
@@ -54,7 +50,7 @@ ErasureData Chain::execute(Board& board, uint8_t color_mask) {
                     color_erased |= group;
                 }
                 remaining &= ~group;
-                has_2 &= ~group; 
+                has_2 &= ~group;
             }
         }
 
@@ -76,17 +72,19 @@ ErasureData Chain::execute(Board& board, uint8_t color_mask) {
             adj |= total_erased_mask.shiftLeft();
             adj |= total_erased_mask.shiftRight();
 
-            const BitBoard ojama_to_erase = ojama & adj;
-            if (!ojama_to_erase.empty()) {
+            const uint64_t oj_erase_lo = ojama.lo & adj.lo;
+            const uint64_t oj_erase_hi = ojama.hi & adj.hi;
+            if (oj_erase_lo | oj_erase_hi) {
                 BitBoard new_ojama;
-                new_ojama.lo = ojama.lo & ~ojama_to_erase.lo;
-                new_ojama.hi = ojama.hi & ~ojama_to_erase.hi;
+                new_ojama.lo = ojama.lo & ~oj_erase_lo;
+                new_ojama.hi = ojama.hi & ~oj_erase_hi;
                 board.setBitboard(Cell::Ojama, new_ojama, false);
-                total_erased_mask |= ojama_to_erase; // Include Ojama in erased set!
+                total_erased_mask.lo |= oj_erase_lo;
+                total_erased_mask.hi |= oj_erase_hi;
             }
         }
 
-        // Fast O(1) incremental occupancy update!
+        // Fast O(1) incremental occupancy update
         BitBoard occ = board.getOccupied();
         occ.lo &= ~total_erased_mask.lo;
         occ.hi &= ~total_erased_mask.hi;
@@ -115,8 +113,6 @@ bool Chain::canFire(const Board& board) {
 
         if (has_2.empty()) continue;
 
-        // If has_2 is not empty, there might be a 4-group.
-        // We need to verify at least one group size >= 4.
         BitBoard remaining = color_board;
         while (!has_2.empty()) {
             BitBoard seed = has_2.extractLSB();

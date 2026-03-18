@@ -6,7 +6,7 @@
 #include <vector>
 #include <string>
 #include <optional>
-#include <map>
+#include <array>
 
 namespace puyotan {
 
@@ -15,7 +15,7 @@ namespace puyotan {
  */
 struct PuyotanPlayer {
     Board field;
-    std::map<int, ActionState> action_histories; // frame -> state
+    std::array<std::optional<ActionState>, 256> action_histories; // frame & 255 -> state
     int active_next_pos = 0;
     int score = 0;
     int used_score = 0;
@@ -46,6 +46,9 @@ public:
     MatchStatus getStatus() const { return status_; }
     std::string getStatusText() const;
 
+    // Helper to get random int for ojama fall positions
+    static int nextInt(uint32_t& seed, int max);
+
 private:
     uint32_t seed_;
     Tsumo tsumo_;
@@ -56,9 +59,6 @@ private:
     int calculateScore(int num, int colors, const std::vector<int>& group_sizes, int chain);
     void sendOjama(int sender_id, int ojama);
     void activateOjama(int sender_id);
-    
-    // Helper to get random int for ojama fall
-    int nextInt(uint32_t& seed, int max);
 };
 
 } // namespace puyotan
