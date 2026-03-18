@@ -33,8 +33,12 @@ struct alignas(16) BitBoard {
     // -----------------------------------------------------------------------
     // Operators — __forceinline prevents deoptimization on monomorphic hot paths.
     // -----------------------------------------------------------------------
-    [[nodiscard]] __forceinline bool     operator==(const BitBoard& o) const { return lo == o.lo && hi == o.hi; }
-    [[nodiscard]] __forceinline bool     operator!=(const BitBoard& o) const { return lo != o.lo || hi != o.hi; }
+    [[nodiscard]] __forceinline bool     operator==(const BitBoard& o) const { 
+        return _mm_testz_si128(_mm_xor_si128(m128, o.m128), _mm_xor_si128(m128, o.m128)) != 0; 
+    }
+    [[nodiscard]] __forceinline bool     operator!=(const BitBoard& o) const { 
+        return _mm_testz_si128(_mm_xor_si128(m128, o.m128), _mm_xor_si128(m128, o.m128)) == 0; 
+    }
     [[nodiscard]] __forceinline BitBoard operator& (const BitBoard& o) const { return _mm_and_si128(m128, o.m128); }
     [[nodiscard]] __forceinline BitBoard operator| (const BitBoard& o) const { return _mm_or_si128(m128, o.m128); }
     [[nodiscard]] __forceinline BitBoard operator^ (const BitBoard& o) const { return _mm_xor_si128(m128, o.m128); }
@@ -71,9 +75,9 @@ struct alignas(16) BitBoard {
      */
     [[nodiscard]] __forceinline BitBoard extractLSB() const {
         if (lo != 0) {
-            return { lo & static_cast<uint64_t>(-static_cast<int64_t>(lo)), 0ULL };
+            return { lo & (0ULL - lo), 0ULL };
         }
-        return { 0ULL, hi & static_cast<uint64_t>(-static_cast<int64_t>(hi)) };
+        return { 0ULL, hi & (0ULL - hi) };
     }
 
     // -----------------------------------------------------------------------
@@ -84,37 +88,27 @@ struct alignas(16) BitBoard {
     static BitBoard kFullMask() { return { config::Board::kLoMask, config::Board::kHiMask }; }
 
     // -----------------------------------------------------------------------
-    // Shift operations — kFullMask stored as static local for guaranteed
-    // register-caching by the compiler (no reconstruction per call).
+    // Shift operations — replaced static local masks with _mm_set_epi64x
+    // to bypass MSVC's hidden thread-safety initialization branches and locks.
     // -----------------------------------------------------------------------
     [[nodiscard]] __forceinline BitBoard shiftUp() const {
-        static const __m128i kMask = _mm_set_epi64x(
-            static_cast<int64_t>(config::Board::kHiMask),
-            static_cast<int64_t>(config::Board::kLoMask));
-        return _mm_and_si128(_mm_slli_epi64(m128, 1), kMask);
+        return _mm_and_si128(_mm_slli_epi64(m128, 1), 
+               _mm_set_epi64x(config::Board::kHiMask, config::Board::kLoMask));
     }
 
     [[nodiscard]] __forceinline BitBoard shiftDown() const {
-        static const __m128i kMask = _mm_set_epi64x(
-            static_cast<int64_t>(config::Board::kHiMask),
-            static_cast<int64_t>(config::Board::kLoMask));
-        return _mm_and_si128(_mm_srli_epi64(m128, 1), kMask);
+        return _mm_and_si128(_mm_srli_epi64(m128, 1), 
+               _mm_set_epi64x(config::Board::kHiMask, config::Board::kLoMask));
     }
 
     [[nodiscard]] __forceinline BitBoard shiftRight() const {
-        // Shift whole register left by 2 bytes (= one 16-bit column lane right in display).
-        static const __m128i kMask = _mm_set_epi64x(
-            static_cast<int64_t>(config::Board::kHiMask),
-            static_cast<int64_t>(config::Board::kLoMask));
-        return _mm_and_si128(_mm_slli_si128(m128, 2), kMask);
+        return _mm_and_si128(_mm_slli_si128(m128, 2), 
+               _mm_set_epi64x(config::Board::kHiMask, config::Board::kLoMask));
     }
 
     [[nodiscard]] __forceinline BitBoard shiftLeft() const {
-        // Shift whole register right by 2 bytes.
-        static const __m128i kMask = _mm_set_epi64x(
-            static_cast<int64_t>(config::Board::kHiMask),
-            static_cast<int64_t>(config::Board::kLoMask));
-        return _mm_and_si128(_mm_srli_si128(m128, 2), kMask);
+        return _mm_and_si128(_mm_srli_si128(m128, 2), 
+               _mm_set_epi64x(config::Board::kHiMask, config::Board::kLoMask));
     }
 };
 
@@ -132,11 +126,28 @@ public:
 
     void placePiece(int col, Cell color);
 
-    /**
-     * Calculates the number of rows a puyo at (x, y) would fall.
-     * Matches Puyotan β's independent distance calculation.
-     */
     int getDropDistance(int x, int y) const;
+
+    /**
+     * O(1) branchless column height query.
+     * Uses SIMD popcount under the guarantee that there are no floating puyos.
+     */
+    inline int getColumnHeight(int x) const {
+        uint64_t val = (x < config::Board::kColsInLo) ? occupancy_.lo : occupancy_.hi;
+        int shift = (x & 3) << 4; // x % 4 * 16
+        return _mm_popcnt_u32(static_cast<uint32_t>(val >> shift) & static_cast<uint32_t>(config::Board::kColMask));
+    }
+
+    /**
+     * O(1) branchless drop of a single puyo directly to its final destination.
+     * Assumes gravity execution will be bypassed.
+     */
+    inline void dropNewPiece(int x, int y, Cell color) {
+        if (color != Cell::Empty) {
+            boards_[toIndex(color)].set(x, y);
+            occupancy_.set(x, y);
+        }
+    }
     const BitBoard& getBitboard(Cell color) const;
     void setBitboard(Cell color, const BitBoard& bb, bool update_occupancy = true);
 

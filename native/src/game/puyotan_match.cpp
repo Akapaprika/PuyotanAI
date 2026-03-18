@@ -121,46 +121,41 @@ void PuyotanMatch::stepNextFrame() {
                     PuyoPiece tumo = tsumo_.get(p.active_next_pos);
                     int x = action.x;
                     Rotation rotation = action.rotation;
-                    
+
+                    int h_axis = p.field.getColumnHeight(x);
+                    int final_y_axis, final_y_sub;
                     int sub_x = x;
-                    int sub_y = config::Board::kSpawnRow;
-                    switch (rotation) {
-                        case Rotation::Up:    sub_y += 1; break;
-                        case Rotation::Right: sub_x += 1; break;
-                        case Rotation::Down:  sub_y -= 1; break;
-                        case Rotation::Left:  sub_x -= 1; break;
+                    int drop_dist;
+
+                    if (rotation == Rotation::Up) {
+                        final_y_axis = h_axis;
+                        final_y_sub = h_axis + 1;
+                        drop_dist = config::Board::kSpawnRow - final_y_axis;
+                    } else if (rotation == Rotation::Down) {
+                        final_y_sub = h_axis;
+                        final_y_axis = h_axis + 1;
+                        drop_dist = config::Board::kSpawnRow - final_y_axis;
+                    } else {
+                        sub_x = (rotation == Rotation::Right) ? (x + 1) : (x - 1);
+                        if (sub_x >= 0 && sub_x < config::Board::kWidth) {
+                            int h_sub = p.field.getColumnHeight(sub_x);
+                            final_y_axis = h_axis;
+                            final_y_sub = h_sub;
+                            drop_dist = std::min(config::Board::kSpawnRow - final_y_axis, 
+                                                 config::Board::kSpawnRow - final_y_sub);
+                        } else {
+                            final_y_axis = h_axis;
+                            final_y_sub = -1;
+                            drop_dist = config::Board::kSpawnRow - final_y_axis;
+                        }
                     }
 
-                    // 1. Calculate Soft Drop Bonus (before placement)
-                    int d1 = p.field.getDropDistance(x, config::Board::kSpawnRow);
-                    int drop_dist = d1;
-                    if (sub_x >= 0 && sub_x < config::Board::kWidth) {
-                        int d2 = p.field.getDropDistance(sub_x, sub_y);
-                        drop_dist = std::min(d1, d2);
+                    p.field.dropNewPiece(x, final_y_axis, tumo.axis);
+                    if (final_y_sub >= 0) {
+                        p.field.dropNewPiece(sub_x, final_y_sub, tumo.sub);
                     }
+
                     p.score += std::max(0, drop_dist) * config::Score::kSoftDropBonusPerGrid;
-
-                    // 2. Placement
-                    switch (rotation) {
-                        case Rotation::Up:    
-                            p.field.set(x, config::Board::kSpawnRow, tumo.axis);
-                            p.field.set(x, config::Board::kSpawnRow + 1, tumo.sub);
-                            break;
-                        case Rotation::Right: 
-                            p.field.set(x, config::Board::kSpawnRow, tumo.axis);
-                            if (x + 1 < config::Board::kWidth) p.field.set(x + 1, config::Board::kSpawnRow, tumo.sub);
-                            break;
-                        case Rotation::Down:  
-                            p.field.set(x, config::Board::kSpawnRow, tumo.sub);
-                            p.field.set(x, config::Board::kSpawnRow + 1, tumo.axis);
-                            break;
-                        case Rotation::Left:  
-                            p.field.set(x, config::Board::kSpawnRow, tumo.axis);
-                            if (x - 1 >= 0) p.field.set(x - 1, config::Board::kSpawnRow, tumo.sub);
-                            break;
-                    }
-
-                    Gravity::execute(p.field);
 
                     if (Chain::canFire(p.field)) {
                         p.chain_count = 0;

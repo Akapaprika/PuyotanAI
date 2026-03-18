@@ -25,46 +25,66 @@ void Simulator::step(int x, Rotation rotation) {
     if (is_game_over_) return;
 
     PuyoPiece piece = getCurrentPiece();
-    ++tsumo_index_;
+    if (++tsumo_index_ >= config::Rule::kTsumoPoolSize) {
+        tsumo_index_ = 0;
+    }
 
-    // 1. Initial Gravity (Soft Drop) Calculation
-    // We calculate distances BEFORE placement to avoid puyos blocking each other.
-    // The bonus follows the puyo that falls the LESSER distance (Puyotan Beta rule).
+    int h_axis = board_.getColumnHeight(x);
+    int final_y_axis, final_y_sub;
     int sub_x = x;
-    int sub_y = config::Board::kSpawnRow;
-    switch (rotation) {
-        case Rotation::Up:    sub_y += 1; break;
-        case Rotation::Right: sub_x += 1; break;
-        case Rotation::Down:  sub_y -= 1; break;
-        case Rotation::Left:  sub_x -= 1; break;
+    int drop_dist;
+
+    if (rotation == Rotation::Up) {
+        final_y_axis = h_axis;
+        final_y_sub = h_axis + 1;
+        drop_dist = config::Board::kSpawnRow - final_y_axis;
+    } else if (rotation == Rotation::Down) {
+        final_y_sub = h_axis;
+        final_y_axis = h_axis + 1;
+        drop_dist = config::Board::kSpawnRow - final_y_axis;
+    } else {
+        sub_x = (rotation == Rotation::Right) ? (x + 1) : (x - 1);
+        if (sub_x >= 0 && sub_x < config::Board::kWidth) {
+            int h_sub = board_.getColumnHeight(sub_x);
+            final_y_axis = h_axis;
+            final_y_sub = h_sub;
+            drop_dist = std::min(config::Board::kSpawnRow - final_y_axis, 
+                                 config::Board::kSpawnRow - final_y_sub);
+        } else {
+            final_y_axis = h_axis;
+            final_y_sub = -1;
+            drop_dist = config::Board::kSpawnRow - final_y_axis;
+        }
     }
 
-    int d1 = board_.getDropDistance(x, config::Board::kSpawnRow);
-    int drop_dist = d1;
-    if (sub_x >= 0 && sub_x < config::Board::kWidth) {
-        int d2 = board_.getDropDistance(sub_x, sub_y);
-        drop_dist = std::min(d1, d2);
+    board_.dropNewPiece(x, final_y_axis, piece.axis);
+    if (final_y_sub >= 0) {
+        board_.dropNewPiece(sub_x, final_y_sub, piece.sub);
     }
 
-    // 2. Placement
-    board_.placePiece(x, piece.axis);
-    if (sub_x >= 0 && sub_x < config::Board::kWidth) {
-        board_.set(sub_x, sub_y, piece.sub);
-    }
-
-    // 3. Execution & Scoring
-    Gravity::execute(board_);
     total_score_ += std::max(0, drop_dist) * config::Score::kSoftDropBonusPerGrid;
 
-    // 3. Chain Loop
+    uint8_t dirty_colors = 0;
+    if (piece.axis != Cell::Empty && piece.axis != Cell::Ojama) {
+        dirty_colors |= (1 << static_cast<int>(piece.axis));
+    }
+    if (piece.sub != Cell::Empty && piece.sub != Cell::Ojama) {
+        dirty_colors |= (1 << static_cast<int>(piece.sub));
+    }
+
     int chain_count = 0;
-    while (true) {
-        ErasureData data = Chain::execute(board_);
+    while (dirty_colors & 0x0F) { // only normal colors chain
+        ErasureData data = Chain::execute(board_, dirty_colors & 0x0F);
         if (!data.erased) break;
 
         ++chain_count;
         total_score_ += Scorer::calculateStepScore(data, chain_count);
-        Gravity::execute(board_);
+        
+        if (Gravity::canFall(board_)) {
+            dirty_colors = Gravity::execute(board_);
+        } else {
+            dirty_colors = 0;
+        }
     }
 
     updateGameOver();

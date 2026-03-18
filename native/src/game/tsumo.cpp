@@ -4,24 +4,18 @@
 
 namespace puyotan {
 
-Tsumo::Tsumo(uint32_t seed) : seed_(seed) {
-    fillPool();
+Tsumo::Tsumo(uint32_t seed) {
+    setSeed(seed);
 }
 
 void Tsumo::setSeed(uint32_t seed) {
+    if (has_filled_ && initial_seed_ == seed) {
+        return; // Skip 1000 loop regenerations if identically seeded
+    }
+    initial_seed_ = seed;
     seed_ = seed;
+    has_filled_ = true;
     fillPool();
-}
-
-PuyoPiece Tsumo::get(int index) const {
-    if (pool_.empty()) {
-        return PuyoPiece{Cell::Empty, Cell::Empty};
-    }
-    int idx = index % config::Rule::kTsumoPoolSize;
-    if (idx < 0) {
-        idx += config::Rule::kTsumoPoolSize;
-    }
-    return pool_[idx];
 }
 
 int Tsumo::nextInt(int max) {
@@ -31,8 +25,11 @@ int Tsumo::nextInt(int max) {
     signed_y ^= (signed_y << 15);
     seed_ = static_cast<uint32_t>(signed_y);
     
-    int r = std::abs(signed_y);
-    return r % max;
+    uint32_t r = static_cast<uint32_t>(std::abs(signed_y));
+    if (max == config::Rule::kColors) {
+        return static_cast<int>(r & (config::Rule::kColors - 1));
+    }
+    return static_cast<int>(r % max);
 }
 
 Cell Tsumo::nextKind() {
@@ -46,12 +43,8 @@ Cell Tsumo::nextKind() {
 }
 
 void Tsumo::fillPool() {
-    pool_.clear();
-    pool_.reserve(config::Rule::kTsumoPoolSize);
     for (int i = 0; i < config::Rule::kTsumoPoolSize; ++i) {
-        Cell axis = nextKind();
-        Cell sub = nextKind();
-        pool_.emplace_back(axis, sub);
+        pool_[i] = {nextKind(), nextKind()};
     }
 }
 

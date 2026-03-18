@@ -78,15 +78,18 @@ ErasureData Chain::execute(Board& board, uint8_t color_mask) {
 
             const BitBoard ojama_to_erase = ojama & adj;
             if (!ojama_to_erase.empty()) {
-                board.setBitboard(Cell::Ojama, ojama & ~ojama_to_erase, false);
+                BitBoard new_ojama;
+                new_ojama.lo = ojama.lo & ~ojama_to_erase.lo;
+                new_ojama.hi = ojama.hi & ~ojama_to_erase.hi;
+                board.setBitboard(Cell::Ojama, new_ojama, false);
+                total_erased_mask |= ojama_to_erase; // Include Ojama in erased set!
             }
         }
 
-        // Recompute occupancy ONCE after all boards have been updated
-        BitBoard occ = board.getBitboard(Cell::Red);
-        for (int i = 1; i < config::Board::kNumColors; ++i) {
-            occ |= board.getBitboard(static_cast<Cell>(i));
-        }
+        // Fast O(1) incremental occupancy update!
+        BitBoard occ = board.getOccupied();
+        occ.lo &= ~total_erased_mask.lo;
+        occ.hi &= ~total_erased_mask.hi;
         board.updateOccupancy(occ);
     }
 
