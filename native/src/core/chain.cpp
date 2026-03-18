@@ -33,25 +33,23 @@ ErasureData Chain::execute(Board& board, uint8_t color_mask) {
 
         while (!has_2.empty()) {
             BitBoard seed = has_2.extractLSB();
-            if (!(remaining & seed).empty()) {
-                BitBoard group = seed;
-                BitBoard prev;
-                do {
-                    prev = group;
-                    const BitBoard expand = (group.shiftUp() | group.shiftDown()) |
-                                            (group.shiftLeft() | group.shiftRight());
-                    group = (group | expand) & color_board;
-                } while (group != prev);
+            BitBoard group = seed;
+            BitBoard prev;
+            do {
+                prev = group;
+                const BitBoard expand = (group.shiftUp() | group.shiftDown()) |
+                                        (group.shiftLeft() | group.shiftRight());
+                group = (group | expand) & color_board;
+            } while (group != prev);
 
-                const int sz = group.popcount();
-                if (sz >= config::Rule::kConnectCount) {
-                    data.group_sizes[data.num_groups++] = static_cast<uint8_t>(sz);
-                    data.num_erased += sz;
-                    color_erased |= group;
-                }
-                remaining &= ~group;
-                has_2 &= ~group;
+            const int sz = group.popcount();
+            if (sz >= config::Rule::kConnectCount) {
+                data.group_sizes[data.num_groups++] = static_cast<uint8_t>(sz);
+                data.num_erased += sz;
+                color_erased |= group;
             }
+            remaining &= ~group;
+            has_2 &= ~group;
         }
 
         if (!color_erased.empty()) {
@@ -116,22 +114,20 @@ bool Chain::canFire(const Board& board) {
         BitBoard remaining = color_board;
         while (!has_2.empty()) {
             BitBoard seed = has_2.extractLSB();
-            if (!(remaining & seed).empty()) {
-                BitBoard group = seed;
-                BitBoard prev;
-                do {
-                    prev = group;
-                    const BitBoard expand = (group.shiftUp() | group.shiftDown()) |
-                                            (group.shiftLeft() | group.shiftRight());
-                    group = (group | expand) & color_board;
-                } while (group != prev);
+            BitBoard group = seed;
+            BitBoard prev;
+            do {
+                prev = group;
+                const BitBoard expand = (group.shiftUp() | group.shiftDown()) |
+                                        (group.shiftLeft() | group.shiftRight());
+                group = (group | expand) & color_board;
+            } while (group != prev);
 
-                if (group.popcount() >= config::Rule::kConnectCount) {
-                    return true;
-                }
-                remaining &= ~group;
-                has_2 &= ~group;
+            if (group.popcount() >= config::Rule::kConnectCount) {
+                return true;
             }
+            remaining &= ~group;
+            has_2 &= ~group;
         }
     }
     return false;

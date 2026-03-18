@@ -150,10 +150,9 @@ public:
     inline void dropNewPiece(int x, int y, Cell color) {
         assert(x >= 0 && x < config::Board::kWidth);
         assert(y >= 0 && y < config::Board::kHeight + 1);
-        if (color != Cell::Empty) {
-            boards_[toIndex(color)].set(x, y);
-            occupancy_.set(x, y);
-        }
+        assert(toIndex(color) >= 0 && toIndex(color) < config::Board::kNumColors);
+        boards_[toIndex(color)].set(x, y);
+        occupancy_.set(x, y);
     }
     const BitBoard& getBitboard(Cell color) const;
     void setBitboard(Cell color, const BitBoard& bb, bool update_occupancy = true);

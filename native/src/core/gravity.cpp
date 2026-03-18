@@ -1,4 +1,5 @@
 #include <puyotan/core/gravity.hpp>
+#include <algorithm>
 
 namespace puyotan {
 
@@ -22,9 +23,7 @@ static __forceinline uint8_t compactCols(
         if (occ_lane == 0) continue;
 
         const int cnt = _mm_popcnt_u32(occ_lane);
-        const uint32_t filled   = (static_cast<uint32_t>(cnt) > static_cast<uint32_t>(config::Board::kHeight))
-                                  ? static_cast<uint32_t>(config::Board::kHeight)
-                                  : static_cast<uint32_t>(cnt);
+        const uint32_t filled   = static_cast<uint32_t>(std::min(cnt, static_cast<int>(config::Board::kHeight)));
         const uint32_t new_occ  = (1u << filled) - 1u;
 
         if (occ_lane == new_occ) continue; // already compact

@@ -44,39 +44,28 @@ void Simulator::step(int x, Rotation rotation) {
     const int r = std::to_underlying(rotation);
     const int h_axis = board_.getColumnHeight(x);
 
-    const int sub_dx   = kSubDx[r];
-    const int sub_x    = x + sub_dx;
-    // For horizontal, sub needs its own column height; clamp to avoid OOB on height query
-    const int sub_x_safe = sub_dx ? std::clamp(sub_x, 0, config::Board::kWidth - 1) : x;
-    const int h_sub    = board_.getColumnHeight(sub_x_safe);  // free query, branchless
+    const int sub_dx = kSubDx[r];
+    const int sub_x  = x + sub_dx;
+    assert(sub_x >= 0 && sub_x < config::Board::kWidth);
+
+    const int h_sub = board_.getColumnHeight(sub_x);
 
     const int final_y_axis = h_axis + kAxisDy[r];
-    // Vertical: sub y = final_y_axis + kSubDy[r]. Horizontal: sub y = h_sub (if in bounds).
-    const bool is_horiz     = (sub_dx != 0);
-    const bool sub_in_range = (sub_x >= 0) & (sub_x < config::Board::kWidth);
-    const int  final_y_sub  = is_horiz
-        ? (sub_in_range ? h_sub : -1)
-        : (final_y_axis + kSubDy[r]);
+    const bool is_horiz    = (sub_dx != 0);
+    const int  final_y_sub = is_horiz ? h_sub : (final_y_axis + kSubDy[r]);
 
-    // drop_dist: min fall among both pieces.
-    const int drop_dist = is_horiz && sub_in_range
+    const int drop_dist = is_horiz 
         ? (config::Board::kSpawnRow - std::max(h_axis, h_sub))
         : (config::Board::kSpawnRow - final_y_axis);
 
     board_.dropNewPiece(x, final_y_axis, piece.axis);
-    if (final_y_sub >= 0) {
-        board_.dropNewPiece(sub_x, final_y_sub, piece.sub);
-    }
+    board_.dropNewPiece(sub_x, final_y_sub, piece.sub);
 
     total_score_ += std::max(0, drop_dist) * config::Score::kSoftDropBonusPerGrid;
 
-    uint8_t dirty_colors = 0;
-    if (piece.axis != Cell::Empty && piece.axis != Cell::Ojama) {
-        dirty_colors |= (1 << std::to_underlying(piece.axis));
-    }
-    if (piece.sub != Cell::Empty && piece.sub != Cell::Ojama) {
-        dirty_colors |= (1 << std::to_underlying(piece.sub));
-    }
+    assert(static_cast<int>(piece.axis) >= 0);
+    assert(static_cast<int>(piece.sub) >= 0);
+    uint8_t dirty_colors = (1 << std::to_underlying(piece.axis)) | (1 << std::to_underlying(piece.sub));
 
     int chain_count = 0;
     while (dirty_colors & 0x0F) { // only normal colors chain

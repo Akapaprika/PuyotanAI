@@ -120,25 +120,23 @@ void PuyotanMatch::stepNextFrame() {
                     static constexpr int8_t kSubDx[4]  = { 0,  1,  0, -1 };
                     static constexpr int8_t kSubDy[4]  = { 1,  0, -1,  0 };
 
-                    const int h_axis     = p.field.getColumnHeight(x);
-                    const int sub_dx     = kSubDx[r];
-                    const int sub_x      = x + sub_dx;
-                    const int h_sub      = (sub_x >= 0 && sub_x < config::Board::kWidth) ? p.field.getColumnHeight(sub_x) : 0;
+                    const int h_axis = p.field.getColumnHeight(x);
+                    const int sub_dx = kSubDx[r];
+                    const int sub_x  = x + sub_dx;
+                    assert(sub_x >= 0 && sub_x < config::Board::kWidth);
 
-                    const int  final_y_axis  = h_axis + kAxisDy[r];
-                    const bool is_horiz      = (sub_dx != 0);
-                    const bool sub_in_range  = (sub_x >= 0) & (sub_x < config::Board::kWidth);
-                    const int  final_y_sub   = is_horiz
-                        ? (sub_in_range ? h_sub : -1)
-                        : (final_y_axis + kSubDy[r]);
-                    const int  drop_dist     = is_horiz && sub_in_range
+                    const int h_sub = p.field.getColumnHeight(sub_x);
+
+                    const int final_y_axis = h_axis + kAxisDy[r];
+                    const bool is_horiz    = (sub_dx != 0);
+                    const int  final_y_sub = is_horiz ? h_sub : (final_y_axis + kSubDy[r]);
+
+                    const int drop_dist = is_horiz 
                         ? (config::Board::kSpawnRow - std::max(h_axis, h_sub))
                         : (config::Board::kSpawnRow - final_y_axis);
 
                     p.field.dropNewPiece(x, final_y_axis, tumo.axis);
-                    if (final_y_sub >= 0) {
-                        p.field.dropNewPiece(sub_x, final_y_sub, tumo.sub);
-                    }
+                    p.field.dropNewPiece(sub_x, final_y_sub, tumo.sub);
 
                     p.score += std::max(0, drop_dist) * config::Score::kSoftDropBonusPerGrid;
 
@@ -212,7 +210,7 @@ void PuyotanMatch::stepNextFrame() {
         if (!p.action_histories[(frame_ + 1) & 255].has_value() && p.field.get(2, 11) != Cell::Empty) {
             // Death
         } else {
-            alive_count++;
+            ++alive_count;
             alive_player_id = id;
         }
     }
@@ -226,26 +224,24 @@ void PuyotanMatch::stepNextFrame() {
     // 5. おじゃま処理
     for (int id = 0; id < 2; ++id) {
         auto& p = players_[id];
-        bool is_currently_ojama = false;
-        auto& current = p.action_histories[frame_ & 255];
-        if (current.has_value()) {
-            is_currently_ojama = (current->action.type == ActionType::OJAMA);
-        }
-        if (!is_currently_ojama && !p.action_histories[(frame_ + 1) & 255].has_value() && p.active_ojama > 0) {
-            p.action_histories[(frame_ + 1) & 255] = {Action{ActionType::OJAMA}, 0};
+        auto& next = p.action_histories[(frame_ + 1) & 255];
+        if (!next.has_value() && p.active_ojama > 0) {
+            auto& current = p.action_histories[frame_ & 255];
+            if (!current.has_value() || current->action.type != ActionType::OJAMA) {
+                next = {Action{ActionType::OJAMA}, 0};
+            }
         }
     }
 
     // 0. フレーム遷移
     for (int id = 0; id < 2; ++id) {
         auto& p = players_[id];
-        bool current_is_pass = false;
-        auto& current = p.action_histories[frame_ & 255];
-        if (current.has_value()) {
-            current_is_pass = (current->action.type == ActionType::PASS);
-        }
-        if (!current_is_pass && !p.action_histories[(frame_ + 1) & 255].has_value()) {
-            ++(p.active_next_pos);
+        auto& next = p.action_histories[(frame_ + 1) & 255];
+        if (!next.has_value()) {
+            auto& current = p.action_histories[frame_ & 255];
+            if (!current.has_value() || current->action.type != ActionType::PASS) {
+                ++(p.active_next_pos);
+            }
         }
     }
 
