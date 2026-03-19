@@ -62,7 +62,7 @@ private:
 
     // calculateScore: removed (was declared but never implemented)
     void sendOjama(int sender_id, int ojama);
-    void activateOjama(int sender_id);
+    void activateOjama(int finishing_player_id);
 };
 
 } // namespace puyotan

@@ -89,7 +89,7 @@ bool PuyotanMatch::canStepNextFrame() const {
 void PuyotanMatch::stepNextFrame() {
     if (!canStepNextFrame()) return;
 
-    // 2. 行動選択・予約
+    // 1. 行動選択・予約
     for (int id = 0; id < 2; ++id) {
         auto& p = players_[id];
         auto& current = p.action_histories[frame_ & 255];
@@ -98,7 +98,7 @@ void PuyotanMatch::stepNextFrame() {
         }
     }
 
-    // 3. 行動実行
+    // 2. 行動実行
     for (int id = 0; id < 2; ++id) {
         auto& p = players_[id];
         auto& current = p.action_histories[frame_ & 255];
@@ -175,8 +175,7 @@ void PuyotanMatch::stepNextFrame() {
                 case ActionType::CHAIN_FALL: {
                     uint8_t dirty_colors = Gravity::execute(p.field);
                     if (Chain::canFire(p.field, dirty_colors)) {
-                        p.chain_count = 0; // wait, puyotan_match handles chain_count in CHAIN action. 
-                        // Actually, puyotan_match didn't reset it here before. Let's keep original logic.
+                        // 継続連鎖なので chain_count はリセットしない (そのままインクリメントさせる)
                         p.action_histories[(frame_ + 1) & 255] = {Action{ActionType::CHAIN}, 1};
                     } else {
                         activateOjama(id);
@@ -195,7 +194,7 @@ void PuyotanMatch::stepNextFrame() {
         }
     }
 
-    // 4. 窒息判定 (Branchless Status Map)
+    // 3. 窒息判定 (Branchless Status Map)
     uint32_t alive_mask = 0;
     for (int id = 0; id < 2; ++id) {
         auto& p = players_[id];
@@ -214,7 +213,7 @@ void PuyotanMatch::stepNextFrame() {
         status_ = kNextStatus[alive_mask];
     }
 
-    // 5. おじゃま処理
+    // 4. おじゃま処理
     for (int id = 0; id < 2; ++id) {
         auto& p = players_[id];
         auto& next = p.action_histories[(frame_ + 1) & 255];
@@ -226,7 +225,7 @@ void PuyotanMatch::stepNextFrame() {
         }
     }
 
-    // 0. フレーム遷移
+    // 5. ツモ・フレーム遷移
     for (int id = 0; id < 2; ++id) {
         auto& p = players_[id];
         auto& next = p.action_histories[(frame_ + 1) & 255];
@@ -251,8 +250,8 @@ void PuyotanMatch::sendOjama(int sender_id, int ojama) {
     players_[target_id].non_active_ojama += ojama;
 }
 
-void PuyotanMatch::activateOjama(int sender_id) {
-    int target_id = 1 - sender_id;
+void PuyotanMatch::activateOjama(int finishing_player_id) {
+    int target_id = 1 - finishing_player_id;
     auto& p = players_[target_id];
     p.active_ojama += p.non_active_ojama;
     p.non_active_ojama = 0;
