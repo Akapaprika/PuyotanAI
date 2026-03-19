@@ -23,7 +23,7 @@ struct PuyotanPlayer {
     int active_ojama = 0;
     uint8_t chain_count = 0; // max 19 chains possible
 
-    void fallOjama(int num, uint32_t& seed);
+    void fallOjama(int num, int32_t& seed);
 };
 
 /**
@@ -31,7 +31,7 @@ struct PuyotanPlayer {
  */
 class PuyotanMatch {
 public:
-    explicit PuyotanMatch(uint32_t seed = 0);
+    explicit PuyotanMatch(int32_t seed = 0);
 
     void start();
     bool setAction(int player_id, Action action);
@@ -47,10 +47,10 @@ public:
     std::string getStatusText() const;
 
     // Helper to get random int for ojama fall positions
-    static int nextInt(uint32_t& seed, int max);
+    static int nextInt(int32_t& seed, int max);
 
 private:
-    uint32_t seed_;
+    int32_t seed_;
     Tsumo tsumo_;
     PuyotanPlayer players_[2];
     int frame_ = 0;

@@ -13,21 +13,21 @@ namespace puyotan {
  */
 class Tsumo {
 public:
-    explicit Tsumo(uint32_t seed = 0);
+    explicit Tsumo(int32_t seed = 0);
 
     inline PuyoPiece get(int index) const {
         return pool_[index];
     }
-    void setSeed(uint32_t seed);
-    uint32_t getSeed() const { return seed_; }
+    void setSeed(int32_t seed);
+    int32_t getSeed() const { return seed_; }
 
 private:
-    uint32_t seed_;
-    uint32_t initial_seed_ = 0;
+    int32_t seed_;
+    int32_t initial_seed_ = 0;
     bool has_filled_ = false;
     std::array<PuyoPiece, config::Rule::kTsumoPoolSize> pool_;
 
-    int nextInt(int max);
+    int nextInt();
     Cell nextKind();
     void fillPool();
 };

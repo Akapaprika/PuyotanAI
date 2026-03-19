@@ -7,7 +7,7 @@
 
 namespace puyotan {
 
-void PuyotanPlayer::fallOjama(int num, uint32_t& seed) {
+void PuyotanPlayer::fallOjama(int num, int32_t& seed) {
     constexpr int width = config::Board::kWidth;
     while (num > 0) {
         if (num >= width) {
@@ -41,7 +41,7 @@ void PuyotanPlayer::fallOjama(int num, uint32_t& seed) {
     }
 }
 
-PuyotanMatch::PuyotanMatch(uint32_t seed) : seed_(seed), tsumo_(seed) {}
+PuyotanMatch::PuyotanMatch(int32_t seed) : seed_(seed), tsumo_(seed) {}
 
 void PuyotanMatch::start() {
     if (frame_ == 0) {
@@ -261,14 +261,13 @@ void PuyotanMatch::activateOjama(int sender_id) {
     p.non_active_ojama = 0;
 }
 
-int PuyotanMatch::nextInt(uint32_t& seed, int max) {
-    int32_t signed_y = static_cast<int32_t>(seed);
-    signed_y ^= (signed_y << 13);
-    signed_y ^= (signed_y >> 17);
-    signed_y ^= (signed_y << 15);
-    seed = static_cast<uint32_t>(signed_y);
-    int r = std::abs(signed_y);
-    return r % max;
+int PuyotanMatch::nextInt(int32_t& seed, int max) {
+    seed ^= (seed << 13);
+    seed ^= (seed >> 17);
+    seed ^= (seed << 15);
+    // JS does `this.y >>> 0`, which casts the bit pattern to uint32_t.
+    uint32_t r = static_cast<uint32_t>(seed);
+    return static_cast<int>(r % static_cast<uint32_t>(max));
 }
 
 } // namespace puyotan

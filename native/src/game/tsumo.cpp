@@ -4,11 +4,11 @@
 
 namespace puyotan {
 
-Tsumo::Tsumo(uint32_t seed) {
+Tsumo::Tsumo(int32_t seed) {
     setSeed(seed);
 }
 
-void Tsumo::setSeed(uint32_t seed) {
+void Tsumo::setSeed(int32_t seed) {
     if (has_filled_ && initial_seed_ == seed) {
         return; // Skip 1000 loop regenerations if identically seeded
     }
@@ -18,22 +18,18 @@ void Tsumo::setSeed(uint32_t seed) {
     fillPool();
 }
 
-int Tsumo::nextInt(int max) {
-    int32_t signed_y = static_cast<int32_t>(seed_);
-    signed_y ^= (signed_y << 13);
-    signed_y ^= (signed_y >> 17);
-    signed_y ^= (signed_y << 15);
-    seed_ = static_cast<uint32_t>(signed_y);
-    
-    uint32_t r = static_cast<uint32_t>(std::abs(signed_y));
-    if (max == config::Rule::kColors) {
-        return static_cast<int>(r & (config::Rule::kColors - 1));
-    }
-    return static_cast<int>(r % max);
+int Tsumo::nextInt() {
+    seed_ ^= (seed_ << 13);
+    seed_ ^= (seed_ >> 17);
+    seed_ ^= (seed_ << 15);
+    // JS does `this.y >>> 0`, which casts the bit pattern to uint32_t.
+    // The JS `Math.abs()` is a no-op because `>>> 0` makes it positive.
+    uint32_t r = static_cast<uint32_t>(seed_);
+    return static_cast<int>(r & (config::Rule::kColors - 1));
 }
 
 Cell Tsumo::nextKind() {
-    switch (nextInt(config::Rule::kColors)) {
+    switch (nextInt()) {
         case 0:  return Cell::Red;
         case 1:  return Cell::Green;
         case 2:  return Cell::Blue;
