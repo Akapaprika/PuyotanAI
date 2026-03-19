@@ -28,7 +28,6 @@ ErasureData Chain::execute(Board& board, uint8_t color_mask) {
         const BitBoard lr_or  = L | R;
         BitBoard has_2 = color_board & (ud_and | lr_and | (ud_or & lr_or));
 
-        BitBoard remaining = color_board;
         BitBoard color_erased;
 
         while (!has_2.empty()) {
@@ -48,7 +47,6 @@ ErasureData Chain::execute(Board& board, uint8_t color_mask) {
                 data.num_erased += sz;
                 color_erased |= group;
             }
-            remaining &= ~group;
             has_2 &= ~group;
         }
 
@@ -108,9 +106,6 @@ bool Chain::canFire(const Board& board) {
         const BitBoard lr_or  = L | R;
         BitBoard has_2 = color_board & (ud_and | lr_and | (ud_or & lr_or));
 
-        if (has_2.empty()) continue;
-
-        BitBoard remaining = color_board;
         while (!has_2.empty()) {
             BitBoard seed = has_2.extractLSB();
             BitBoard group = seed;
@@ -125,7 +120,6 @@ bool Chain::canFire(const Board& board) {
             if (group.popcount() >= config::Rule::kConnectCount) {
                 return true;
             }
-            remaining &= ~group;
             has_2 &= ~group;
         }
     }

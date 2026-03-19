@@ -16,20 +16,22 @@ public:
     explicit Tsumo(int32_t seed = 0);
 
     inline PuyoPiece get(int index) const {
+        if (index >= generated_count_) {
+            generateUpTo(index);
+        }
         return pool_[index];
     }
     void setSeed(int32_t seed);
     int32_t getSeed() const { return seed_; }
 
 private:
-    int32_t seed_;
-    int32_t initial_seed_ = 0;
-    bool has_filled_ = false;
-    std::array<PuyoPiece, config::Rule::kTsumoPoolSize> pool_;
+    mutable int32_t seed_;
+    mutable int generated_count_ = 0;
+    mutable std::array<PuyoPiece, config::Rule::kTsumoPoolSize> pool_;
 
-    int nextInt();
-    Cell nextKind();
-    void fillPool();
+    int nextInt() const;
+    Cell nextKind() const;
+    void generateUpTo(int target_index) const;
 };
 
 } // namespace puyotan

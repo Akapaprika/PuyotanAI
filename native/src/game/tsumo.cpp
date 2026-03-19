@@ -9,16 +9,11 @@ Tsumo::Tsumo(int32_t seed) {
 }
 
 void Tsumo::setSeed(int32_t seed) {
-    if (has_filled_ && initial_seed_ == seed) {
-        return; // Skip 1000 loop regenerations if identically seeded
-    }
-    initial_seed_ = seed;
     seed_ = seed;
-    has_filled_ = true;
-    fillPool();
+    generated_count_ = 0;
 }
 
-int Tsumo::nextInt() {
+int Tsumo::nextInt() const {
     seed_ ^= (seed_ << 13);
     seed_ ^= (seed_ >> 17);
     seed_ ^= (seed_ << 15);
@@ -28,19 +23,14 @@ int Tsumo::nextInt() {
     return static_cast<int>(r & (config::Rule::kColors - 1));
 }
 
-Cell Tsumo::nextKind() {
-    switch (nextInt()) {
-        case 0:  return Cell::Red;
-        case 1:  return Cell::Green;
-        case 2:  return Cell::Blue;
-        case 3:  return Cell::Yellow;
-        default: return Cell::Empty;
-    }
+Cell Tsumo::nextKind() const {
+    return static_cast<Cell>(nextInt());
 }
 
-void Tsumo::fillPool() {
-    for (int i = 0; i < config::Rule::kTsumoPoolSize; ++i) {
-        pool_[i] = {nextKind(), nextKind()};
+void Tsumo::generateUpTo(int target_index) const {
+    while (generated_count_ <= target_index && generated_count_ < config::Rule::kTsumoPoolSize) {
+        pool_[generated_count_] = {nextKind(), nextKind()};
+        ++generated_count_;
     }
 }
 

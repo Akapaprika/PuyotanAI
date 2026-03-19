@@ -40,9 +40,8 @@ void Board::placePiece(int col, Cell color) {
 
 int Board::getDropDistance(int x, int y) const {
     assert(x >= 0 && x < config::Board::kWidth);
-    assert(y > 0);
-    int start_y = std::min(y, (int)config::Board::kHeight);
-    return start_y - getColumnHeight(x);
+    assert(y > 0 && y <= static_cast<int>(config::Board::kHeight));
+    return y - getColumnHeight(x);
 }
 
 const BitBoard& Board::getBitboard(Cell color) const {
