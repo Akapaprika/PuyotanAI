@@ -108,6 +108,7 @@ PYBIND11_MODULE(puyotan_native, m) {
      * @brief Bind Puyotan Match (frame-based)
      */
     pybind11::enum_<ActionType>(m, "ActionType")
+        .value("NONE", ActionType::NONE)
         .value("PASS", ActionType::PASS)
         .value("PUT", ActionType::PUT)
         .value("CHAIN", ActionType::CHAIN)

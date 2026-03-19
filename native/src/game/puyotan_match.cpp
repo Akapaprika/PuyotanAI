@@ -63,7 +63,7 @@ std::string PuyotanMatch::getStatusText() const {
 bool PuyotanMatch::setAction(int id, Action action) {
     if (frame_ <= 0) return false;
     auto& history = players_[id].action_histories[frame_ & 255];
-    if (!history.has_value()) {
+    if (history.action.type == ActionType::NONE) {
         switch (action.type) {
             case ActionType::PASS:
                 history = {action, 0};
@@ -81,7 +81,7 @@ bool PuyotanMatch::setAction(int id, Action action) {
 bool PuyotanMatch::canStepNextFrame() const {
     if (frame_ <= 0) return false;
     for (int id = 0; id < 2; ++id) {
-        if (!players_[id].action_histories[frame_ & 255].has_value()) return false;
+        if (players_[id].action_histories[frame_ & 255].action.type == ActionType::NONE) return false;
     }
     return true;
 }
@@ -93,8 +93,8 @@ void PuyotanMatch::stepNextFrame() {
     for (int id = 0; id < 2; ++id) {
         auto& p = players_[id];
         auto& current = p.action_histories[frame_ & 255];
-        if (current.has_value() && current->remaining_frame > 0) {
-            p.action_histories[(frame_ + 1) & 255] = {current->action, static_cast<uint8_t>(current->remaining_frame - 1)};
+        if (current.action.type != ActionType::NONE && current.remaining_frame > 0) {
+            p.action_histories[(frame_ + 1) & 255] = {current.action, static_cast<uint8_t>(current.remaining_frame - 1)};
         }
     }
 
@@ -102,8 +102,8 @@ void PuyotanMatch::stepNextFrame() {
     for (int id = 0; id < 2; ++id) {
         auto& p = players_[id];
         auto& current = p.action_histories[frame_ & 255];
-        if (current.has_value() && current->remaining_frame == 0) {
-            const auto& action = current->action;
+        if (current.action.type != ActionType::NONE && current.remaining_frame == 0) {
+            const auto& action = current.action;
             switch (action.type) {
                 case ActionType::PASS:
                     break;
@@ -126,11 +126,11 @@ void PuyotanMatch::stepNextFrame() {
                     const int final_y_sub  = h_sub  + kSubDy_Simple[r];
 
                     const int drop_dist   = config::Board::kSpawnRow - std::max(h_axis, h_sub);
+                    p.score += drop_dist * config::Score::kSoftDropBonusPerGrid;
 
                     p.field.dropNewPiece(x, final_y_axis, tumo.axis);
                     p.field.dropNewPiece(sub_x, final_y_sub, tumo.sub);
-
-                    p.score += drop_dist * config::Score::kSoftDropBonusPerGrid;
+                    printf("[DEBUG] Player %d placed at (%d,%d) and (%d,%d) at frame %d\n", id, x, final_y_axis, sub_x, final_y_sub, frame_);
 
                     uint8_t dirty_colors = (1 << static_cast<int>(tumo.axis)) | (1 << static_cast<int>(tumo.sub));
                     if (Chain::canFire(p.field, dirty_colors)) {
@@ -148,13 +148,13 @@ void PuyotanMatch::stepNextFrame() {
                     p.used_score += ojama * config::Score::kTargetScore;
                     
                     if (p.non_active_ojama > 0) {
-                        int used = std::min(ojama, p.non_active_ojama);
-                        p.non_active_ojama -= used;
+                        int used = std::min(ojama, static_cast<int>(p.non_active_ojama));
+                        p.non_active_ojama -= static_cast<uint16_t>(used);
                         ojama -= used;
                     }
                     if (p.active_ojama > 0) {
-                        int used = std::min(ojama, p.active_ojama);
-                        p.active_ojama -= used;
+                        int used = std::min(ojama, static_cast<int>(p.active_ojama));
+                        p.active_ojama -= static_cast<uint16_t>(used);
                         ojama -= used;
                     }
                     if (ojama > 0) {
@@ -185,8 +185,8 @@ void PuyotanMatch::stepNextFrame() {
                     break;
                 }
                 case ActionType::OJAMA: {
-                    int fall_num = std::min(p.active_ojama, 30);
-                    p.active_ojama -= fall_num;
+                    int fall_num = std::min(static_cast<int>(p.active_ojama), config::Rule::kMaxOjamaPerFall);
+                    p.active_ojama -= static_cast<uint16_t>(fall_num);
                     p.fallOjama(fall_num, seed_);
                     break;
                 }
@@ -200,8 +200,8 @@ void PuyotanMatch::stepNextFrame() {
     uint32_t alive_mask = 0;
     for (int id = 0; id < 2; ++id) {
         auto& p = players_[id];
-        bool is_alive = p.action_histories[(frame_ + 1) & 255].has_value() || 
-                        p.field.get(2, 11) == Cell::Empty;
+        bool is_alive = p.action_histories[(frame_ + 1) & 255].action.type != ActionType::NONE || 
+                        p.field.get(config::Rule::kDeathCol, config::Rule::kDeathRow) == Cell::Empty;
         alive_mask |= (is_alive << id);
     }
 
@@ -219,9 +219,9 @@ void PuyotanMatch::stepNextFrame() {
     for (int id = 0; id < 2; ++id) {
         auto& p = players_[id];
         auto& next = p.action_histories[(frame_ + 1) & 255];
-        if (!next.has_value() && p.active_ojama > 0) {
+        if (next.action.type == ActionType::NONE && p.active_ojama > 0) {
             auto& current = p.action_histories[frame_ & 255];
-            if (!current.has_value() || current->action.type != ActionType::OJAMA) {
+            if (current.action.type != ActionType::OJAMA) {
                 next = {Action{ActionType::OJAMA}, 0};
             }
         }
@@ -231,17 +231,17 @@ void PuyotanMatch::stepNextFrame() {
     for (int id = 0; id < 2; ++id) {
         auto& p = players_[id];
         auto& next = p.action_histories[(frame_ + 1) & 255];
-        if (!next.has_value()) {
+        if (next.action.type == ActionType::NONE) {
             auto& current = p.action_histories[frame_ & 255];
-            if (!current.has_value() || current->action.type != ActionType::PASS) {
+            if (current.action.type != ActionType::PASS) {
                 ++(p.active_next_pos);
             }
         }
     }
 
-    // Clear current frame history for next cycle (to ensure .has_value() works correctly as 256 frame buffer)
+    // Clear current frame history for next cycle (to ensure it represents "empty" 256 frames later)
     for (int id = 0; id < 2; ++id) {
-        players_[id].action_histories[frame_ & 255] = std::nullopt;
+        players_[id].action_histories[frame_ & 255] = {};
     }
 
     ++frame_;

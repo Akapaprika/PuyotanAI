@@ -51,7 +51,7 @@ enum class ActionType : uint8_t {
  * Action command from player.
  */
 struct Action {
-    ActionType type = ActionType::PASS;
+    ActionType type = ActionType::NONE;
     int8_t x = 0;           // 0..5 (board width)
     Rotation rotation = Rotation::Up;
 };

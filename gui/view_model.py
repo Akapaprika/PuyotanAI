@@ -80,7 +80,7 @@ class PuyotanViewModel(QObject):
             player_state = self.model.get_player_state(pid)
             pres = self.players[pid]
             
-            pres.rigid_frames = sum(ah.remaining_frame for ah in player_state.action_histories.values())
+            pres.rigid_frames = sum(ah.remaining_frame for ah in player_state.action_histories)
             pres.has_decision = not self.model.has_pending_action(pid)
             
             # If they just became rigid, force confirmed off

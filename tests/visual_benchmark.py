@@ -74,13 +74,13 @@ def run_visual_benchmark(seed=1, speed=0.05):
         p2 = match.getPlayer(1)
 
         # 1. Fill P1 action if needed
-        if match.frame not in p1.action_histories:
+        if p1.action_histories[match.frame & 255].action.type == p.ActionType.NONE:
             x = move_plan[move_idx] if move_idx < len(move_plan) else 2
             if match.setAction(0, p.Action(p.ActionType.PUT, x, p.Rotation.Up)):
                 move_idx += 1
 
         # 2. Fill P2 action if needed
-        if match.frame not in p2.action_histories:
+        if p2.action_histories[match.frame & 255].action.type == p.ActionType.NONE:
             match.setAction(1, p.Action(p.ActionType.PASS, 0, p.Rotation.Up))
 
         # 3. Advance frame when both inputs are ready
