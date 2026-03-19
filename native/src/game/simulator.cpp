@@ -49,11 +49,10 @@ void Simulator::step(int x, Rotation rotation) {
     const int final_y_sub  = h_sub  + kSubDy_Simple[r];
 
     const int drop_dist   = config::Board::kSpawnRow - std::max(h_axis, h_sub);
+    total_score_ += drop_dist * config::Score::kSoftDropBonusPerGrid;
 
     board_.dropNewPiece(x, final_y_axis, piece.axis);
     board_.dropNewPiece(sub_x, final_y_sub, piece.sub);
-
-    total_score_ += drop_dist * config::Score::kSoftDropBonusPerGrid;
 
     uint8_t dirty_colors = (1 << std::to_underlying(piece.axis)) | (1 << std::to_underlying(piece.sub));
 

@@ -12,13 +12,10 @@ namespace puyotan {
  *   Uses a fixed-size stack array for group_sizes to avoid heap allocation.
  */
 struct ErasureData {
-    // erased == (num_erased > 0)
-    int num_erased = 0;
-    int num_colors = 0;
+    std::array<uint8_t, config::Rule::kMaxErasureGroups> group_sizes{};
+    uint8_t num_erased = 0;
+    uint8_t num_colors = 0;
     uint8_t num_groups = 0;
-    // Max possible groups in a 6x13 field with min-4 connect = floor(78/4) = 19.
-    // We use 24 for alignment / safety headroom.
-    std::array<uint8_t, 24> group_sizes{};
 };
 
 /**

@@ -13,14 +13,17 @@ namespace puyotan {
  * Player state for Puyotan frame-based match.
  */
 struct PuyotanPlayer {
-    Board field;
-    std::array<std::optional<ActionState>, 256> action_histories; // frame & 255 -> state
-    int active_next_pos = 0;
-    int score = 0;
-    int used_score = 0;
-    int non_active_ojama = 0;
-    int active_ojama = 0;
-    uint8_t chain_count = 0; // max 19 chains possible
+    Board field;                                     // 96 bytes (aligned 16)
+    std::array<ActionState, 256> action_histories{}; // frame & 255 -> state (NONE type if empty)
+
+    // Grouping for 16-byte alignment
+    int score = 0;              // 4 bytes
+    int used_score = 0;         // 4 bytes
+    uint16_t active_next_pos = 0; // 2 bytes (0-1000)
+    uint16_t non_active_ojama = 0; // 2 bytes
+    uint16_t active_ojama = 0;     // 2 bytes
+    uint8_t chain_count = 0;       // 1 byte
+    uint8_t padding = 0;           // 1 byte (explict for 16-byte block)
 
     void fallOjama(int num, int32_t& seed);
 };

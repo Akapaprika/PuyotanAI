@@ -30,8 +30,7 @@ ErasureData Chain::execute(Board& board, uint8_t color_mask) {
         BitBoard color_erased;
 
         while (!has_2.empty()) {
-            BitBoard seed = has_2.extractLSB();
-            BitBoard group = seed;
+            BitBoard group = has_2.extractLSB();
             BitBoard prev;
             do {
                 prev = group;
@@ -55,7 +54,7 @@ ErasureData Chain::execute(Board& board, uint8_t color_mask) {
         if (color_erased.popcount() > 0) {
             ++data.num_colors;
             total_erased_mask |= color_erased;
-            board.setBitboard(c, color_board & ~color_erased, false);
+            board.setBitboard(c, color_board & ~color_erased);
         }
     }
 
@@ -75,7 +74,7 @@ ErasureData Chain::execute(Board& board, uint8_t color_mask) {
                 BitBoard new_ojama;
                 new_ojama.lo = ojama.lo & ~oj_erase_lo;
                 new_ojama.hi = ojama.hi & ~oj_erase_hi;
-                board.setBitboard(Cell::Ojama, new_ojama, false);
+                board.setBitboard(Cell::Ojama, new_ojama);
                 total_erased_mask.lo |= oj_erase_lo;
                 total_erased_mask.hi |= oj_erase_hi;
             }
@@ -111,8 +110,7 @@ bool Chain::canFire(const Board& board, uint8_t color_mask) {
         BitBoard has_2 = color_board & (ud_and | lr_and | (ud_or & lr_or));
 
         while (!has_2.empty()) {
-            BitBoard seed = has_2.extractLSB();
-            BitBoard group = seed;
+            BitBoard group = has_2.extractLSB();
             BitBoard prev;
             do {
                 prev = group;

@@ -139,7 +139,10 @@ public:
         occupancy_.set(x, y);
     }
     const BitBoard& getBitboard(Cell color) const;
-    void setBitboard(Cell color, const BitBoard& bb, bool update_occupancy = true);
+    void setBitboard(Cell color, const BitBoard& bb);
+
+    // Full recalculation of occupancy_ from all color boards (O(N))
+    void updateOccupancyFromBoards();
 
     void updateOccupancy(const BitBoard& bb) { occupancy_ = bb; }
     const BitBoard& getOccupied() const { return occupancy_; }

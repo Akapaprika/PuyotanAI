@@ -8,7 +8,7 @@ namespace puyotan {
 /**
  * Cell types in the Puyo Puyo board.
  */
-enum class Cell : int {
+enum class Cell : uint8_t {
     Red = 0,
     Green = 1,
     Blue = 2,
@@ -20,7 +20,7 @@ enum class Cell : int {
 /**
  * Rotation of the sub puyo relative to the axis puyo.
  */
-enum class Rotation : int {
+enum class Rotation : uint8_t {
     Up = 0,
     Right = 1,
     Down = 2,
@@ -38,12 +38,13 @@ struct PuyoPiece {
 /**
  * Action types for Puyotan frame-based management.
  */
-enum class ActionType : int {
-    PASS = 0,
-    PUT = 1,
-    CHAIN = 2,
-    CHAIN_FALL = 3,
-    OJAMA = 4
+enum class ActionType : uint8_t {
+    NONE = 0,
+    PASS = 1,
+    PUT = 2,
+    CHAIN = 3,
+    CHAIN_FALL = 4,
+    OJAMA = 5
 };
 
 /**
@@ -66,7 +67,7 @@ struct ActionState {
 /**
  * Status of the match.
  */
-enum class MatchStatus : int {
+enum class MatchStatus : uint8_t {
     READY = 0,
     PLAYING = 1,
     WIN_P1 = 2,
@@ -81,6 +82,7 @@ enum class MatchStatus : int {
 // ---------------------------------------------------------------------------
 inline constexpr std::array<int8_t, 4> kAxisDy = { 0,  0,  1,  0 };
 inline constexpr std::array<int8_t, 4> kSubDx  = { 0,  1,  0, -1 };
+inline constexpr std::array<int8_t, 4> kSubDy  = { 1,  0, -1,  0 };
 inline constexpr std::array<int8_t, 4> kSubDy_Simple = { 1,  0,  0,  0 };
 
 } // namespace puyotan

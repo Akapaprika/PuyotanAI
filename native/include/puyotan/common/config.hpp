@@ -14,9 +14,10 @@ namespace Board {
     constexpr int kWidth        = 6;   // number of columns
     constexpr int kSpawnRow     = 13;  // 0-indexed invisible 14th row
     constexpr int kHeight       = 13;  // visible rows (0-12)
-    constexpr int kTotalRows    = 15;  // visible + spawn + sub-puyo (up rotation)
+    constexpr int kTotalRows    = kHeight + 2;  // visible + spawn + sub-puyo (up rotation)
     constexpr int kBitsPerCol   = 16;  // bits allocated per column in the BitBoard
     constexpr int kColsInLo     = 4;   // columns 0-3 packed into lo (uint64_t)
+    constexpr int kColsInHi     = 2;   // columns 4-5 packed into hi (uint64_t)
     constexpr int kNumColors    = 5;   // Red, Green, Blue, Yellow, Ojama
 
     // --------------------------------------------------------
@@ -29,6 +30,9 @@ namespace Board {
     // Mask for a single 16-bit column lane (bits 0-14 used by visible + spawn rows)
     static constexpr uint64_t kColMask = (1ULL << kTotalRows) - 1;
 
+    // Mask for only visible rows (0-12) in a single lane
+    static constexpr uint64_t kVisibleColMask = (1ULL << kHeight) - 1;
+
     // lo covers cols 0-3: [lane0 | lane1 | lane2 | lane3]
     constexpr uint64_t kLoMask = kColMask | 
                                  (kColMask << (1 * kBitsPerCol)) | 
@@ -37,6 +41,9 @@ namespace Board {
 
     constexpr uint64_t kHiMask = kColMask | 
                                  (kColMask << (1 * kBitsPerCol));
+
+    // Mask isolating row 13 (spawn row) across all columns.
+    static constexpr uint64_t kFullLaneMask = (1ULL << kBitsPerCol) - 1;
 }
 
 // ============================================================
@@ -45,9 +52,15 @@ namespace Board {
 namespace Rule {
     constexpr int kConnectCount = 4;  // minimum group size to fire
     constexpr int kColors       = 4;  // number of normal puyo colors
+    constexpr int kPuyosPerPiece = 2; // number of puyos in each falling piece (tsumo)
     constexpr int kTsumoPoolSize = 1000; // size of pre-generated tsumo pool
     constexpr int kDeathCol     = 2;  // column index for death check (1-indexed: 3)
     constexpr int kDeathRow     = 11; // row index for death check (1-indexed: 12)
+    constexpr int kMaxOjamaPerFall = Board::kWidth * 5; // standard: 30
+
+    // Max possible groups = floor(TotalCells / kConnectCount)
+    // 6 * 15 / 4 = 22.5. We use 24 for alignment/headroom.
+    constexpr int kMaxErasureGroups = (config::Board::kWidth * config::Board::kTotalRows) / kConnectCount + 2;
 }
 
 // ============================================================

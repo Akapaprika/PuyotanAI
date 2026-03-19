@@ -17,11 +17,10 @@ Cell Board::get(int x, int y) const {
 }
 
 void Board::set(int x, int y, Cell color) {
+    assert(color != Cell::Empty);
     clear(x, y);
-    if (color != Cell::Empty) {
-        boards_[toIndex(color)].set(x, y);
-        occupancy_.set(x, y);
-    }
+    boards_[toIndex(color)].set(x, y);
+    occupancy_.set(x, y);
 }
 
 void Board::clear(int x, int y) {
@@ -30,8 +29,6 @@ void Board::clear(int x, int y) {
     }
     occupancy_.clear(x, y);
 }
-
-
 
 void Board::placePiece(int col, Cell color) {
     assert(col >= 0 && col < config::Board::kWidth);
@@ -48,13 +45,14 @@ const BitBoard& Board::getBitboard(Cell color) const {
     return boards_[toIndex(color)];
 }
 
-void Board::setBitboard(Cell color, const BitBoard& bb, bool update_occupancy) {
+void Board::setBitboard(Cell color, const BitBoard& bb) {
     boards_[toIndex(color)] = bb;
-    if (update_occupancy) {
-        occupancy_ = boards_[0];
-        for (int i = 1; i < config::Board::kNumColors; ++i) {
-            occupancy_ |= boards_[i];
-        }
+}
+
+void Board::updateOccupancyFromBoards() {
+    occupancy_ = boards_[0];
+    for (int i = 1; i < config::Board::kNumColors; ++i) {
+        occupancy_ |= boards_[i];
     }
 }
 
