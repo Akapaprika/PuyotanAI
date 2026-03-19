@@ -81,6 +81,6 @@ enum class MatchStatus : int {
 // ---------------------------------------------------------------------------
 inline constexpr std::array<int8_t, 4> kAxisDy = { 0,  0,  1,  0 };
 inline constexpr std::array<int8_t, 4> kSubDx  = { 0,  1,  0, -1 };
-inline constexpr std::array<int8_t, 4> kSubDy  = { 1,  0, -1,  0 };
+inline constexpr std::array<int8_t, 4> kSubDy_Simple = { 1,  0,  0,  0 };
 
 } // namespace puyotan

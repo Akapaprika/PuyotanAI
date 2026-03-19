@@ -123,17 +123,14 @@ void PuyotanMatch::stepNextFrame() {
                     const int h_sub = p.field.getColumnHeight(sub_x);
 
                     const int final_y_axis = h_axis + kAxisDy[r];
-                    const bool is_horiz    = (sub_dx != 0);
-                    const int  final_y_sub = is_horiz ? h_sub : (final_y_axis + kSubDy[r]);
+                    const int final_y_sub  = h_sub  + kSubDy_Simple[r];
 
-                    const int drop_dist = is_horiz 
-                        ? (config::Board::kSpawnRow - std::max(h_axis, h_sub))
-                        : (config::Board::kSpawnRow - final_y_axis);
+                    const int drop_dist   = config::Board::kSpawnRow - std::max(h_axis, h_sub);
 
                     p.field.dropNewPiece(x, final_y_axis, tumo.axis);
                     p.field.dropNewPiece(sub_x, final_y_sub, tumo.sub);
 
-                    p.score += std::max(0, drop_dist) * config::Score::kSoftDropBonusPerGrid;
+                    p.score += drop_dist * config::Score::kSoftDropBonusPerGrid;
 
                     uint8_t dirty_colors = (1 << static_cast<int>(tumo.axis)) | (1 << static_cast<int>(tumo.sub));
                     if (Chain::canFire(p.field, dirty_colors)) {
@@ -199,24 +196,23 @@ void PuyotanMatch::stepNextFrame() {
         }
     }
 
-    // 4. 窒息判定
-    int alive_count = 0;
-    int alive_player_id = 0;
+    // 4. 窒息判定 (Branchless Status Map)
+    uint32_t alive_mask = 0;
     for (int id = 0; id < 2; ++id) {
         auto& p = players_[id];
-        // Check death cell (3, 12) -> x=2, y=11 (0-indexed)
-        if (!p.action_histories[(frame_ + 1) & 255].has_value() && p.field.get(2, 11) != Cell::Empty) {
-            // Death
-        } else {
-            ++alive_count;
-            alive_player_id = id;
-        }
+        bool is_alive = p.action_histories[(frame_ + 1) & 255].has_value() || 
+                        p.field.get(2, 11) == Cell::Empty;
+        alive_mask |= (is_alive << id);
     }
 
-    if (alive_count == 0) {
-        status_ = MatchStatus::DRAW;
-    } else if (alive_count == 1) {
-        status_ = (alive_player_id == 0) ? MatchStatus::WIN_P1 : MatchStatus::WIN_P2;
+    if (alive_mask != 3) { // 少なくとも一人が死亡
+        static constexpr MatchStatus kNextStatus[] = {
+            MatchStatus::DRAW,   // 00: 両者死亡
+            MatchStatus::WIN_P1, // 01: P1生存・P2死亡
+            MatchStatus::WIN_P2, // 10: P1死亡・P2生存
+            MatchStatus::PLAYING // 11: 両者生存 (ここには来ない)
+        };
+        status_ = kNextStatus[alive_mask];
     }
 
     // 5. おじゃま処理

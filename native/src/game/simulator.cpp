@@ -40,24 +40,20 @@ void Simulator::step(int x, Rotation rotation) {
     const int r = std::to_underlying(rotation);
     const int h_axis = board_.getColumnHeight(x);
 
-    const int sub_dx = kSubDx[r];
-    const int sub_x  = x + sub_dx;
+    const int sub_x  = x + kSubDx[r];
     assert(sub_x >= 0 && sub_x < config::Board::kWidth);
 
     const int h_sub = board_.getColumnHeight(sub_x);
 
     const int final_y_axis = h_axis + kAxisDy[r];
-    const bool is_horiz    = (sub_dx != 0);
-    const int  final_y_sub = is_horiz ? h_sub : (final_y_axis + kSubDy[r]);
+    const int final_y_sub  = h_sub  + kSubDy_Simple[r];
 
-    const int drop_dist = is_horiz 
-        ? (config::Board::kSpawnRow - std::max(h_axis, h_sub))
-        : (config::Board::kSpawnRow - final_y_axis);
+    const int drop_dist   = config::Board::kSpawnRow - std::max(h_axis, h_sub);
 
     board_.dropNewPiece(x, final_y_axis, piece.axis);
     board_.dropNewPiece(sub_x, final_y_sub, piece.sub);
 
-    total_score_ += std::max(0, drop_dist) * config::Score::kSoftDropBonusPerGrid;
+    total_score_ += drop_dist * config::Score::kSoftDropBonusPerGrid;
 
     uint8_t dirty_colors = (1 << std::to_underlying(piece.axis)) | (1 << std::to_underlying(piece.sub));
 
