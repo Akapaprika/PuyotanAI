@@ -34,6 +34,8 @@ struct PuyotanPlayer {
 class PuyotanMatch {
 public:
     explicit PuyotanMatch(int32_t seed = 0);
+    PuyotanMatch(const PuyotanMatch&) = default;
+    PuyotanMatch& operator=(const PuyotanMatch&) = default;
 
     void start();
     bool setAction(int player_id, Action action);

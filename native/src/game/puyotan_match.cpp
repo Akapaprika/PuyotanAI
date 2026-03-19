@@ -130,7 +130,6 @@ void PuyotanMatch::stepNextFrame() {
 
                     p.field.dropNewPiece(x, final_y_axis, tumo.axis);
                     p.field.dropNewPiece(sub_x, final_y_sub, tumo.sub);
-                    printf("[DEBUG] Player %d placed at (%d,%d) and (%d,%d) at frame %d\n", id, x, final_y_axis, sub_x, final_y_sub, frame_);
 
                     uint8_t dirty_colors = (1 << static_cast<int>(tumo.axis)) | (1 << static_cast<int>(tumo.sub));
                     if (Chain::canFire(p.field, dirty_colors)) {

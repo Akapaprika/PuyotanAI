@@ -22,8 +22,10 @@ PuyoPiece Simulator::getCurrentPiece() const {
     return tsumo_.get(tsumo_index_);
 }
 
-void Simulator::step(int x, Rotation rotation) {
-    if (is_game_over_) return;
+int Simulator::step(int x, Rotation rotation) {
+    if (is_game_over_) return 0;
+
+    const int score_before = total_score_;
 
     PuyoPiece piece = getCurrentPiece();
     if (++tsumo_index_ >= config::Rule::kTsumoPoolSize) {
@@ -68,6 +70,7 @@ void Simulator::step(int x, Rotation rotation) {
     }
 
     updateGameOver();
+    return total_score_ - score_before;
 }
 
 void Simulator::updateGameOver() {

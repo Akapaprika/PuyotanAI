@@ -1,5 +1,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/numpy.h>
 #include <puyotan/common/types.hpp>
 #include <puyotan/common/config.hpp>
 #include <puyotan/core/board.hpp>
@@ -60,7 +61,19 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("clear", &Board::clear)
         .def("placePiece", &Board::placePiece)
         .def("getBitboard", &Board::getBitboard)
-        .def("getOccupied", &Board::getOccupied);
+        .def("getOccupied", &Board::getOccupied)
+        .def("to_obs_flat", [](const Board& b) {
+            // Returns a float32 numpy array of shape [5, 6, 13]:
+            //   [color_idx (0-4), col (0-5), row (0-12)]  -> 1.0f if occupied, else 0.0f
+            pybind11::array_t<float> arr({5, 6, 13});
+            auto r = arr.mutable_unchecked<3>();
+            for (int c = 0; c < 5; ++c)
+                for (int x = 0; x < 6; ++x)
+                    for (int y = 0; y < 13; ++y)
+                        r(c, x, y) = b.getBitboard(static_cast<Cell>(c)).get(x, y) ? 1.0f : 0.0f;
+            return arr;
+        }, pybind11::return_value_policy::move,
+           "Returns a (5,6,13) float32 numpy array: one-hot color x col x row.");
 
     pybind11::class_<ErasureData>(m, "ErasureData")
         .def_property_readonly("erased",     [](const ErasureData& d) { return d.num_erased > 0; })
@@ -92,7 +105,9 @@ PYBIND11_MODULE(puyotan_native, m) {
 
     pybind11::class_<Simulator>(m, "Simulator")
         .def(pybind11::init<int32_t>(), pybind11::arg("seed") = 0)
-        .def("step", &Simulator::step)
+        .def("step", &Simulator::step,
+             pybind11::arg("x"), pybind11::arg("rotation"),
+             "Place a piece and resolve chains. Returns delta score gained.")
         .def("reset", &Simulator::reset)
         .def("getCurrentPiece", &Simulator::getCurrentPiece)
         .def("runBatch", &Simulator::runBatch,
@@ -149,6 +164,8 @@ PYBIND11_MODULE(puyotan_native, m) {
 
     pybind11::class_<puyotan::PuyotanMatch>(m, "PuyotanMatch")
         .def(pybind11::init<int32_t>(), pybind11::arg("seed") = 0)
+        .def("clone", [](const puyotan::PuyotanMatch& m) { return puyotan::PuyotanMatch(m); },
+             "Returns a deep copy of this match for tree search.")
         .def("start", &puyotan::PuyotanMatch::start)
         .def("setAction", &puyotan::PuyotanMatch::setAction)
         .def("canStepNextFrame", &puyotan::PuyotanMatch::canStepNextFrame)

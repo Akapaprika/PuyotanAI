@@ -15,8 +15,9 @@ public:
 
     /**
      * Executes one move: places a piece, applies gravity, and processes chains.
+     * @return The score gained from this single move (for RL reward shaping).
      */
-    void step(int x, Rotation rotation);
+    int step(int x, Rotation rotation);
 
     /**
      * Checks if the death condition is met.
