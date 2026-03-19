@@ -75,7 +75,7 @@ def run_benchmark(num_games=5000000, seed=1):
 
     print(f"  Total Steps:    {batch_steps}")
     print(f"  Total Time:     {elapsed:.4f} s")
-    print(f"  Time per Game:  {elapsed / num_games * 1000:.4f} ms")
+    print(f"  Time per Game:  {elapsed / num_games * 1000000:.4f} μs")
     print(f"  Throughput:     {batch_steps / elapsed:,.0f} steps/sec")
 
 if __name__ == "__main__":

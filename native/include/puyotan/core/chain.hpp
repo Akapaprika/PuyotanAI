@@ -41,7 +41,7 @@ public:
      * @param board The board to check.
      * @return True if at least one group can be fired.
      */
-    static bool canFire(const Board& board);
+    static bool canFire(const Board& board, uint8_t color_mask = 0x0F);
 };
 
 } // namespace puyotan

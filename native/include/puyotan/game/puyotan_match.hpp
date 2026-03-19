@@ -3,7 +3,6 @@
 #include <puyotan/core/board.hpp>
 #include <puyotan/game/tsumo.hpp>
 #include <puyotan/common/types.hpp>
-#include <vector>
 #include <string>
 #include <optional>
 #include <array>

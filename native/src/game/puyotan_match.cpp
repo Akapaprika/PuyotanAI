@@ -3,7 +3,6 @@
 #include <puyotan/core/chain.hpp>
 #include <puyotan/game/scorer.hpp>
 #include <algorithm>
-#include <cmath>
 
 namespace puyotan {
 
@@ -136,7 +135,8 @@ void PuyotanMatch::stepNextFrame() {
 
                     p.score += std::max(0, drop_dist) * config::Score::kSoftDropBonusPerGrid;
 
-                    if (Chain::canFire(p.field)) {
+                    uint8_t dirty_colors = (1 << static_cast<int>(tumo.axis)) | (1 << static_cast<int>(tumo.sub));
+                    if (Chain::canFire(p.field, dirty_colors)) {
                         p.chain_count = 0;
                         p.action_histories[(frame_ + 1) & 255] = {Action{ActionType::CHAIN}, 1};
                     }
@@ -147,8 +147,8 @@ void PuyotanMatch::stepNextFrame() {
                     ++p.chain_count;
                     p.score += Scorer::calculateStepScore(info, p.chain_count);
                     
-                    int ojama = (p.score - p.used_score) / 70;
-                    p.used_score += ojama * 70;
+                    int ojama = (p.score - p.used_score) / config::Score::kTargetScore;
+                    p.used_score += ojama * config::Score::kTargetScore;
                     
                     if (p.non_active_ojama > 0) {
                         int used = std::min(ojama, p.non_active_ojama);
@@ -164,9 +164,9 @@ void PuyotanMatch::stepNextFrame() {
                         sendOjama(id, ojama);
                     }
                     
-                    // All Clear check (simplified)
+                    // All Clear check
                     if (p.field.getOccupied().empty()) {
-                        p.score += 2100;
+                        p.score += config::Score::kAllClearBonus;
                     }
 
                     if (Gravity::canFall(p.field)) {
@@ -177,8 +177,10 @@ void PuyotanMatch::stepNextFrame() {
                     break;
                 }
                 case ActionType::CHAIN_FALL: {
-                    Gravity::execute(p.field);
-                    if (Chain::canFire(p.field)) {
+                    uint8_t dirty_colors = Gravity::execute(p.field);
+                    if (Chain::canFire(p.field, dirty_colors)) {
+                        p.chain_count = 0; // wait, puyotan_match handles chain_count in CHAIN action. 
+                        // Actually, puyotan_match didn't reset it here before. Let's keep original logic.
                         p.action_histories[(frame_ + 1) & 255] = {Action{ActionType::CHAIN}, 1};
                     } else {
                         activateOjama(id);

@@ -43,11 +43,9 @@ struct alignas(16) BitBoard {
     }
     [[nodiscard]] __forceinline BitBoard operator& (const BitBoard& o) const { return _mm_and_si128(m128, o.m128); }
     [[nodiscard]] __forceinline BitBoard operator| (const BitBoard& o) const { return _mm_or_si128(m128, o.m128); }
-    [[nodiscard]] __forceinline BitBoard operator^ (const BitBoard& o) const { return _mm_xor_si128(m128, o.m128); }
     [[nodiscard]] __forceinline BitBoard operator~ ()                  const { return _mm_xor_si128(m128, _mm_set1_epi32(-1)); }
     __forceinline BitBoard& operator&=(const BitBoard& o) { m128 = _mm_and_si128(m128, o.m128); return *this; }
     __forceinline BitBoard& operator|=(const BitBoard& o) { m128 = _mm_or_si128(m128, o.m128);  return *this; }
-    __forceinline BitBoard& operator^=(const BitBoard& o) { m128 = _mm_xor_si128(m128, o.m128); return *this; }
 
     // PTEST (SSE4.1): single instruction — tests if all bits are zero.
     [[nodiscard]] __forceinline bool empty() const { return _mm_testz_si128(m128, m128) != 0; }
@@ -84,36 +82,22 @@ struct alignas(16) BitBoard {
         return { 0ULL, hi & (0ULL - hi) };
     }
 
-    // -----------------------------------------------------------------------
-    // Static masks — compile-time constants
-    // -----------------------------------------------------------------------
-    static BitBoard kLoMask()   { return { config::Board::kLoMask, 0 }; }
-    static BitBoard kHiMask()   { return { 0, config::Board::kHiMask }; }
-    static BitBoard kFullMask() { return { config::Board::kLoMask, config::Board::kHiMask }; }
 
     // -----------------------------------------------------------------------
     // Shift operations — replaced static local masks with _mm_set_epi64x
     // to bypass MSVC's hidden thread-safety initialization branches and locks.
+    // NOTE: The shiftRaw versions do NOT apply the boundary mask, relying on 
+    // the final '& board' to clean up 'bleeding' bits in row 14/15 or padding.
     // -----------------------------------------------------------------------
-    [[nodiscard]] __forceinline BitBoard shiftUp() const {
-        return _mm_and_si128(_mm_slli_epi64(m128, 1), 
-               _mm_set_epi64x(config::Board::kHiMask, config::Board::kLoMask));
-    }
+    [[nodiscard]] __forceinline BitBoard shiftUpRaw()    const { return _mm_slli_epi64(m128, 1);  }
+    [[nodiscard]] __forceinline BitBoard shiftDownRaw()  const { return _mm_srli_epi64(m128, 1);  }
+    [[nodiscard]] __forceinline BitBoard shiftRightRaw() const { return _mm_slli_si128(m128, 2); }
+    [[nodiscard]] __forceinline BitBoard shiftLeftRaw()  const { return _mm_srli_si128(m128, 2); }
 
-    [[nodiscard]] __forceinline BitBoard shiftDown() const {
-        return _mm_and_si128(_mm_srli_epi64(m128, 1), 
-               _mm_set_epi64x(config::Board::kHiMask, config::Board::kLoMask));
-    }
-
-    [[nodiscard]] __forceinline BitBoard shiftRight() const {
-        return _mm_and_si128(_mm_slli_si128(m128, 2), 
-               _mm_set_epi64x(config::Board::kHiMask, config::Board::kLoMask));
-    }
-
-    [[nodiscard]] __forceinline BitBoard shiftLeft() const {
-        return _mm_and_si128(_mm_srli_si128(m128, 2), 
-               _mm_set_epi64x(config::Board::kHiMask, config::Board::kLoMask));
-    }
+    [[nodiscard]] __forceinline BitBoard shiftUp()    const { return _mm_and_si128(shiftUpRaw().m128,    _mm_set_epi64x(config::Board::kHiMask, config::Board::kLoMask)); }
+    [[nodiscard]] __forceinline BitBoard shiftDown()  const { return _mm_and_si128(shiftDownRaw().m128,  _mm_set_epi64x(config::Board::kHiMask, config::Board::kLoMask)); }
+    [[nodiscard]] __forceinline BitBoard shiftRight() const { return _mm_and_si128(shiftRightRaw().m128, _mm_set_epi64x(config::Board::kHiMask, config::Board::kLoMask)); }
+    [[nodiscard]] __forceinline BitBoard shiftLeft()  const { return _mm_and_si128(shiftLeftRaw().m128,  _mm_set_epi64x(config::Board::kHiMask, config::Board::kLoMask)); }
 };
 
 /**

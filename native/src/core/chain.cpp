@@ -1,5 +1,4 @@
 #include <puyotan/core/chain.hpp>
-#include <vector>
 
 namespace puyotan {
 
@@ -16,10 +15,10 @@ ErasureData Chain::execute(Board& board, uint8_t color_mask) {
         if (color_board.empty()) continue;
 
         // --- Bitwise Connectivity Pruning ('has_2' filter) ---
-        const BitBoard U = color_board.shiftUp();
-        const BitBoard D = color_board.shiftDown();
-        const BitBoard L = color_board.shiftLeft();
-        const BitBoard R = color_board.shiftRight();
+        const BitBoard U = color_board.shiftUpRaw();
+        const BitBoard D = color_board.shiftDownRaw();
+        const BitBoard L = color_board.shiftLeftRaw();
+        const BitBoard R = color_board.shiftRightRaw();
 
         // 'at least 2 of 4': (U&D) | (L&R) | ((U|D) & (L|R))
         const BitBoard ud_and = U & D;
@@ -36,9 +35,12 @@ ErasureData Chain::execute(Board& board, uint8_t color_mask) {
             BitBoard prev;
             do {
                 prev = group;
-                const BitBoard expand = (group.shiftUp() | group.shiftDown()) |
-                                        (group.shiftLeft() | group.shiftRight());
-                group = (group | expand) & color_board;
+                __m128i v = group.m128;
+                __m128i neighbors = _mm_or_si128(
+                    _mm_or_si128(_mm_slli_epi64(v, 1), _mm_srli_epi64(v, 1)),
+                    _mm_or_si128(_mm_slli_si128(v, 2), _mm_srli_si128(v, 2))
+                );
+                group.m128 = _mm_and_si128(_mm_or_si128(v, neighbors), color_board.m128);
             } while (group != prev);
 
             const int sz = group.popcount();
@@ -89,16 +91,18 @@ ErasureData Chain::execute(Board& board, uint8_t color_mask) {
     return data;
 }
 
-bool Chain::canFire(const Board& board) {
+bool Chain::canFire(const Board& board, uint8_t color_mask) {
     for (int i = 0; i < config::Rule::kColors; ++i) {
+        if (!((color_mask >> i) & 1)) continue;
+
         const Cell c = static_cast<Cell>(i);
         const BitBoard color_board = board.getBitboard(c);
         if (color_board.empty()) continue;
 
-        const BitBoard U = color_board.shiftUp();
-        const BitBoard D = color_board.shiftDown();
-        const BitBoard L = color_board.shiftLeft();
-        const BitBoard R = color_board.shiftRight();
+        const BitBoard U = color_board.shiftUpRaw();
+        const BitBoard D = color_board.shiftDownRaw();
+        const BitBoard L = color_board.shiftLeftRaw();
+        const BitBoard R = color_board.shiftRightRaw();
 
         const BitBoard ud_and = U & D;
         const BitBoard ud_or  = U | D;
@@ -112,14 +116,14 @@ bool Chain::canFire(const Board& board) {
             BitBoard prev;
             do {
                 prev = group;
-                const BitBoard expand = (group.shiftUp() | group.shiftDown()) |
-                                        (group.shiftLeft() | group.shiftRight());
-                group = (group | expand) & color_board;
+                __m128i v = group.m128;
+                __m128i neighbors = _mm_or_si128(
+                    _mm_or_si128(_mm_slli_epi64(v, 1), _mm_srli_epi64(v, 1)),
+                    _mm_or_si128(_mm_slli_si128(v, 2), _mm_srli_si128(v, 2))
+                );
+                group.m128 = _mm_and_si128(_mm_or_si128(v, neighbors), color_board.m128);
+                if (group.popcount() >= config::Rule::kConnectCount) return true;
             } while (group != prev);
-
-            if (group.popcount() >= config::Rule::kConnectCount) {
-                return true;
-            }
             has_2 &= ~group;
         }
     }
