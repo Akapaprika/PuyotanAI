@@ -50,6 +50,20 @@ public:
     MatchStatus getStatus() const { return status_; }
     std::string getStatusText() const;
 
+     /**
+     * Runs num_games full matches in pure C++ using the benchmark move pattern
+     * for both players. Returns total frames executed.
+     */
+    static int64_t runBatch(int num_games, int32_t seed);
+
+    /**
+     * Steps the match until at least one player needs to make a decision
+     * (ActionType::NONE in current frame history).
+     * Returns a bitmask of player IDs that need actions (1: P1, 2: P2, 3: Both),
+     * or 0 if game over or error.
+     */
+    int stepUntilDecision();
+
     // Helper to get random int for ojama fall positions
     static int nextInt(int32_t& seed, int max);
 

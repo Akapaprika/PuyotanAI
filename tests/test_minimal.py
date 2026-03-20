@@ -1,49 +1,57 @@
 import sys
-import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DIST_DIR = BASE_DIR / "native" / "dist"
-RELEASE_DIR = BASE_DIR / "native" / "build_Release" / "Release"
-for d in [DIST_DIR, RELEASE_DIR]:
+for d in [BASE_DIR/"native"/"dist", BASE_DIR/"native"/"build_Release"/"Release", BASE_DIR/"native"/"build_Debug"/"Debug"]:
     if d.exists(): sys.path.insert(0, str(d)); break
 
 import puyotan_native as p
 
-match = p.PuyotanMatch(1)
-match.start()
+with open("debug_tracelog.txt", "w") as f:
+    f.write("Starting...\n")
+    match = p.PuyotanMatch(1)
+    match.start()
 
-print(f"Frame start: {match.frame}")
-
-p1 = match.getPlayer(0)
-p2 = match.getPlayer(1)
-
-for step in range(3):
-    print(f"\n--- Loop {step} Frame {match.frame} ---")
-    p1 = match.getPlayer(0) # re-fetch to get latest copy!
-    p2 = match.getPlayer(1)
+    move_plan = [5]*6 + [4]*6 + [3]*6
+    p1_move, p2_move = 0, 0
     
-    action1_type = p1.action_histories[match.frame & 255].action.type
-    action2_type = p2.action_histories[match.frame & 255].action.type
-    print(f"Before setAction: P1={action1_type}, P2={action2_type}")
-    
-    if action1_type == p.ActionType.NONE:
-        res1 = match.setAction(0, p.Action(p.ActionType.PUT, 3, p.Rotation.Up))
-        print(f"P1 setAction(PUT): {res1}")
-    if action2_type == p.ActionType.NONE:
-        res2 = match.setAction(1, p.Action(p.ActionType.PASS, 0, p.Rotation.Up))
-        print(f"P2 setAction(PASS): {res2}")
+    for loop in range(1, 1000): # max 1000 loops
+        if match.status != p.MatchStatus.PLAYING:
+            f.write(f"Game over at Status: {match.status}. Exiting.\n")
+            break
+
+        f.write(f"Loop {loop}, Frame {match.frame}:\n")
+        f.flush()
+
+        p1_type = match.getPlayer(0).action_histories[match.frame & 255].action.type
+        p2_type = match.getPlayer(1).action_histories[match.frame & 255].action.type
+
+        if p1_type == p.ActionType.NONE:
+            c = move_plan[p1_move] if p1_move < len(move_plan) else 2
+            match.setAction(0, p.Action(p.ActionType.PUT, c, p.Rotation.Up))
+            p1_move += 1
+            f.write(f"  P1 set PUT col={c}\n")
+
+        if p2_type == p.ActionType.NONE:
+            c = move_plan[p2_move] if p2_move < len(move_plan) else 2
+            match.setAction(1, p.Action(p.ActionType.PUT, c, p.Rotation.Up))
+            p2_move += 1
+            f.write(f"  P2 set PUT col={c}\n")
+            
+        f.flush()
+            
+        can = match.canStepNextFrame()
+        f.write(f"  canStepNextFrame() = {can}\n")
+        f.flush()
         
-    p1 = match.getPlayer(0) 
-    p2 = match.getPlayer(1)
-    a1 = p1.action_histories[match.frame & 255]
-    a2 = p2.action_histories[match.frame & 255]
-    print(f"After setAction: P1={a1.action.type}(rem={a1.remaining_frame}), P2={a2.action.type}(rem={a2.remaining_frame})")
-    
-    can = match.canStepNextFrame()
-    print(f"canStepNextFrame: {can}")
-    if can:
-        match.stepNextFrame()
-        print(f"stepped! new frame: {match.frame}")
+        if can:
+            match.stepNextFrame()
+            f.write(f"  stepNextFrame() done\n")
+        else:
+            f.write("  STALL! Neither was set?\n")
+            break
+        
+        f.write("---\n")
+        f.flush()
 
-print("\nP1 score:", match.getPlayer(0).score)
+    f.write("Test completed.\n")
