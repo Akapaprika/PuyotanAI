@@ -51,12 +51,12 @@ void PuyotanMatch::start() {
 
 std::string PuyotanMatch::getStatusText() const {
     switch (status_) {
-        case MatchStatus::READY:   return "待機中";
-        case MatchStatus::PLAYING: return "対戦中";
-        case MatchStatus::WIN_P1:  return "Player 1 の勝利！";
-        case MatchStatus::WIN_P2:  return "Player 2 の勝利！";
-        case MatchStatus::DRAW:    return "引き分け…";
-        default:                   return "不明";
+        case MatchStatus::READY: return "READY";
+        case MatchStatus::PLAYING: return "PLAYING";
+        case MatchStatus::WIN_P1: return "1P WIN";
+        case MatchStatus::WIN_P2: return "2P WIN";
+        case MatchStatus::DRAW: return "DRAW";
+        default: return "UNKNOWN";
     }
 }
 
@@ -255,6 +255,76 @@ void PuyotanMatch::activateOjama(int finishing_player_id) {
     auto& p = players_[target_id];
     p.active_ojama += p.non_active_ojama;
     p.non_active_ojama = 0;
+}
+
+int PuyotanMatch::stepUntilDecision() {
+    while (status_ == MatchStatus::PLAYING) {
+        int mask = 0;
+        if (players_[0].action_histories[frame_ & 255].action.type == ActionType::NONE) mask |= 1;
+        if (players_[1].action_histories[frame_ & 255].action.type == ActionType::NONE) mask |= 2;
+
+        if (mask != 0) return mask;
+
+        if (canStepNextFrame()) {
+            stepNextFrame();
+        } else {
+            // This case should be covered by mask check, but failsafe.
+            return 0;
+        }
+    }
+    return 0;
+}
+
+int64_t PuyotanMatch::runBatch(int num_games, int32_t seed) {
+    int64_t total_frames = 0;
+    
+    // 6 at col 5, 6 at 4, 6 at 3, etc.
+    const int move_plan[] = {
+        5,5,5,5,5,5,
+        4,4,4,4,4,4,
+        3,3,3,3,3,3
+    };
+    const int num_moves = sizeof(move_plan) / sizeof(move_plan[0]);
+
+    for (int i = 0; i < num_games; ++i) {
+        PuyotanMatch match(seed + i);
+        match.start();
+
+        int p1_move = 0;
+        int p2_move = 0;
+
+        while (match.getStatus() == MatchStatus::PLAYING) {
+            bool action_set = false;
+            if (match.players_[0].action_histories[match.frame_ & 255].action.type == ActionType::NONE) {
+                int col = (p1_move < num_moves) ? move_plan[p1_move] : 2;
+                if (match.setAction(0, Action{ActionType::PUT, static_cast<int8_t>(col), Rotation::Up})) {
+                    p1_move++;
+                    action_set = true;
+                }
+            }
+
+            if (match.players_[1].action_histories[match.frame_ & 255].action.type == ActionType::NONE) {
+                int col = (p2_move < num_moves) ? move_plan[p2_move] : 2;
+                if (match.setAction(1, Action{ActionType::PUT, static_cast<int8_t>(col), Rotation::Up})) {
+                    p2_move++;
+                    action_set = true;
+                }
+            }
+
+            if (match.canStepNextFrame()) {
+                match.stepNextFrame();
+                total_frames++;
+            } else if (!action_set) {
+                // If we can't step and we didn't just set an action, we are stuck.
+                // This shouldn't happen with the current engine logic, but let's be safe.
+                break; 
+            }
+            
+            // Failsafe
+            if (match.frame_ > 3000) break;
+        }
+    }
+    return total_frames;
 }
 
 int PuyotanMatch::nextInt(int32_t& seed, int max) {
