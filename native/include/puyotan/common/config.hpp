@@ -14,7 +14,7 @@ namespace Board {
     constexpr int kWidth        = 6;   // number of columns
     constexpr int kSpawnRow     = 13;  // 0-indexed invisible 14th row
     constexpr int kHeight       = 13;  // visible rows (0-12)
-    constexpr int kTotalRows    = 15;  // visible + spawn + sub-puyo (up rotation)
+    constexpr int kTotalRows    = kHeight + 2;  // visible + spawn + sub-puyo (up rotation)
     constexpr int kBitsPerCol   = 16;  // bits allocated per column in the BitBoard
     constexpr int kColsInLo     = 4;   // columns 0-3 packed into lo (uint64_t)
     constexpr int kColsInHi     = 2;   // columns 4-5 packed into hi (uint64_t)
@@ -39,28 +39,10 @@ namespace Board {
                                  (kColMask << (2 * kBitsPerCol)) | 
                                  (kColMask << (3 * kBitsPerCol));
 
-    constexpr uint64_t kLoVisibleMask = kVisibleColMask | 
-                                        (kVisibleColMask << (1 * kBitsPerCol)) | 
-                                        (kVisibleColMask << (2 * kBitsPerCol)) | 
-                                        (kVisibleColMask << (3 * kBitsPerCol));
-
-    // hi covers cols 4-5: [lane4 | lane5] (bits 0-31 of hi)
     constexpr uint64_t kHiMask = kColMask | 
                                  (kColMask << (1 * kBitsPerCol));
 
-    constexpr uint64_t kHiVisibleMask = kVisibleColMask | 
-                                        (kVisibleColMask << (1 * kBitsPerCol));
-
     // Mask isolating row 13 (spawn row) across all columns.
-    constexpr uint64_t kLoSpawnMask = (1ULL << kSpawnRow) | 
-                                      (1ULL << (kSpawnRow + 1 * kBitsPerCol)) | 
-                                      (1ULL << (kSpawnRow + 2 * kBitsPerCol)) | 
-                                      (1ULL << (kSpawnRow + 3 * kBitsPerCol));
-
-    constexpr uint64_t kHiSpawnMask = (1ULL << kSpawnRow) | 
-                                      (1ULL << (kSpawnRow + 1 * kBitsPerCol));
-
-    // Mask isolating the full 16-bit lane of a column.
     static constexpr uint64_t kFullLaneMask = (1ULL << kBitsPerCol) - 1;
 }
 
@@ -74,6 +56,11 @@ namespace Rule {
     constexpr int kTsumoPoolSize = 1000; // size of pre-generated tsumo pool
     constexpr int kDeathCol     = 2;  // column index for death check (1-indexed: 3)
     constexpr int kDeathRow     = 11; // row index for death check (1-indexed: 12)
+    constexpr int kMaxOjamaPerFall = Board::kWidth * 5; // standard: 30
+
+    // Max possible groups = floor(TotalCells / kConnectCount)
+    // 6 * 15 / 4 = 22.5. We use 24 for alignment/headroom.
+    constexpr int kMaxErasureGroups = (config::Board::kWidth * config::Board::kTotalRows) / kConnectCount + 2;
 }
 
 // ============================================================
@@ -100,6 +87,12 @@ namespace Score {
         0, 2, 3, 4, 5, 6, 7, 10
     };
     constexpr int kGroupBonusesSize = static_cast<int>(sizeof(kGroupBonuses) / sizeof(kGroupBonuses[0]));
+
+    // Amount of score required to generate one Ojama Puyo
+    constexpr int kTargetScore = 70;
+
+    // All Clear bonus: equivalent to 30 Ojama Puyos (6 columns * 5 rows * 70 score)
+    constexpr int kAllClearBonus = config::Board::kWidth * 5 * kTargetScore;
 }
 
 } // namespace puyotan::config

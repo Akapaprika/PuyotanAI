@@ -3,44 +3,34 @@
 #include <puyotan/core/chain.hpp>
 #include <puyotan/game/scorer.hpp>
 #include <algorithm>
-#include <cmath>
 
 namespace puyotan {
 
-void PuyotanPlayer::fallOjama(int num, uint32_t& seed) {
-    auto nextInt = [&](int max) {
-        int32_t signed_y = static_cast<int32_t>(seed);
-        signed_y ^= (signed_y << 13);
-        signed_y ^= (signed_y >> 17);
-        signed_y ^= (signed_y << 15);
-        seed = static_cast<uint32_t>(signed_y);
-        int r = std::abs(signed_y);
-        return r % max;
-    };
-
+void PuyotanPlayer::fallOjama(int num, int32_t& seed) {
+    constexpr int width = config::Board::kWidth;
     while (num > 0) {
-        if (num >= 6) {
-            for (int x = 0; x < 6; ++x) {
+        if (num >= width) {
+            for (int x = 0; x < width; ++x) {
                 field.set(x, config::Board::kSpawnRow, Cell::Ojama);
             }
             Gravity::execute(field);
-            num -= 6;
+            num -= width;
         } else {
-            bool memo[6] = {false};
+            uint8_t mask = 0;
             for (int i = 0; i < num; ++i) {
-                int pos = nextInt(6 - i);
+                int pos = PuyotanMatch::nextInt(seed, width - i);
                 int cnt = 0;
-                for (int j = 0; j < 6; ++j) {
-                    if (!memo[j]) {
+                for (int x = 0; x < width; ++x) {
+                    if (!(mask & (1 << x))) {
                         if (cnt++ == pos) {
-                            memo[j] = true;
+                            mask |= (1 << x);
                             break;
                         }
                     }
                 }
             }
-            for (int x = 0; x < 6; ++x) {
-                if (memo[x]) {
+            for (int x = 0; x < width; ++x) {
+                if (mask & (1 << x)) {
                     field.set(x, config::Board::kSpawnRow, Cell::Ojama);
                 }
             }
@@ -50,7 +40,7 @@ void PuyotanPlayer::fallOjama(int num, uint32_t& seed) {
     }
 }
 
-PuyotanMatch::PuyotanMatch(uint32_t seed) : seed_(seed), tsumo_(seed) {}
+PuyotanMatch::PuyotanMatch(int32_t seed) : seed_(seed), tsumo_(seed) {}
 
 void PuyotanMatch::start() {
     if (frame_ == 0) {
@@ -72,16 +62,16 @@ std::string PuyotanMatch::getStatusText() const {
 
 bool PuyotanMatch::setAction(int id, Action action) {
     if (frame_ <= 0) return false;
-    if (players_[id].action_histories.find(frame_) == players_[id].action_histories.end()) {
+    auto& history = players_[id].action_histories[frame_ & 255];
+    if (history.action.type == ActionType::NONE) {
         switch (action.type) {
             case ActionType::PASS:
-                players_[id].action_histories[frame_] = {action, 0};
+                history = {action, 0};
                 return true;
             case ActionType::PUT:
-                players_[id].action_histories[frame_] = {action, 1};
+                history = {action, 1};
                 return true;
             default:
-                // JS throws an error, we return false
                 return false;
         }
     }
@@ -91,7 +81,7 @@ bool PuyotanMatch::setAction(int id, Action action) {
 bool PuyotanMatch::canStepNextFrame() const {
     if (frame_ <= 0) return false;
     for (int id = 0; id < 2; ++id) {
-        if (players_[id].action_histories.count(frame_) == 0) return false;
+        if (players_[id].action_histories[frame_ & 255].action.type == ActionType::NONE) return false;
     }
     return true;
 }
@@ -99,121 +89,102 @@ bool PuyotanMatch::canStepNextFrame() const {
 void PuyotanMatch::stepNextFrame() {
     if (!canStepNextFrame()) return;
 
-    // 2. 行動選択・予約
+    // 1. 行動選択・予約
     for (int id = 0; id < 2; ++id) {
         auto& p = players_[id];
-        auto current_it = p.action_histories.find(frame_);
-        if (current_it != p.action_histories.end() && current_it->second.remaining_frame > 0) {
-            p.action_histories[frame_ + 1] = {current_it->second.action, current_it->second.remaining_frame - 1};
+        auto& current = p.action_histories[frame_ & 255];
+        if (current.action.type != ActionType::NONE && current.remaining_frame > 0) {
+            p.action_histories[(frame_ + 1) & 255] = {current.action, static_cast<uint8_t>(current.remaining_frame - 1)};
         }
     }
 
-    // 3. 行動実行
+    // 2. 行動実行
     for (int id = 0; id < 2; ++id) {
         auto& p = players_[id];
-        auto current_it = p.action_histories.find(frame_);
-        if (current_it != p.action_histories.end() && current_it->second.remaining_frame == 0) {
-            const auto& action = current_it->second.action;
+        auto& current = p.action_histories[frame_ & 255];
+        if (current.action.type != ActionType::NONE && current.remaining_frame == 0) {
+            const auto& action = current.action;
             switch (action.type) {
                 case ActionType::PASS:
                     break;
                 case ActionType::PUT: {
                     PuyoPiece tumo = tsumo_.get(p.active_next_pos);
-                    int x = action.x;
-                    Rotation rotation = action.rotation;
-                    
-                    int sub_x = x;
-                    int sub_y = config::Board::kSpawnRow;
-                    switch (rotation) {
-                        case Rotation::Up:    sub_y += 1; break;
-                        case Rotation::Right: sub_x += 1; break;
-                        case Rotation::Down:  sub_y -= 1; break;
-                        case Rotation::Left:  sub_x -= 1; break;
-                    }
+                    const int x = action.x;
+                    const int r = static_cast<int>(action.rotation);
+                    assert(x >= 0 && x < config::Board::kWidth);
+                    assert(r >= 0 && r < 4);
 
-                    // 1. Calculate Soft Drop Bonus (before placement)
-                    int d1 = p.field.getDropDistance(x, config::Board::kSpawnRow);
-                    int drop_dist = d1;
-                    if (sub_x >= 0 && sub_x < config::Board::kWidth) {
-                        int d2 = p.field.getDropDistance(sub_x, sub_y);
-                        drop_dist = std::min(d1, d2);
-                    }
-                    p.score += std::max(0, drop_dist) * config::Score::kSoftDropBonusPerGrid;
 
-                    // 2. Placement
-                    switch (rotation) {
-                        case Rotation::Up:    
-                            p.field.set(x, config::Board::kSpawnRow, tumo.axis);
-                            p.field.set(x, config::Board::kSpawnRow + 1, tumo.sub);
-                            break;
-                        case Rotation::Right: 
-                            p.field.set(x, config::Board::kSpawnRow, tumo.axis);
-                            if (x + 1 < config::Board::kWidth) p.field.set(x + 1, config::Board::kSpawnRow, tumo.sub);
-                            break;
-                        case Rotation::Down:  
-                            p.field.set(x, config::Board::kSpawnRow, tumo.sub);
-                            p.field.set(x, config::Board::kSpawnRow + 1, tumo.axis);
-                            break;
-                        case Rotation::Left:  
-                            p.field.set(x, config::Board::kSpawnRow, tumo.axis);
-                            if (x - 1 >= 0) p.field.set(x - 1, config::Board::kSpawnRow, tumo.sub);
-                            break;
-                    }
+                    const int h_axis = p.field.getColumnHeight(x);
+                    const int sub_dx = kSubDx[r];
+                    const int sub_x  = x + sub_dx;
+                    assert(sub_x >= 0 && sub_x < config::Board::kWidth);
 
-                    Gravity::execute(p.field);
+                    const int h_sub = p.field.getColumnHeight(sub_x);
 
-                    if (Chain::canFire(p.field)) {
+                    const int final_y_axis = h_axis + kAxisDy[r];
+                    const int final_y_sub  = h_sub  + kSubDy_Simple[r];
+
+                    const int drop_dist   = config::Board::kSpawnRow - std::max(h_axis, h_sub);
+                    p.score += drop_dist * config::Score::kSoftDropBonusPerGrid;
+
+                    p.field.dropNewPiece(x, final_y_axis, tumo.axis);
+                    p.field.dropNewPiece(sub_x, final_y_sub, tumo.sub);
+
+                    uint8_t dirty_colors = (1 << static_cast<int>(tumo.axis)) | (1 << static_cast<int>(tumo.sub));
+                    if (Chain::canFire(p.field, dirty_colors)) {
                         p.chain_count = 0;
-                        p.action_histories[frame_ + 1] = {Action{ActionType::CHAIN}, 1};
+                        p.action_histories[(frame_ + 1) & 255] = {Action{ActionType::CHAIN}, 1};
                     }
                     break;
                 }
                 case ActionType::CHAIN: {
                     ErasureData info = Chain::execute(p.field);
-                    p.chain_count++;
+                    ++p.chain_count;
                     p.score += Scorer::calculateStepScore(info, p.chain_count);
                     
-                    int ojama = (p.score - p.used_score) / 70;
-                    p.used_score += ojama * 70;
+                    int ojama = (p.score - p.used_score) / config::Score::kTargetScore;
+                    p.used_score += ojama * config::Score::kTargetScore;
                     
                     if (p.non_active_ojama > 0) {
-                        int used = std::min(ojama, p.non_active_ojama);
-                        p.non_active_ojama -= used;
+                        int used = std::min(ojama, static_cast<int>(p.non_active_ojama));
+                        p.non_active_ojama -= static_cast<uint16_t>(used);
                         ojama -= used;
                     }
                     if (p.active_ojama > 0) {
-                        int used = std::min(ojama, p.active_ojama);
-                        p.active_ojama -= used;
+                        int used = std::min(ojama, static_cast<int>(p.active_ojama));
+                        p.active_ojama -= static_cast<uint16_t>(used);
                         ojama -= used;
                     }
                     if (ojama > 0) {
                         sendOjama(id, ojama);
                     }
                     
-                    // All Clear check (simplified)
+                    // All Clear check
                     if (p.field.getOccupied().empty()) {
-                        p.score += 2100;
+                        p.score += config::Score::kAllClearBonus;
                     }
 
                     if (Gravity::canFall(p.field)) {
-                        p.action_histories[frame_ + 1] = {Action{ActionType::CHAIN_FALL}, 0};
+                        p.action_histories[(frame_ + 1) & 255] = {Action{ActionType::CHAIN_FALL}, 0};
                     } else {
                         activateOjama(id);
                     }
                     break;
                 }
                 case ActionType::CHAIN_FALL: {
-                    Gravity::execute(p.field);
-                    if (Chain::canFire(p.field)) {
-                        p.action_histories[frame_ + 1] = {Action{ActionType::CHAIN}, 1};
+                    uint8_t dirty_colors = Gravity::execute(p.field);
+                    if (Chain::canFire(p.field, dirty_colors)) {
+                        // 継続連鎖なので chain_count はリセットしない (そのままインクリメントさせる)
+                        p.action_histories[(frame_ + 1) & 255] = {Action{ActionType::CHAIN}, 1};
                     } else {
                         activateOjama(id);
                     }
                     break;
                 }
                 case ActionType::OJAMA: {
-                    int fall_num = std::min(p.active_ojama, 30);
-                    p.active_ojama -= fall_num;
+                    int fall_num = std::min(static_cast<int>(p.active_ojama), config::Rule::kMaxOjamaPerFall);
+                    p.active_ojama -= static_cast<uint16_t>(fall_num);
                     p.fallOjama(fall_num, seed_);
                     break;
                 }
@@ -223,48 +194,52 @@ void PuyotanMatch::stepNextFrame() {
         }
     }
 
-    // 4. 窒息判定
-    int alive_count = 0;
-    int alive_player_id = 0;
+    // 3. 窒息判定 (Branchless Status Map)
+    uint32_t alive_mask = 0;
     for (int id = 0; id < 2; ++id) {
         auto& p = players_[id];
-        // Check death cell (3, 12) -> x=2, y=11 (0-indexed)
-        if (p.action_histories.count(frame_ + 1) == 0 && p.field.get(2, 11) != Cell::Empty) {
-            // Death
-        } else {
-            alive_count++;
-            alive_player_id = id;
+        bool is_alive = p.action_histories[(frame_ + 1) & 255].action.type != ActionType::NONE || 
+                        p.field.get(config::Rule::kDeathCol, config::Rule::kDeathRow) == Cell::Empty;
+        alive_mask |= (is_alive << id);
+    }
+
+    if (alive_mask != 3) { // 少なくとも一人が死亡
+        static constexpr MatchStatus kNextStatus[] = {
+            MatchStatus::DRAW,   // 00: 両者死亡
+            MatchStatus::WIN_P1, // 01: P1生存・P2死亡
+            MatchStatus::WIN_P2, // 10: P1死亡・P2生存
+            MatchStatus::PLAYING // 11: 両者生存 (ここには来ない)
+        };
+        status_ = kNextStatus[alive_mask];
+    }
+
+    // 4. おじゃま処理
+    for (int id = 0; id < 2; ++id) {
+        auto& p = players_[id];
+        auto& next = p.action_histories[(frame_ + 1) & 255];
+        if (next.action.type == ActionType::NONE && p.active_ojama > 0) {
+            auto& current = p.action_histories[frame_ & 255];
+            if (current.action.type != ActionType::OJAMA) {
+                next = {Action{ActionType::OJAMA}, 0};
+            }
         }
     }
 
-    if (alive_count == 0) {
-        status_ = MatchStatus::DRAW;
-    } else if (alive_count == 1) {
-        status_ = (alive_player_id == 0) ? MatchStatus::WIN_P1 : MatchStatus::WIN_P2;
-    }
-
-    // 5. おじゃま処理
+    // 5. ツモ・フレーム遷移
     for (int id = 0; id < 2; ++id) {
         auto& p = players_[id];
-        bool is_currently_ojama = false;
-        if (p.action_histories.count(frame_) > 0) {
-            is_currently_ojama = (p.action_histories[frame_].action.type == ActionType::OJAMA);
-        }
-        if (!is_currently_ojama && p.action_histories.count(frame_ + 1) == 0 && p.active_ojama > 0) {
-            p.action_histories[frame_ + 1] = {Action{ActionType::OJAMA}, 0};
+        auto& next = p.action_histories[(frame_ + 1) & 255];
+        if (next.action.type == ActionType::NONE) {
+            auto& current = p.action_histories[frame_ & 255];
+            if (current.action.type != ActionType::PASS) {
+                ++(p.active_next_pos);
+            }
         }
     }
 
-    // 0. フレーム遷移
+    // Clear current frame history for next cycle (to ensure it represents "empty" 256 frames later)
     for (int id = 0; id < 2; ++id) {
-        auto& p = players_[id];
-        bool current_is_pass = false;
-        if (p.action_histories.count(frame_) > 0) {
-            current_is_pass = (p.action_histories[frame_].action.type == ActionType::PASS);
-        }
-        if (!current_is_pass && p.action_histories.count(frame_ + 1) == 0) {
-            p.active_next_pos++;
-        }
+        players_[id].action_histories[frame_ & 255] = {};
     }
 
     ++frame_;
@@ -275,11 +250,20 @@ void PuyotanMatch::sendOjama(int sender_id, int ojama) {
     players_[target_id].non_active_ojama += ojama;
 }
 
-void PuyotanMatch::activateOjama(int sender_id) {
-    int target_id = 1 - sender_id;
+void PuyotanMatch::activateOjama(int finishing_player_id) {
+    int target_id = 1 - finishing_player_id;
     auto& p = players_[target_id];
     p.active_ojama += p.non_active_ojama;
     p.non_active_ojama = 0;
+}
+
+int PuyotanMatch::nextInt(int32_t& seed, int max) {
+    seed ^= (seed << 13);
+    seed ^= (seed >> 17);
+    seed ^= (seed << 15);
+    // JS does `this.y >>> 0`, which casts the bit pattern to uint32_t.
+    uint32_t r = static_cast<uint32_t>(seed);
+    return static_cast<int>(r % static_cast<uint32_t>(max));
 }
 
 } // namespace puyotan

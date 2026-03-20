@@ -19,7 +19,7 @@ except ImportError as e:
     print(f"Error: Could not import puyotan_native. Make sure to build the project first.\n{e}")
     sys.exit(1)
 
-def run_benchmark(num_games=500000, seed=1):
+def run_benchmark(num_games=5000000, seed=1):
     """
     Measures throughput via two methods:
     1. Python-loop: step() called individually from Python (includes pybind11 boundary overhead)
@@ -75,10 +75,8 @@ def run_benchmark(num_games=500000, seed=1):
 
     print(f"  Total Steps:    {batch_steps}")
     print(f"  Total Time:     {elapsed:.4f} s")
-    print(f"  Time per Game:  {elapsed / num_games * 1000:.4f} ms")
+    print(f"  Time per Game:  {elapsed / num_games * 1000000:.4f} μs")
     print(f"  Throughput:     {batch_steps / elapsed:,.0f} steps/sec")
-    print()
-    print(f"  → C++ overhead factor: {elapsed / (elapsed if elapsed > 0 else 1):.1f}x")
 
 if __name__ == "__main__":
     run_benchmark()

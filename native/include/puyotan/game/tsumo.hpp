@@ -1,8 +1,9 @@
 #pragma once
 
-#include <vector>
+#include <array>
 #include <cstdint>
 #include <puyotan/common/types.hpp>
+#include <puyotan/common/config.hpp>
 
 namespace puyotan {
 
@@ -12,19 +13,25 @@ namespace puyotan {
  */
 class Tsumo {
 public:
-    explicit Tsumo(uint32_t seed = 0);
+    explicit Tsumo(int32_t seed = 0);
 
-    PuyoPiece get(int index) const;
-    void setSeed(uint32_t seed);
-    uint32_t getSeed() const { return seed_; }
+    inline PuyoPiece get(int index) const {
+        if (index >= generated_count_) {
+            generateUpTo(index);
+        }
+        return pool_[index];
+    }
+    void setSeed(int32_t seed);
+    int32_t getSeed() const { return seed_; }
 
 private:
-    uint32_t seed_;
-    std::vector<PuyoPiece> pool_;
+    mutable int32_t seed_;
+    mutable int generated_count_ = 0;
+    mutable std::array<PuyoPiece, config::Rule::kTsumoPoolSize> pool_;
 
-    int nextInt(int max);
-    Cell nextKind();
-    void fillPool();
+    int nextInt() const;
+    Cell nextKind() const;
+    void generateUpTo(int target_index) const;
 };
 
 } // namespace puyotan

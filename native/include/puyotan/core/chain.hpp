@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cstdint>
-#include <vector>
 #include <puyotan/core/board.hpp>
 
 namespace puyotan {
@@ -13,18 +12,10 @@ namespace puyotan {
  *   Uses a fixed-size stack array for group_sizes to avoid heap allocation.
  */
 struct ErasureData {
-    bool erased = false;
-    int num_erased = 0;
-    int num_colors = 0;
+    std::array<uint8_t, config::Rule::kMaxErasureGroups> group_sizes{};
+    uint8_t num_erased = 0;
+    uint8_t num_colors = 0;
     uint8_t num_groups = 0;
-    // Max possible groups in a 6x13 field with min-4 connect = floor(78/4) = 19.
-    // We use 24 for alignment / safety headroom.
-    std::array<uint8_t, 24> group_sizes{};
-
-    // Python binding compatibility: expose as a vector on demand.
-    std::vector<int> group_sizes_vec() const {
-        return std::vector<int>(group_sizes.begin(), group_sizes.begin() + num_groups);
-    }
 };
 
 /**
@@ -47,7 +38,7 @@ public:
      * @param board The board to check.
      * @return True if at least one group can be fired.
      */
-    static bool canFire(const Board& board);
+    static bool canFire(const Board& board, uint8_t color_mask = 0x0F);
 };
 
 } // namespace puyotan

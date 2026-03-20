@@ -11,12 +11,13 @@ namespace puyotan {
  */
 class Simulator {
 public:
-    explicit Simulator(uint32_t seed = 0);
+    explicit Simulator(int32_t seed = 0);
 
     /**
      * Executes one move: places a piece, applies gravity, and processes chains.
+     * @return The score gained from this single move (for RL reward shaping).
      */
-    void step(int x, Rotation rotation);
+    int step(int x, Rotation rotation);
 
     /**
      * Checks if the death condition is met.
@@ -26,7 +27,7 @@ public:
     /**
      * Resets the game state.
      */
-    void reset(uint32_t seed);
+    void reset(int32_t seed);
 
     const Board& getBoard() const { return board_; }
     const Tsumo& getTsumo() const { return tsumo_; }
@@ -40,7 +41,7 @@ public:
      *   - 6 moves at col 5, 6 at col 4, 6 at col 3, then col 2 until game over.
      * Returns total steps executed (for throughput calculation).
      */
-    int64_t runBatch(int num_games, uint32_t seed);
+    int64_t runBatch(int num_games, int32_t seed);
 
 private:
     Board board_;

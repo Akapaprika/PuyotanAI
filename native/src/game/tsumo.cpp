@@ -4,54 +4,33 @@
 
 namespace puyotan {
 
-Tsumo::Tsumo(uint32_t seed) : seed_(seed) {
-    fillPool();
+Tsumo::Tsumo(int32_t seed) {
+    setSeed(seed);
 }
 
-void Tsumo::setSeed(uint32_t seed) {
+void Tsumo::setSeed(int32_t seed) {
     seed_ = seed;
-    fillPool();
+    generated_count_ = 0;
 }
 
-PuyoPiece Tsumo::get(int index) const {
-    if (pool_.empty()) {
-        return PuyoPiece{Cell::Empty, Cell::Empty};
-    }
-    int idx = index % config::Rule::kTsumoPoolSize;
-    if (idx < 0) {
-        idx += config::Rule::kTsumoPoolSize;
-    }
-    return pool_[idx];
+int Tsumo::nextInt() const {
+    seed_ ^= (seed_ << 13);
+    seed_ ^= (seed_ >> 17);
+    seed_ ^= (seed_ << 15);
+    // JS does `this.y >>> 0`, which casts the bit pattern to uint32_t.
+    // The JS `Math.abs()` is a no-op because `>>> 0` makes it positive.
+    uint32_t r = static_cast<uint32_t>(seed_);
+    return static_cast<int>(r & (config::Rule::kColors - 1));
 }
 
-int Tsumo::nextInt(int max) {
-    int32_t signed_y = static_cast<int32_t>(seed_);
-    signed_y ^= (signed_y << 13);
-    signed_y ^= (signed_y >> 17);
-    signed_y ^= (signed_y << 15);
-    seed_ = static_cast<uint32_t>(signed_y);
-    
-    int r = std::abs(signed_y);
-    return r % max;
+Cell Tsumo::nextKind() const {
+    return static_cast<Cell>(nextInt());
 }
 
-Cell Tsumo::nextKind() {
-    switch (nextInt(config::Rule::kColors)) {
-        case 0:  return Cell::Red;
-        case 1:  return Cell::Green;
-        case 2:  return Cell::Blue;
-        case 3:  return Cell::Yellow;
-        default: return Cell::Empty;
-    }
-}
-
-void Tsumo::fillPool() {
-    pool_.clear();
-    pool_.reserve(config::Rule::kTsumoPoolSize);
-    for (int i = 0; i < config::Rule::kTsumoPoolSize; ++i) {
-        Cell axis = nextKind();
-        Cell sub = nextKind();
-        pool_.emplace_back(axis, sub);
+void Tsumo::generateUpTo(int target_index) const {
+    while (generated_count_ <= target_index && generated_count_ < config::Rule::kTsumoPoolSize) {
+        pool_[generated_count_] = {nextKind(), nextKind()};
+        ++generated_count_;
     }
 }
 

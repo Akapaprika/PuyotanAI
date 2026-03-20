@@ -3,6 +3,7 @@
 #include <puyotan/common/config.hpp>
 #include <puyotan/core/chain.hpp>
 #include <algorithm>
+#include <cassert>
 
 namespace puyotan {
 
@@ -15,50 +16,38 @@ public:
     /**
      * Calculates the score for a single chain step.
      */
+    // Called only after Chain::execute confirms num_erased > 0.
     static int calculateStepScore(const ErasureData& data, int chain_number) {
-        if (!data.erased || data.num_erased == 0) {
-            return 0;
-        }
-
-        int chain_bonus = getChainBonus(chain_number);
-        int color_bonus = getColorBonus(data.num_colors);
+        const int chain_bonus = getChainBonus(chain_number);
+        const int color_bonus = getColorBonus(data.num_colors);
         int group_bonus = 0;
         for (int g = 0; g < data.num_groups; ++g) {
             group_bonus += getGroupBonus(data.group_sizes[g]);
         }
 
-        int total_bonus = chain_bonus + color_bonus + group_bonus;
-        if (total_bonus < 1) {
-            total_bonus = 1;
-        }
-
+        const int total_bonus = std::max(1, chain_bonus + color_bonus + group_bonus);
         return (data.num_erased * 10) * total_bonus;
     }
 
 private:
     static constexpr int getChainBonus(int chain) {
-        int idx = (chain < 1) ? 0 : (chain - 1);
-        if (idx >= config::Score::kChainBonusesSize) {
-            return config::Score::kChainBonuses[config::Score::kChainBonusesSize - 1];
-        }
-        return config::Score::kChainBonuses[idx];
+        // Chain count is bounded by board dimensions (max 19-21); assert is sufficient.
+        assert(chain >= 1 && chain <= config::Score::kChainBonusesSize);
+        return config::Score::kChainBonuses[chain - 1];
     }
 
     static constexpr int getColorBonus(int count) {
-        if (count < 1) return 0;
-        if (count >= config::Score::kColorBonusesSize) {
-            return config::Score::kColorBonuses[config::Score::kColorBonusesSize - 1];
-        }
+        // Number of colors is fixed at 4 (+1 ojama); assert is sufficient.
+        assert(count >= 1 && count < config::Score::kColorBonusesSize);
         return config::Score::kColorBonuses[count];
     }
 
     static constexpr int getGroupBonus(int size) {
-        int idx = size - config::Rule::kConnectCount;
-        if (idx < 0) return 0;
-        if (idx >= config::Score::kGroupBonusesSize) {
-            return config::Score::kGroupBonuses[config::Score::kGroupBonusesSize - 1];
-        }
-        return config::Score::kGroupBonuses[idx];
+        const int idx = size - config::Rule::kConnectCount;
+        assert(idx >= 0);
+        // Groups can physically exceed size 11 (max bonus index); clamp to the last element.
+        const int clamped_idx = std::min(idx, config::Score::kGroupBonusesSize - 1);
+        return config::Score::kGroupBonuses[clamped_idx];
     }
 };
 

@@ -1,5 +1,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <pybind11/numpy.h>
 #include <puyotan/common/types.hpp>
 #include <puyotan/common/config.hpp>
 #include <puyotan/core/board.hpp>
@@ -60,14 +61,28 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("clear", &Board::clear)
         .def("placePiece", &Board::placePiece)
         .def("getBitboard", &Board::getBitboard)
-        .def("getOccupied", &Board::getOccupied);
+        .def("getOccupied", &Board::getOccupied)
+        .def("to_obs_flat", [](const Board& b) {
+            // Returns a float32 numpy array of shape [5, 6, 13]:
+            //   [color_idx (0-4), col (0-5), row (0-12)]  -> 1.0f if occupied, else 0.0f
+            pybind11::array_t<float> arr({5, 6, 13});
+            auto r = arr.mutable_unchecked<3>();
+            for (int c = 0; c < 5; ++c)
+                for (int x = 0; x < 6; ++x)
+                    for (int y = 0; y < 13; ++y)
+                        r(c, x, y) = b.getBitboard(static_cast<Cell>(c)).get(x, y) ? 1.0f : 0.0f;
+            return arr;
+        }, pybind11::return_value_policy::move,
+           "Returns a (5,6,13) float32 numpy array: one-hot color x col x row.");
 
     pybind11::class_<ErasureData>(m, "ErasureData")
-        .def_readwrite("erased",      &ErasureData::erased)
+        .def_property_readonly("erased",     [](const ErasureData& d) { return d.num_erased > 0; })
         .def_readwrite("num_erased",  &ErasureData::num_erased)
         .def_readwrite("num_colors",  &ErasureData::num_colors)
         .def_readwrite("num_groups",  &ErasureData::num_groups)
-        .def_property_readonly("group_sizes", &ErasureData::group_sizes_vec);
+        .def_property_readonly("group_sizes", [](const ErasureData& d) {
+            return std::vector<int>(d.group_sizes.begin(), d.group_sizes.begin() + d.num_groups);
+        });
 
     pybind11::class_<Gravity>(m, "Gravity")
         .def_static("execute", &Gravity::execute);
@@ -83,14 +98,16 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_static("calculateStepScore", &Scorer::calculateStepScore);
 
     pybind11::class_<Tsumo>(m, "Tsumo")
-        .def(pybind11::init<uint32_t>(), pybind11::arg("seed") = 0)
+        .def(pybind11::init<int32_t>(), pybind11::arg("seed") = 0)
         .def("get", &Tsumo::get)
         .def("setSeed", &Tsumo::setSeed)
         .def_property_readonly("seed", &Tsumo::getSeed);
 
     pybind11::class_<Simulator>(m, "Simulator")
-        .def(pybind11::init<uint32_t>(), pybind11::arg("seed") = 0)
-        .def("step", &Simulator::step)
+        .def(pybind11::init<int32_t>(), pybind11::arg("seed") = 0)
+        .def("step", &Simulator::step,
+             pybind11::arg("x"), pybind11::arg("rotation"),
+             "Place a piece and resolve chains. Returns delta score gained.")
         .def("reset", &Simulator::reset)
         .def("getCurrentPiece", &Simulator::getCurrentPiece)
         .def("runBatch", &Simulator::runBatch,
@@ -106,6 +123,7 @@ PYBIND11_MODULE(puyotan_native, m) {
      * @brief Bind Puyotan Match (frame-based)
      */
     pybind11::enum_<ActionType>(m, "ActionType")
+        .value("NONE", ActionType::NONE)
         .value("PASS", ActionType::PASS)
         .value("PUT", ActionType::PUT)
         .value("CHAIN", ActionType::CHAIN)
@@ -145,7 +163,9 @@ PYBIND11_MODULE(puyotan_native, m) {
         .export_values();
 
     pybind11::class_<puyotan::PuyotanMatch>(m, "PuyotanMatch")
-        .def(pybind11::init<uint32_t>(), pybind11::arg("seed") = 0)
+        .def(pybind11::init<int32_t>(), pybind11::arg("seed") = 0)
+        .def("clone", [](const puyotan::PuyotanMatch& m) { return puyotan::PuyotanMatch(m); },
+             "Returns a deep copy of this match for tree search.")
         .def("start", &puyotan::PuyotanMatch::start)
         .def("setAction", &puyotan::PuyotanMatch::setAction)
         .def("canStepNextFrame", &puyotan::PuyotanMatch::canStepNextFrame)

@@ -57,4 +57,4 @@ class GameModel:
         Check if the player has an action submitted for the *current* frame.
         """
         player = self.get_player_state(player_id)
-        return self.match.frame in player.action_histories
+        return player.action_histories[self.match.frame & 255].action.type != p.ActionType.NONE

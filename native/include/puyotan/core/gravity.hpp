@@ -12,9 +12,9 @@ class Gravity {
 public:
     /**
      * Drops all puyos until they hit the bottom or another puyo.
-     * @return The number of steps (rows) shifted.
+     * @return A bitmask of all colors that actually fell.
      */
-    static int execute(Board& board);
+    static uint8_t execute(Board& board);
 
     /**
      * Checks if any puyos can fall.
