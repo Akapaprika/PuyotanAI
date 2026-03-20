@@ -74,7 +74,6 @@ private:
     int frame_ = 0;
     MatchStatus status_ = MatchStatus::READY;
 
-    // calculateScore: removed (was declared but never implemented)
     void sendOjama(int sender_id, int ojama);
     void activateOjama(int finishing_player_id);
 };
