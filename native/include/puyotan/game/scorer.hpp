@@ -29,6 +29,10 @@ public:
         return (data.num_erased * 10) * total_bonus;
     }
 
+    static_assert(config::Score::kChainBonusesSize >= 19, "Chain bonus array should cover standard max chains");
+    static_assert(config::Score::kColorBonusesSize >= 5, "Color bonus array must cover all 5 colors");
+    static_assert(config::Score::kGroupBonusesSize >= 1, "Group bonus array cannot be empty");
+
 private:
     static constexpr int getChainBonus(int chain) {
         // Chain count is bounded by board dimensions (max 19-21); assert is sufficient.

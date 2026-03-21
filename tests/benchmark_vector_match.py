@@ -106,16 +106,21 @@ def benchmark_vectorized(num_games=1000):
 
 if __name__ == "__main__":
     N = 10000  # Realistic N for strategy-based benchmark
+    EXPECTED_FRAMES = 612432
+    
     print(f"--- Sequential Benchmark (N={N}) ---")
     f_seq, t_seq = benchmark_sequential(N)
-    print(f"Total Frames: {f_seq}")
+    match_status_seq = "OK" if f_seq == EXPECTED_FRAMES else "FAIL"
+    print(f"Total Frames: {f_seq} (Expected: {EXPECTED_FRAMES}) [{match_status_seq}]")
     print(f"Time: {t_seq:.4f}s")
     print(f"Throughput: {f_seq/t_seq:.2f} frames/sec")
 
     print(f"\n--- Vectorized Benchmark (N={N}) ---")
     f_vec, t_vec = benchmark_vectorized(N)
-    print(f"Total Frames: {f_vec}")
+    match_status_vec = "OK" if f_vec == EXPECTED_FRAMES else "FAIL"
+    print(f"Total Frames: {f_vec} (Expected: {EXPECTED_FRAMES}) [{match_status_vec}]")
     print(f"Time: {t_vec:.4f}s")
     print(f"Throughput: {f_vec/t_vec:.2f} frames/sec")
     
     print(f"\nSpeedup: {(f_vec/t_vec)/(f_seq/t_seq):.2f}x")
+    assert f_seq == EXPECTED_FRAMES and f_vec == EXPECTED_FRAMES, "Behavior changed! Total frames mismatch."

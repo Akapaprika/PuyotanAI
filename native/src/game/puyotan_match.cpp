@@ -10,30 +10,16 @@ void PuyotanPlayer::fallOjama(int num, int32_t& seed) {
     constexpr int width = config::Board::kWidth;
     while (num > 0) {
         if (num >= width) {
-            for (int x = 0; x < width; ++x) {
-                field.set(x, config::Board::kSpawnRow, Cell::Ojama);
-            }
+            field.setRowMask(config::Board::kSpawnRow, Cell::Ojama, 0x3F);
             Gravity::execute(field);
             num -= width;
         } else {
-            uint8_t mask = 0;
+            uint32_t mask = 0;
             for (int i = 0; i < num; ++i) {
                 int pos = PuyotanMatch::nextInt(seed, width - i);
-                int cnt = 0;
-                for (int x = 0; x < width; ++x) {
-                    if (!(mask & (1 << x))) {
-                        if (cnt++ == pos) {
-                            mask |= (1 << x);
-                            break;
-                        }
-                    }
-                }
+                mask |= _pdep_u32(1U << pos, ~mask & 0x3F);
             }
-            for (int x = 0; x < width; ++x) {
-                if (mask & (1 << x)) {
-                    field.set(x, config::Board::kSpawnRow, Cell::Ojama);
-                }
-            }
+            field.setRowMask(config::Board::kSpawnRow, Cell::Ojama, static_cast<uint8_t>(mask));
             Gravity::execute(field);
             num = 0;
         }
@@ -84,7 +70,7 @@ bool PuyotanMatch::setAction(int id, Action action) {
 
 bool PuyotanMatch::canStepNextFrame() const {
     if (frame_ <= 0) return false;
-    for (int id = 0; id < 2; ++id) {
+    for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         if (players_[id].current_action.action.type == ActionType::NONE) return false;
     }
     return true;
@@ -94,7 +80,7 @@ void PuyotanMatch::stepNextFrame() {
     if (!canStepNextFrame()) return;
 
     // 1. 行動選択・予約
-    for (int id = 0; id < 2; ++id) {
+    for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         auto& p = players_[id];
         if (p.current_action.action.type != ActionType::NONE && p.current_action.remaining_frame > 0) {
             p.next_action = {p.current_action.action, static_cast<uint8_t>(p.current_action.remaining_frame - 1)};
@@ -102,7 +88,7 @@ void PuyotanMatch::stepNextFrame() {
     }
 
     // 2. 行動実行
-    for (int id = 0; id < 2; ++id) {
+    for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         auto& p = players_[id];
         if (p.current_action.action.type != ActionType::NONE && p.current_action.remaining_frame == 0) {
             const auto& action = p.current_action.action;
@@ -196,13 +182,14 @@ void PuyotanMatch::stepNextFrame() {
 
     // 3. 窒息判定 (Branchless Status Map)
     uint32_t alive_mask = 0;
-    for (int id = 0; id < 2; ++id) {
+    for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         auto& p = players_[id];
         bool is_alive = p.next_action.action.type != ActionType::NONE || 
                         p.field.get(config::Rule::kDeathCol, config::Rule::kDeathRow) == Cell::Empty;
         alive_mask |= (is_alive << id);
     }
 
+    static_assert(config::Rule::kNumPlayers == 2, "Match status mapping explicitly assumes 2 players");
     if (alive_mask != 3) { // 少なくとも一人が死亡
         static constexpr MatchStatus kNextStatus[] = {
             MatchStatus::DRAW,   // 00: 両者死亡
@@ -214,7 +201,7 @@ void PuyotanMatch::stepNextFrame() {
     }
 
     // 4. おじゃま処理
-    for (int id = 0; id < 2; ++id) {
+    for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         auto& p = players_[id];
         if (p.next_action.action.type == ActionType::NONE && p.active_ojama > 0) {
             if (p.current_action.action.type != ActionType::OJAMA) {
@@ -224,7 +211,7 @@ void PuyotanMatch::stepNextFrame() {
     }
 
     // 5. ツモ・フレーム遷移
-    for (int id = 0; id < 2; ++id) {
+    for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         auto& p = players_[id];
         if (p.next_action.action.type == ActionType::NONE) {
             if (p.current_action.action.type != ActionType::PASS) {
@@ -234,7 +221,7 @@ void PuyotanMatch::stepNextFrame() {
     }
 
     // Advance actions: current = next, and clear next for the next step.
-    for (int id = 0; id < 2; ++id) {
+    for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         players_[id].current_action = players_[id].next_action;
         players_[id].next_action = {};
     }
@@ -257,8 +244,9 @@ void PuyotanMatch::activateOjama(int finishing_player_id) {
 int PuyotanMatch::stepUntilDecision() {
     while (status_ == MatchStatus::PLAYING) {
         int mask = 0;
-        if (players_[0].current_action.action.type == ActionType::NONE) mask |= 1;
-        if (players_[1].current_action.action.type == ActionType::NONE) mask |= 2;
+        for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
+            if (players_[id].current_action.action.type == ActionType::NONE) mask |= (1 << id);
+        }
 
         if (mask != 0) return mask;
 

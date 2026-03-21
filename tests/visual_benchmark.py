@@ -114,6 +114,38 @@ def run_visual_benchmark(seed=1, speed=0.05):
     print(f"\nFinal Result: {match.status_text}")
     print(f"Total Frames: {match.frame}")
 
+    # --- Automated Verification ---
+    p1 = match.getPlayer(0)
+    p2 = match.getPlayer(1)
+
+    assert match.frame == 57, f"Frame mismatch! Expected 57, got {match.frame}"
+    assert p1.score == 286, f"P1 Score mismatch! Expected 286, got {p1.score}"
+    assert p2.score == 286, f"P2 Score mismatch! Expected 286, got {p2.score}"
+
+    expected_board = [
+        "..Y...",
+        "..G..G",
+        "..G..B",
+        "..R..R",
+        "..B.YB",
+        "..GBGY",
+        "..GBYY",
+        "..YBGB",
+        "..YGYY",
+        "..GGBY",
+        "..RYYG",
+        "..GRBG",
+        "..YYYG"
+    ]
+
+    for y, exp_row in zip(range(12, -1, -1), expected_board):
+        p1_row = "".join(cell_to_char(p1.field.get(x, y)) for x in range(6))
+        p2_row = "".join(cell_to_char(p2.field.get(x, y)) for x in range(6))
+        assert p1_row == exp_row, f"P1 Row {y} mismatch! Expected {exp_row}, got {p1_row}"
+        assert p2_row == exp_row, f"P2 Row {y} mismatch! Expected {exp_row}, got {p2_row}"
+        
+    print("\n[OK] Behavioral specifications matched 100% exactly (Frames, Scores, and Final Board states).")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=1)

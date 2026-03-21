@@ -30,6 +30,9 @@ private:
     mutable int generated_count_ = 0;
     mutable std::array<PuyoPiece, config::Rule::kTsumoPoolSize> pool_;
 
+    static_assert((config::Rule::kTsumoPoolSize & (config::Rule::kTsumoPoolSize - 1)) == 0, 
+                  "TsumoPoolSize must be a power of 2 for fast bitmask indexing");
+
     int nextInt() const;
     Cell nextKind() const;
     void generateMore() const;

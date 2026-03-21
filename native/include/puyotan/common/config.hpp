@@ -50,6 +50,7 @@ namespace Board {
 // Rule constants
 // ============================================================
 namespace Rule {
+    constexpr int kNumPlayers   = 2;  // number of players in a standard match
     constexpr int kConnectCount = 4;  // minimum group size to fire
     constexpr int kColors       = 4;  // number of normal puyo colors
     constexpr int kPuyosPerPiece = 2; // number of puyos in each falling piece (tsumo)

@@ -73,7 +73,7 @@ public:
 private:
     int32_t seed_;
     Tsumo tsumo_;
-    PuyotanPlayer players_[2];
+    PuyotanPlayer players_[config::Rule::kNumPlayers];
     int frame_ = 0;
     MatchStatus status_ = MatchStatus::READY;
 
