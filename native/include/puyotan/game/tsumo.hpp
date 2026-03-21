@@ -17,9 +17,10 @@ public:
 
     inline PuyoPiece get(int index) const {
         if (index >= generated_count_) {
-            generateUpTo(index);
+            generateMore();
         }
-        return pool_[index];
+        // Ring buffer access using bitmask (size 512 -> mask 0x1FF)
+        return pool_[index & (config::Rule::kTsumoPoolSize - 1)];
     }
     void setSeed(int32_t seed);
     int32_t getSeed() const { return seed_; }
@@ -31,7 +32,7 @@ private:
 
     int nextInt() const;
     Cell nextKind() const;
-    void generateUpTo(int target_index) const;
+    void generateMore() const;
 };
 
 } // namespace puyotan
