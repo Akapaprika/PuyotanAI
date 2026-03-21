@@ -33,7 +33,7 @@ def export_to_onnx(checkpoint_path: str, output_path: str):
         input_names=["obs"],
         output_names=["logits", "value"],
         dynamic_axes={"obs": {0: "batch_size"}},  # バッチサイズを動的に
-        opset_version=17,
+        opset_version=18,  # 最新の挙動に合わせる
     )
     print(f"Export complete: {output_path}")
 

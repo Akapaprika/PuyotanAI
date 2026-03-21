@@ -10,6 +10,7 @@
 #include <puyotan/game/simulator.hpp>
 #include <puyotan/game/scorer.hpp>
 #include <puyotan/game/puyotan_match.hpp>
+#include <puyotan/game/onnx_policy.hpp>
 #include <puyotan/game/puyotan_vector_match.hpp>
 
 namespace puyotan {
@@ -208,6 +209,21 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("get_observations_all", &puyotan::PuyotanVectorMatch::get_observations_all)
         .def("get_match", &puyotan::PuyotanVectorMatch::get_match, pybind11::return_value_policy::reference_internal)
         .def_property_readonly("size", &puyotan::PuyotanVectorMatch::size);
+
+    // ===== OnnxPolicy =====
+    pybind11::class_<puyotan::OnnxPolicy>(m, "OnnxPolicy")
+        .def(pybind11::init<const std::string&, bool>(),
+             pybind11::arg("model_path"),
+             pybind11::arg("use_cpu") = true)
+        .def("infer",
+             [](puyotan::OnnxPolicy& self,
+                pybind11::array_t<uint8_t, pybind11::array::c_style | pybind11::array::forcecast> obs) {
+                 pybind11::gil_scoped_release release;
+                 return self.infer(obs.data(), static_cast<int64_t>(obs.shape(0)));
+             },
+             pybind11::arg("obs"),
+             "Run inference on a batch of uint8 observations. Returns list of action indices.")
+        .def("is_loaded", &puyotan::OnnxPolicy::is_loaded);
 }
 
 } // namespace puyotan

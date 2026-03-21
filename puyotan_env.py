@@ -3,6 +3,7 @@ from gymnasium import spaces
 import numpy as np
 import sys
 from pathlib import Path
+from training.reward import calculate_reward
 
 # Add the native library path
 BASE_DIR = Path(__file__).resolve().parent
@@ -133,14 +134,23 @@ class PuyotanVectorEnv:
             low=0, high=1, shape=(2, 5, 6, 13), dtype=np.uint8
         )
         self.base_seed = base_seed
+        
+        # 報酬計算用の前回状態を保持
+        self.prev_scores = np.zeros(num_envs, dtype=np.int32)
+        self.prev_ojama = np.zeros(num_envs, dtype=np.int32)
 
     def reset(self, seed=None):
         # We don't support individual reset yet, just reset all
         self.vm.reset(-1) # Reset all
         for i in range(self.num_envs):
-            self.vm.get_match(i).start()
+            match = self.vm.get_match(i)
+            match.start()
             # Advance to first decision
-            self.vm.get_match(i).step_until_decision()
+            match.step_until_decision()
+            
+            self.prev_scores[i] = match.p1.score
+            self.prev_ojama[i] = match.p1.active_ojama
+
         return self._get_obs_all(), {}
 
     def step(self, actions_p1):

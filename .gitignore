@@ -11,18 +11,23 @@ __pycache__/
 build/
 dist/
 
-# PuyoPuyo Models
+# Models (Keep repository lightweight)
 models/*.pt
 models/*.onnx
+models/*.onnx.data
 
-# Native Build
-native/build/
+# Native (C++ Build & External Libs)
+native/build*/
 native/dist/
+native/onnxruntime/
 *.pyd
-*.so
-*.dll
-*.exe
 *.obj
+*.lib
+*.exp
 *.pdb
+*.pyd.recipe
+*.iobj
+*.ipdb
 
+# Test artifacts
 tests/*.txt
