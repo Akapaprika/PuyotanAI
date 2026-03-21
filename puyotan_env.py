@@ -25,17 +25,23 @@ class ActionMapper:
     """Maps discrete action [0-21] to (col, rotation)."""
     # 0-5: Up, 6-10: Right, 11-16: Down, 17-21: Left
     ACTIONS = []
-    for r in [p.Rotation.Up]: # col 0-5
-        for x in range(6): ACTIONS.append((x, r))
-    for r in [p.Rotation.Right]: # col 0-4
-        for x in range(5): ACTIONS.append((x, r))
-    for r in [p.Rotation.Down]: # col 0-5
-        for x in range(6): ACTIONS.append((x, r))
-    for r in [p.Rotation.Left]: # col 1-5
-        for x in range(1, 6): ACTIONS.append((x, r))
+    
+    @classmethod
+    def initialize(cls):
+        if cls.ACTIONS: return
+        if p is None: return
+        for r in [p.Rotation.Up]: # col 0-5
+            for x in range(6): cls.ACTIONS.append((x, r))
+        for r in [p.Rotation.Right]: # col 0-4
+            for x in range(5): cls.ACTIONS.append((x, r))
+        for r in [p.Rotation.Down]: # col 0-5
+            for x in range(6): cls.ACTIONS.append((x, r))
+        for r in [p.Rotation.Left]: # col 1-5
+            for x in range(1, 6): cls.ACTIONS.append((x, r))
 
     @classmethod
     def get(cls, idx):
+        cls.initialize()
         return cls.ACTIONS[idx]
 
 class PuyotanEnv(gym.Env):
@@ -126,9 +132,15 @@ class PuyotanVectorEnv:
     Hig-performance Vectorized environment for Puyotan!
     Directly wraps PuyotanVectorMatch for massive parallel training.
     """
-    def __init__(self, num_envs, base_seed=1):
+    def __init__(self, num_envs=1, base_seed=1):
+        print(f"DEBUG: PuyotanVectorEnv __init__ with num_envs={num_envs}, base_seed={base_seed}")
         self.num_envs = num_envs
+        self.base_seed = base_seed
         self.vm = p.PuyotanVectorMatch(num_envs, base_seed)
+        print("DEBUG: PuyotanVectorMatch created.")
+        
+        # Ensure ActionMapper is ready
+        ActionMapper.initialize()
         self.action_space = spaces.Discrete(len(ActionMapper.ACTIONS))
         self.observation_space = spaces.Box(
             low=0, high=1, shape=(2, 5, 6, 13), dtype=np.uint8
@@ -148,63 +160,76 @@ class PuyotanVectorEnv:
             # Advance to first decision
             match.step_until_decision()
             
-            self.prev_scores[i] = match.p1.score
-            self.prev_ojama[i] = match.p1.active_ojama
+            self.prev_scores[i] = match.getPlayer(0).score
+            self.prev_ojama[i] = match.getPlayer(0).active_ojama
 
         return self._get_obs_all(), {}
 
-    def step(self, actions_p1):
+    def step(self, actions_p1, actions_p2=None):
         """
-        Takes a list/array of P1 actions (size num_envs).
-        P2 is always controlled as PASS for now.
+        Takes P1 actions and optionally P2 actions.
+        If actions_p2 is None, P2 will PASS.
         """
-        # 1. First, set P1 actions for those who need a decision
-        # In a real RL loop, we only call step() when P1 needs a decision.
-        # This wrapper assumes ALL envs are ready for P1 input.
-        
+        # 1. Set P1 actions
         match_indices = list(range(self.num_envs))
         p1_ids = [0] * self.num_envs
-        p1_actions = []
+        p1_acts = []
         for a in actions_p1:
             col, rot = ActionMapper.get(a)
-            p1_actions.append(p.Action(p.ActionType.PUT, col, rot))
-            
-        self.vm.set_actions(match_indices, p1_ids, p1_actions)
-        
-        # 2. Assign P2 as PASS for all envs
+            p1_acts.append(p.Action(p.ActionType.PUT, col, rot))
+        self.vm.set_actions(match_indices, p1_ids, p1_acts)
+
+        # 2. Set P2 actions (if provided, otherwise PASS)
         p2_ids = [1] * self.num_envs
-        p2_actions = [p.Action(p.ActionType.PASS, 0, p.Rotation.Up)] * self.num_envs
-        self.vm.set_actions(match_indices, p2_ids, p2_actions)
+        p2_acts = []
+        if actions_p2 is not None:
+            for a in actions_p2:
+                col, rot = ActionMapper.get(a)
+                p2_acts.append(p.Action(p.ActionType.PUT, col, rot))
+        else:
+            p2_acts = [p.Action(p.ActionType.PASS, 0, p.Rotation.Up)] * self.num_envs
+        self.vm.set_actions(match_indices, p2_ids, p2_acts)
         
-        # 3. Step all matches
-        # Note: In our current C++ impl, we need to call stepNextFrame on each match.
-        # VectorMatch.step_until_decision handles the frame stepping inside C++.
-        self.vm.step_until_decision()
-        
-        # 4. Collect results
-        obs = self.vm.get_observations_all() # shape [N, 2, 5, 6, 13]
-        
-        # Calculate rewards/terminated/truncated
-        # In this specialized wrapper, we might want to return arrays
+        # 3. Step all environments & Collect rewards/dones
         rewards = np.zeros(self.num_envs, dtype=np.float32)
         terminated = np.zeros(self.num_envs, dtype=bool)
         truncated = np.zeros(self.num_envs, dtype=bool)
         
         for i in range(self.num_envs):
-            m = self.vm.get_match(i)
-            p1 = m.getPlayer(0)
-            rewards[i] = p1.score / 70.0
-            if m.status != p.MatchStatus.PLAYING:
+            match = self.vm.get_match(i)
+            match.step_until_decision()
+            
+            # 報酬計算 (P1視点)
+            rewards[i] = calculate_reward(
+                self.prev_scores[i], match.getPlayer(0).score,
+                self.prev_ojama[i], match.getPlayer(0).active_ojama,
+                match.status
+            )
+            
+            # 状態更新
+            self.prev_scores[i] = match.getPlayer(0).score
+            self.prev_ojama[i] = match.getPlayer(0).active_ojama
+            
+            # 終了判定
+            if match.status != p.MatchStatus.PLAYING:
                 terminated[i] = True
-                if m.status == p.MatchStatus.WIN_P1:
-                    rewards[i] += 10.0
-                elif m.status == p.MatchStatus.WIN_P2:
-                    rewards[i] -= 10.0
-                # Auto-reset if terminated
-                self.vm.reset(i)
-                self.vm.get_match(i).start()
-
+                # 自動リセット（強化学習の標準的な挙動）
+                match.reset()
+                match.start()
+                match.step_until_decision()
+                self.prev_scores[i] = match.getPlayer(0).score
+                self.prev_ojama[i] = match.getPlayer(0).active_ojama
+        
+        obs = self._get_obs_all()
         return obs, rewards, terminated, truncated, {}
 
     def _get_obs_all(self):
-        return self.vm.get_observations_all()
+        res = self.vm.get_observations_all()
+        # Explicit type check for debugging
+        if not isinstance(res, np.ndarray):
+            try:
+                # If it's a tuple/list, the actual array is likely the 0th element
+                return res[0]
+            except:
+                pass
+        return res

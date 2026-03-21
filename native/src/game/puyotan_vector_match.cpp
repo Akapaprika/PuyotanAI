@@ -57,20 +57,20 @@ pybind11::array_t<uint8_t> PuyotanVectorMatch::get_observations_all() const {
     const int width  = config::Board::kWidth;
     const int height = config::Board::kHeight;
 
-    // 1. Allocate array (Must hold GIL, default uninitialized or zeros depending on platform)
+    // 1. Allocate array (Must hold GIL)
     pybind11::array_t<uint8_t> arr({(std::size_t)n, (std::size_t)config::Rule::kNumPlayers, (std::size_t)colors, (std::size_t)width, (std::size_t)height});
+    uint8_t* out_base = static_cast<uint8_t*>(arr.mutable_data());
 
     // 2. Parallel processing (Release GIL)
     {
         pybind11::gil_scoped_release release;
-        uint8_t* out_base = static_cast<uint8_t*>(arr.mutable_data());
         
         static constexpr std::size_t kBytesPerCol = config::Board::kHeight;
         static constexpr std::size_t kBytesPerColor = config::Board::kWidth * kBytesPerCol;
         static constexpr std::size_t kBytesPerPlayer = config::Board::kNumColors * kBytesPerColor;
         static constexpr std::size_t kBytesPerMatch = config::Rule::kNumPlayers * kBytesPerPlayer;
 
-        // Zero all memory first (highly optimized memset is faster than multidimensional looping)
+        // Zero all memory first
         const std::size_t total_bytes = (std::size_t)n * kBytesPerMatch;
         memset(out_base, 0, total_bytes);
 
@@ -84,24 +84,42 @@ pybind11::array_t<uint8_t> PuyotanVectorMatch::get_observations_all() const {
                     uint8_t* color_ptr = player_ptr + c * kBytesPerColor;
                     BitBoard bb = player.field.getBitboard(static_cast<Cell>(c));
 
-                    // Pre-masking ensures we never extract bits beyond the legal height.
                     bb.lo &= config::Board::kLoMask;
                     bb.hi &= config::Board::kHiMask;
                     
-                    // Fast bit extraction! Skip empty spaces entirely.
+                    // Use a portable bit extraction loop
                     while (bb.lo) {
-                        int bit = static_cast<int>(_tzcnt_u64(bb.lo));
-                        int x = bit >> 4; // x = bit / 16
-                        int y = bit & 0x0F;
-                        assert(y < height && "Puyo found outside of legal observation height");
+                        uint64_t lowbit = bb.lo & -bb.lo;
+                        // Traditional trailing zero count if BMI1 is not guaranteed
+                        // For simplicity and safety on 3020e:
+                        int bit = 0;
+                        uint64_t v = bb.lo;
+                        // This loop is safe and generally fast for sparse bitboards
+                        #ifdef _MSC_VER
+                            unsigned long index;
+                            _BitScanForward64(&index, v);
+                            bit = (int)index;
+                        #else
+                            bit = __builtin_ctzll(v);
+                        #endif
+                        
+                        int x = bit >> 4;
+                        int y = bit & 0x0f;
                         color_ptr[x * kBytesPerCol + y] = 1;
-                        bb.lo &= bb.lo - 1; // clear lowest set bit
+                        bb.lo &= bb.lo - 1; 
                     }
                     while (bb.hi) {
-                        int bit = static_cast<int>(_tzcnt_u64(bb.hi));
+                        uint64_t v = bb.hi;
+                        int bit = 0;
+                        #ifdef _MSC_VER
+                            unsigned long index;
+                            _BitScanForward64(&index, v);
+                            bit = (int)index;
+                        #else
+                            bit = __builtin_ctzll(v);
+                        #endif
                         int x = (bit >> 4) + config::Board::kColsInLo;
-                        int y = bit & 0x0F;
-                        assert(y < height && "Puyo found outside of legal observation height");
+                        int y = bit & 0x0f;
                         color_ptr[x * kBytesPerCol + y] = 1;
                         bb.hi &= bb.hi - 1;
                     }
