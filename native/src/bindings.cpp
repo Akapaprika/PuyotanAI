@@ -192,6 +192,7 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("step_until_decision", &puyotan::PuyotanMatch::stepUntilDecision,
              pybind11::call_guard<pybind11::gil_scoped_release>())
         .def("getPlayer", &puyotan::PuyotanMatch::getPlayer, pybind11::return_value_policy::reference_internal)
+        .def("getTsumo", &puyotan::PuyotanMatch::getTsumo, pybind11::return_value_policy::reference_internal)
         .def("getPiece", &puyotan::PuyotanMatch::getPiece)
         .def_property_readonly("frame", &puyotan::PuyotanMatch::getFrame)
         .def_property_readonly("status", &puyotan::PuyotanMatch::getStatus)

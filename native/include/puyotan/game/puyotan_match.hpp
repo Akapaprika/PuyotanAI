@@ -48,6 +48,7 @@ public:
     PuyoPiece getPiece(int player_id, int index_offset) const {
         return tsumo_.get(players_[player_id].active_next_pos + index_offset);
     }
+    const Tsumo& getTsumo() const { return tsumo_; }
     int getFrame() const { return frame_; }
     MatchStatus getStatus() const { return status_; }
     std::string getStatusText() const;

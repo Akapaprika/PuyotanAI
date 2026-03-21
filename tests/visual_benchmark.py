@@ -1,7 +1,7 @@
 import sys
-import os
-from pathlib import Path
 import time
+from pathlib import Path
+import argparse
 
 # Add the native library path
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -16,91 +16,116 @@ for d in [DIST_DIR, RELEASE_DIR]:
 try:
     import puyotan_native as p
 except ImportError as e:
-    print(f"Error: Could not import puyotan_native. Make sure to build the project first.\n{e}")
+    print(f"Error: Could not import puyotan_native. build first.\n{e}")
     sys.exit(1)
 
-import argparse
-
-def print_game_state(match, player_id=0):
-    """
-    Prints the board and game information including frame count.
-    """
-    player = match.getPlayer(player_id)
-    board = player.field
-    score = player.score
-    status = match.status_text
-    frame = match.frame
-    
-    chars = {
+def cell_to_char(cell):
+    return {
         p.Cell.Red: "R",
         p.Cell.Green: "G",
         p.Cell.Blue: "B",
         p.Cell.Yellow: "Y",
         p.Cell.Ojama: "O",
-        p.Cell.Empty: "."
-    }
+        p.Cell.Empty: ".",
+    }.get(cell, "?")
+
+def format_tsumo(piece):
+    return f"[{cell_to_char(piece.axis)}{cell_to_char(piece.sub)}]"
+
+def print_game_state(match, moves_made):
+    """Prints both players' boards side-by-side."""
+    p1 = match.getPlayer(0)
+    p2 = match.getPlayer(1)
     
-    print(f"--- Frame: {frame} | Status: {status} ---")
-    print(f"Player {player_id + 1} Score: {score}")
+    # Header
+    print("\033[H\033[J", end="") # Clear screen (ANSI)
+    print(f"=== Puyotan Visual Benchmark | Frame: {match.frame:4d} | Status: {match.status_text} ===")
     
-    # Rows 0 to 12 are visible
+    # Next Queue
+    tsumo = match.getTsumo()
+    # P1/P2 have independent activeNextPos
+    n1_p1 = tsumo.get(p1.active_next_pos)
+    n2_p1 = tsumo.get(p1.active_next_pos + 1)
+    n1_p2 = tsumo.get(p2.active_next_pos)
+    n2_p2 = tsumo.get(p2.active_next_pos + 1)
+    
+    print(f"  P1 NEXT: {format_tsumo(n1_p1)} {format_tsumo(n2_p1)}        P2 NEXT: {format_tsumo(n1_p2)} {format_tsumo(n2_p2)}")
+    print(f"  P1 Score: {p1.score:6d}  Ojama: {p1.active_ojama}({p1.non_active_ojama}) | P2 Score: {p2.score:6d}  Ojama: {p2.active_ojama}({p2.non_active_ojama})")
+    print("-" * 64)
+
+    # Boards side-by-side
     for y in range(12, -1, -1):
         line = f"{y:2d} | "
-        for x_coord in range(6):
-            line += chars.get(board.get(x_coord, y), "?")
+        # P1 Field
+        for x in range(6):
+            line += cell_to_char(p1.field.get(x, y))
+        line += " |        "
+        # P2 Field
+        line += f"{y:2d} | "
+        for x in range(6):
+            line += cell_to_char(p2.field.get(x, y))
+        line += " |"
         print(line)
-    print("    " + "-" * 6)
-    print("      012345")
-    print()
+    
+    print("    " + "-" * 6 + "                 " + "-" * 6)
+    print("      012345                 012345")
+    print(f"  Moves: {moves_made[0]:3d}                   Moves: {moves_made[1]:3d}")
+    print(f"  Chain: {p1.chain_count:3d}                   Chain: {p2.chain_count:3d}")
+    print("-" * 64)
 
 def run_visual_benchmark(seed=1, speed=0.05):
-    print(f"Starting Visual Benchmark with Frame Info (Seed={seed})...")
-    print("-" * 40)
-    
     match = p.PuyotanMatch(seed)
     match.start()
     
-    # Move plan: col 5x6, col 4x6, col 3x6, then col 2 until death
-    # This matches the move sequence logic in benchmark.py
-    move_plan = []
-    move_plan += [5] * 6
-    move_plan += [4] * 6
-    move_plan += [3] * 6
-    
-    move_idx = 0
+    moves_made = [0, 0]
     
     while match.status == p.MatchStatus.PLAYING:
-        p1 = match.getPlayer(0)
-        p2 = match.getPlayer(1)
-
-        # 1. Fill P1 action if needed
-        if p1.action_histories[match.frame & 255].action.type == p.ActionType.NONE:
-            x = move_plan[move_idx] if move_idx < len(move_plan) else 2
-            if match.setAction(0, p.Action(p.ActionType.PUT, x, p.Rotation.Up)):
-                move_idx += 1
-
-        # 2. Fill P2 action if needed
-        if p2.action_histories[match.frame & 255].action.type == p.ActionType.NONE:
-            match.setAction(1, p.Action(p.ActionType.PASS, 0, p.Rotation.Up))
-
-        # 3. Advance frame when both inputs are ready
-        if match.canStepNextFrame():
-            match.stepNextFrame()
-            if speed > 0:
-                print_game_state(match, 0)
-                time.sleep(speed)
-
-        if match.frame > 500: # Safety break
-            print("Safety break: Frame count exceeded 500")
+        # 1. Advance simulation until someone needs a decision
+        mask = match.step_until_decision()
+        
+        if mask == 0: # Match ended
+            break
+            
+        # 2. Assign actions based on mask
+        for pid in range(2):
+            if mask & (1 << pid):
+                # 5-4-3-2 strategy
+                count = moves_made[pid]
+                if count < 6: col = 5
+                elif count < 12: col = 4
+                elif count < 18: col = 3
+                else: col = 2
+                
+                match.setAction(pid, p.Action(p.ActionType.PUT, col, p.Rotation.Up))
+                moves_made[pid] += 1
+        
+        # 3. Advance one frame
+        match.stepNextFrame()
+        
+        # 4. Display
+        if speed > 0:
+            print_game_state(match, moves_made)
+            time.sleep(speed)
+            
+        if match.frame > 2000: # Safety
             break
 
-    print(f"Benchmark finished at frame {match.frame}.")
-    print(f"Final Status: {match.status_text}")
+    print_game_state(match, moves_made)
+    print(f"\nFinal Result: {match.status_text}")
+    print(f"Total Frames: {match.frame}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=1)
-    parser.add_argument("--speed", type=float, default=0.05)
+    parser.add_argument("--speed", type=float, default=0.1)
     args = parser.parse_args()
     
-    run_visual_benchmark(seed=args.seed, speed=args.speed)
+    # Hide cursor
+    print("\033[?25l", end="")
+    try:
+        run_visual_benchmark(seed=args.seed, speed=args.speed)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        # Show cursor
+        print("\033[?25h")
