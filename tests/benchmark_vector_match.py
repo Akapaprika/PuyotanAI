@@ -49,8 +49,6 @@ def benchmark_sequential(num_games=1000):
 
 def benchmark_vectorized(num_games=1000):
     vm = p.PuyotanVectorMatch(num_games, 0)
-    # No start() needed yet? Wait, PuyotanMatch needs start.
-    # PuyotanVectorMatch constructor creates PuyotanMatch objects but they aren't started.
     for i in range(num_games):
         vm.get_match(i).start()
 
@@ -59,7 +57,20 @@ def benchmark_vectorized(num_games=1000):
     
     unfinished = set(range(num_games))
     moves_made = [[0, 0] for _ in range(num_games)]
+    
+    # Tracking observation overhead separately for info
+    obs_time = 0.0
+    obs_calls = 0
+
     while unfinished:
+        # REALISTIC: Retrieve observation EVERY step (simulating policy input)
+        t0 = time.perf_counter()
+        obs = vm.get_observations_all()
+        # Simulate accessing the data (e.g. data validation or dummy sum)
+        _ = obs.shape[0] 
+        obs_time += (time.perf_counter() - t0)
+        obs_calls += 1
+
         masks = vm.step_until_decision()
         
         match_indices = []
@@ -92,16 +103,12 @@ def benchmark_vectorized(num_games=1000):
         if match_indices:
             vm.set_actions(match_indices, player_ids, actions)
 
-    # All frames are already summed in the while loop above.
-
-    # Observation Benchmark
-    start_obs = time.perf_counter()
-    obs = vm.get_observations_all()
-    t_obs = time.perf_counter() - start_obs
-    print(f"Observation Generation (N={num_games}): {t_obs:.4f}s ({num_games/t_obs:.2f} obs/sec)")
-    print(f"Observation Shape: {obs.shape}")
-
     elapsed = time.perf_counter() - start_time
+    
+    print(f"Realistic Vectorized Stats:")
+    print(f"  Obs Retrieval Total: {obs_time:.4f}s ({obs_calls} calls)")
+    print(f"  Avg Obs Time: {obs_time/obs_calls if obs_calls > 0 else 0:.6f}s")
+    
     return total_frames, elapsed
 
 if __name__ == "__main__":

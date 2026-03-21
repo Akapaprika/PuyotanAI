@@ -48,7 +48,7 @@ class PuyotanEnv(gym.Env):
         self.action_space = spaces.Discrete(len(ActionMapper.ACTIONS))
         # 2 players, 5 colors, 6 width, 13 height
         self.observation_space = spaces.Box(
-            low=0, high=1, shape=(2, 5, 6, 13), dtype=np.float32
+            low=0, high=1, shape=(2, 5, 6, 13), dtype=np.uint8
         )
         self.match = None
         self._seed = seed if seed is not None else 1
@@ -97,8 +97,8 @@ class PuyotanEnv(gym.Env):
         p1 = self.match.getPlayer(0)
         p2 = self.match.getPlayer(1)
         
-        obs = np.zeros((2, 5, 6, 13), dtype=np.float32)
-        # to_obs_flat returns (5, 6, 13)
+        obs = np.zeros((2, 5, 6, 13), dtype=np.uint8)
+        # to_obs_flat returns (5, 6, 13) uint8
         obs[0] = p1.to_obs_flat()
         obs[1] = p2.to_obs_flat()
         return obs
@@ -130,7 +130,7 @@ class PuyotanVectorEnv:
         self.vm = p.PuyotanVectorMatch(num_envs, base_seed)
         self.action_space = spaces.Discrete(len(ActionMapper.ACTIONS))
         self.observation_space = spaces.Box(
-            low=0, high=1, shape=(2, 5, 6, 13), dtype=np.float32
+            low=0, high=1, shape=(2, 5, 6, 13), dtype=np.uint8
         )
         self.base_seed = base_seed
 

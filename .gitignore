@@ -6,4 +6,23 @@ memo.md
 # Python
 __pycache__/
 *.pyc
+.ipynb_checkpoints/
+.venv/
+build/
+dist/
+
+# PuyoPuyo Models
+models/*.pt
+models/*.onnx
+
+# Native Build
+native/build/
+native/dist/
+*.pyd
+*.so
+*.dll
+*.exe
+*.obj
+*.pdb
+
 tests/*.txt

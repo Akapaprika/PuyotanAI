@@ -95,6 +95,8 @@ class PuyotanViewModel(QObject):
         self.state_changed.emit()
 
     def move_player(self, pid, dx):
+        if not self.model.is_playing():
+            return
         if not self.players[pid].confirmed and self.players[pid].has_decision:
             rot = self.players[pid].rotation
             min_x = 0
@@ -107,6 +109,8 @@ class PuyotanViewModel(QObject):
                 self.state_changed.emit()
 
     def rotate_player(self, pid, direction):
+        if not self.model.is_playing():
+            return
         if not self.players[pid].confirmed and self.players[pid].has_decision:
             rot_order = [p.Rotation.Up, p.Rotation.Right, p.Rotation.Down, p.Rotation.Left]
             idx = rot_order.index(self.players[pid].rotation)
@@ -122,6 +126,8 @@ class PuyotanViewModel(QObject):
             self.state_changed.emit()
 
     def confirm_player(self, pid):
+        if not self.model.is_playing():
+            return
         if self.players[pid].has_decision and not self.players[pid].confirmed:
             self.players[pid].confirmed = True
             # Try to push to model immediately
