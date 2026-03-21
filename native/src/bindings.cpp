@@ -56,14 +56,14 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("empty", &BitBoard::empty);
 
     static auto BoardToObs = [](const Board& b) {
-        // Returns a float32 numpy array of shape [kNumColors, kWidth, kHeight]:
-        //   [color_idx, col, row] -> 1.0f if occupied, else 0.0f
-        pybind11::array_t<float> arr({config::Board::kNumColors, config::Board::kWidth, config::Board::kHeight});
+        // Returns a uint8 numpy array of shape [kNumColors, kWidth, kHeight]:
+        //   [color_idx, col, row] -> 1 if occupied, else 0
+        pybind11::array_t<uint8_t> arr({(size_t)config::Board::kNumColors, (size_t)config::Board::kWidth, (size_t)config::Board::kHeight});
         auto r = arr.mutable_unchecked<3>();
         for (int c = 0; c < config::Board::kNumColors; ++c)
             for (int x = 0; x < config::Board::kWidth; ++x)
                 for (int y = 0; y < config::Board::kHeight; ++y)
-                    r(c, x, y) = b.getBitboard(static_cast<Cell>(c)).get(x, y) ? 1.0f : 0.0f;
+                    r(c, x, y) = b.getBitboard(static_cast<Cell>(c)).get(x, y) ? 1 : 0;
         return arr;
     };
 
@@ -158,14 +158,13 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("current_action", &puyotan::PuyotanPlayer::current_action)
         .def_readwrite("next_action", &puyotan::PuyotanPlayer::next_action)
         .def("to_obs_flat", [](const puyotan::PuyotanPlayer& p) {
-            // Re-implement or call common logic to avoid scope issues with static lambdas
-            pybind11::array_t<float> arr({config::Board::kNumColors, config::Board::kWidth, config::Board::kHeight});
+            pybind11::array_t<uint8_t> arr({(size_t)config::Board::kNumColors, (size_t)config::Board::kWidth, (size_t)config::Board::kHeight});
             auto r = arr.mutable_unchecked<3>();
             for (int c = 0; c < config::Board::kNumColors; ++c) {
                 auto bb = p.field.getBitboard(static_cast<puyotan::Cell>(c));
                 for (int x = 0; x < config::Board::kWidth; ++x)
                     for (int y = 0; y < config::Board::kHeight; ++y)
-                        r(c, x, y) = bb.get(x, y) ? 1.0f : 0.0f;
+                        r(c, x, y) = bb.get(x, y) ? 1 : 0;
             }
             return arr;
         }, "Returns the player's field as a NumPy array [kNumColors, kWidth, kHeight]");

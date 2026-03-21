@@ -33,10 +33,8 @@ PuyotanMatch::PuyotanMatch(int32_t seed) : seed_(seed == 0 ? 1 : seed), tsumo_(s
 }
 
 void PuyotanMatch::start() {
-    if (frame_ == 0) {
-        ++frame_;
-        status_ = MatchStatus::PLAYING;
-    }
+    assert(status_ == MatchStatus::READY && "start() should only be called once when match is ready");
+    status_ = MatchStatus::PLAYING;
 }
 
 std::string PuyotanMatch::getStatusText() const {
@@ -51,25 +49,24 @@ std::string PuyotanMatch::getStatusText() const {
 }
 
 bool PuyotanMatch::setAction(int id, Action action) {
-    if (frame_ <= 0) return false;
+    assert(status_ == MatchStatus::PLAYING && "Cannot set action to match not in PLAYING status");
     auto& p = players_[id];
-    if (p.current_action.action.type == ActionType::NONE) {
-        switch (action.type) {
-            case ActionType::PASS:
-                p.current_action = {action, 0};
-                return true;
-            case ActionType::PUT:
-                p.current_action = {action, 1};
-                return true;
-            default:
-                return false;
-        }
+    assert(p.current_action.action.type == ActionType::NONE && "Action already set for this player in this turn");
+
+    switch (action.type) {
+        case ActionType::PASS:
+            p.current_action = {action, 0};
+            return true;
+        case ActionType::PUT:
+            p.current_action = {action, 1};
+            return true;
+        default:
+            return false;
     }
-    return false;
 }
 
 bool PuyotanMatch::canStepNextFrame() const {
-    if (frame_ <= 0) return false;
+    if (status_ != MatchStatus::PLAYING) return false;
     for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         if (players_[id].current_action.action.type == ActionType::NONE) return false;
     }

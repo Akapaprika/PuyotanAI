@@ -39,7 +39,7 @@ public:
      * Bulk observation generation.
      * @return Flat array of [N, 2, 5, 6, 13] representing all fields.
      */
-    pybind11::array_t<float> get_observations_all() const;
+    pybind11::array_t<uint8_t> get_observations_all() const;
 
     size_t size() const { return matches_.size(); }
     PuyotanMatch& get_match(int i) { return *matches_[i]; }

@@ -74,7 +74,7 @@ private:
     int32_t seed_;
     Tsumo tsumo_;
     PuyotanPlayer players_[config::Rule::kNumPlayers];
-    int frame_ = 0;
+    int frame_ = 1;
     MatchStatus status_ = MatchStatus::READY;
 
     void sendOjama(int sender_id, int ojama);
