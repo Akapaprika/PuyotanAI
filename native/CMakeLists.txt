@@ -4,6 +4,7 @@ project(PuyotanNative LANGUAGES CXX)
 set(PYBIND11_FINDPYTHON ON)
 find_package(Python REQUIRED COMPONENTS Interpreter Development)
 find_package(pybind11 CONFIG REQUIRED)
+find_package(OpenMP REQUIRED)
 
 # Include all source files in the new structure
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
@@ -17,6 +18,7 @@ set_target_properties(puyotan_native PROPERTIES CXX_EXTENSIONS OFF)
 
 # Use unified include directory
 target_include_directories(puyotan_native PRIVATE include)
+target_link_libraries(puyotan_native PRIVATE OpenMP::OpenMP_CXX)
 
 # ===== MSVC Optimization Settings =====
 if (MSVC)

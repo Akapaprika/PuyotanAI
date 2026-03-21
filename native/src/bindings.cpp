@@ -10,6 +10,7 @@
 #include <puyotan/game/simulator.hpp>
 #include <puyotan/game/scorer.hpp>
 #include <puyotan/game/puyotan_match.hpp>
+#include <puyotan/game/puyotan_vector_match.hpp>
 
 namespace puyotan {
 
@@ -195,6 +196,18 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_property_readonly("frame", &puyotan::PuyotanMatch::getFrame)
         .def_property_readonly("status", &puyotan::PuyotanMatch::getStatus)
         .def_property_readonly("status_text", &puyotan::PuyotanMatch::getStatusText);
+    
+    pybind11::class_<puyotan::PuyotanVectorMatch>(m, "PuyotanVectorMatch")
+        .def(pybind11::init<int, int32_t>(), pybind11::arg("num_matches"), pybind11::arg("base_seed") = 0)
+        .def("reset", &puyotan::PuyotanVectorMatch::reset, pybind11::arg("id") = -1,
+             pybind11::call_guard<pybind11::gil_scoped_release>())
+        .def("step_until_decision", &puyotan::PuyotanVectorMatch::step_until_decision,
+             pybind11::call_guard<pybind11::gil_scoped_release>())
+        .def("set_actions", &puyotan::PuyotanVectorMatch::set_actions,
+             pybind11::arg("match_indices"), pybind11::arg("player_ids"), pybind11::arg("actions"))
+        .def("get_observations_all", &puyotan::PuyotanVectorMatch::get_observations_all)
+        .def("get_match", &puyotan::PuyotanVectorMatch::get_match, pybind11::return_value_policy::reference_internal)
+        .def_property_readonly("size", &puyotan::PuyotanVectorMatch::size);
 }
 
 } // namespace puyotan
