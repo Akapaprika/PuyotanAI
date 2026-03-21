@@ -154,11 +154,8 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("non_active_ojama", &puyotan::PuyotanPlayer::non_active_ojama)
         .def_readwrite("active_ojama", &puyotan::PuyotanPlayer::active_ojama)
         .def_readwrite("chain_count", &puyotan::PuyotanPlayer::chain_count)
-        .def_property_readonly("action_histories", [](const puyotan::PuyotanPlayer& p) {
-            std::vector<puyotan::ActionState> v(256);
-            for (int i = 0; i < 256; ++i) v[i] = p.action_histories[i];
-            return v;
-        })
+        .def_readwrite("current_action", &puyotan::PuyotanPlayer::current_action)
+        .def_readwrite("next_action", &puyotan::PuyotanPlayer::next_action)
         .def("to_obs_flat", [](const puyotan::PuyotanPlayer& p) {
             // Re-implement or call common logic to avoid scope issues with static lambdas
             pybind11::array_t<float> arr({config::Board::kNumColors, config::Board::kWidth, config::Board::kHeight});

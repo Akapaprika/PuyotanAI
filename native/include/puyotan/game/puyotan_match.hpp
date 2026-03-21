@@ -13,8 +13,9 @@ namespace puyotan {
  * Player state for Puyotan frame-based match.
  */
 struct PuyotanPlayer {
-    Board field;                                     // 96 bytes (aligned 16)
-    std::array<ActionState, 256> action_histories{}; // frame & 255 -> state (NONE type if empty)
+    Board field;                // 96 bytes (aligned 16)
+    ActionState current_action{};
+    ActionState next_action{};
 
     // Grouping for 16-byte alignment
     int score = 0;              // 4 bytes
@@ -25,6 +26,7 @@ struct PuyotanPlayer {
     uint8_t chain_count = 0;       // 1 byte
     uint8_t padding = 0;           // 1 byte (explict for 16-byte block)
 
+    PuyotanPlayer() = default;
     void fallOjama(int num, int32_t& seed);
 };
 

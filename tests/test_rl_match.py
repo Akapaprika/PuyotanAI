@@ -41,18 +41,25 @@ def test_rl_api():
 
     # Benchmarking step_until_decision efficiency
     print("\n--- Benchmarking step_until_decision ---")
-    num_games = 1000
+    num_games = 50000
     start = time.perf_counter()
     total_frames = 0
     for i in range(num_games):
         m = p.PuyotanMatch(i)
         m.start()
+        moves_made = [0, 0]
         while m.status == p.MatchStatus.PLAYING:
             mask = m.step_until_decision()
             if mask == 0: break
-            # Simple policy: always col 2
-            if mask & 1: m.setAction(0, p.Action(p.ActionType.PUT, 2, p.Rotation.Up))
-            if mask & 2: m.setAction(1, p.Action(p.ActionType.PUT, 2, p.Rotation.Up))
+            for id in range(2):
+                if mask & (1 << id):
+                    count = moves_made[id]
+                    if count < 6: col = 5
+                    elif count < 12: col = 4
+                    elif count < 18: col = 3
+                    else: col = 2
+                    if m.setAction(id, p.Action(p.ActionType.PUT, col, p.Rotation.Up)):
+                        moves_made[id] += 1
         total_frames += m.frame
 
     elapsed = time.perf_counter() - start
