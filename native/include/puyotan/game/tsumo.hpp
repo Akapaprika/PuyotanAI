@@ -17,9 +17,10 @@ public:
 
     inline PuyoPiece get(int index) const {
         if (index >= generated_count_) {
-            generateUpTo(index);
+            generateMore();
         }
-        return pool_[index];
+        // Ring buffer access using bitmask (size 512 -> mask 0x1FF)
+        return pool_[index & (config::Rule::kTsumoPoolSize - 1)];
     }
     void setSeed(int32_t seed);
     int32_t getSeed() const { return seed_; }
@@ -29,9 +30,12 @@ private:
     mutable int generated_count_ = 0;
     mutable std::array<PuyoPiece, config::Rule::kTsumoPoolSize> pool_;
 
+    static_assert((config::Rule::kTsumoPoolSize & (config::Rule::kTsumoPoolSize - 1)) == 0, 
+                  "TsumoPoolSize must be a power of 2 for fast bitmask indexing");
+
     int nextInt() const;
     Cell nextKind() const;
-    void generateUpTo(int target_index) const;
+    void generateMore() const;
 };
 
 } // namespace puyotan

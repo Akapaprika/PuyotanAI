@@ -1,109 +1,51 @@
+"""
+C++ エンジン高レベルラッパー（PuyotanMatch ベース）
+旧バージョンの Simulator ラッパーを廃止し、PuyotanMatch を使用するように刷新。
+"""
 import sys
-import os
 from pathlib import Path
 
-# Add the native library path
 BASE_DIR = Path(__file__).resolve().parent.parent
-DIST_DIR = BASE_DIR / "native" / "dist"
+for d in [BASE_DIR / "native" / "dist", BASE_DIR / "native" / "build_Release" / "Release"]:
+    if d.exists():
+        sys.path.insert(0, str(d))
+        break
 
-if DIST_DIR.exists():
-    sys.path.insert(0, str(DIST_DIR))
-else:
-    # Fallback for development if dist doesn't exist yet
-    DEBUG_DIR = BASE_DIR / "native" / "build" / "Debug"
-    if DEBUG_DIR.exists():
-        sys.path.insert(0, str(DEBUG_DIR))
+import puyotan_native as p
 
-try:
-    import puyotan_native as p
-except ImportError as e:
-    print(f"Error: Could not import puyotan_native. Make sure to build the project first.\n{e}")
-    sys.exit(1)
 
 class PuyotanEngine:
     """
-    High-level Python wrapper for the Puyotan C++ engine.
+    PuyotanMatch の高レベル Python ラッパー。
+    GUI / テスト / orchestrator から使用する。
     """
-    def __init__(self, seed=0):
-        self.simulator = p.Simulator(seed)
 
-    def reset(self, seed=0):
-        """Resets the game with a new seed."""
-        self.simulator.reset(seed)
+    def __init__(self, seed: int = 0):
+        self.match = p.PuyotanMatch(seed)
 
-    def move(self, x, rotation):
-        """Places a piece at column x with specified rotation."""
-        if not self.simulator.is_game_over:
-            self.simulator.step(x, rotation)
-            return True
-        return False
+    def start(self):
+        self.match.start()
+        self.match.step_until_decision()
 
-    def is_game_over(self):
-        return self.simulator.is_game_over
+    def is_playing(self) -> bool:
+        return self.match.status == p.MatchStatus.PLAYING
 
-    def get_board(self):
-        return self.simulator.board
+    @property
+    def status(self):
+        return self.match.status
 
-    def get_current_piece(self):
-        return self.simulator.getCurrentPiece()
+    @property
+    def frame(self) -> int:
+        return self.match.frame
 
-    def get_tsumo_index(self):
-        return self.simulator.tsumo_index
+    def get_player(self, pid: int):
+        return self.match.getPlayer(pid)
 
-    def get_total_score(self):
-        return self.simulator.total_score
+    def get_piece(self, pid: int):
+        return self.match.getPiece(pid)
 
-    def print_board(self):
-        """Simple ASCII representation of the board."""
-        board = self.get_board()
-        chars = {
-            p.Cell.Red: "R",
-            p.Cell.Green: "G",
-            p.Cell.Blue: "B",
-            p.Cell.Yellow: "Y",
-            p.Cell.Ojama: "O",
-            p.Cell.Empty: "."
-        }
-        
-        # Rows 0 to 12 are visible
-        for y in range(12, -1, -1):
-            line = ""
-            for x in range(6):
-                line += chars.get(board.get(x, y), "?")
-            print(line)
-        print("-" * 6)
+    def set_action(self, pid: int, action) -> bool:
+        return self.match.setAction(pid, action)
 
-if __name__ == "__main__":
-    # Simple demo
-    print("Starting Puyotan Engine Demo...")
-    engine = PuyotanEngine(seed=1)
-    
-    # Demo: Place a few pieces
-    # moves = [
-    #     (3, p.Rotation.Up),
-    #     (2, p.Rotation.Right),
-    #     (4, p.Rotation.Left),
-    #     (2, p.Rotation.Down),
-    # ]
-
-    moves = [
-        (2, p.Rotation.Up),
-        (2, p.Rotation.Up),
-        (2, p.Rotation.Up),
-        (2, p.Rotation.Up),
-        (2, p.Rotation.Up),
-        (2, p.Rotation.Right)
-    ]
-
-    for x, rot in moves:
-        piece = engine.get_current_piece()
-        print(f"Step {engine.get_tsumo_index()}: Piece(axis={piece.axis}, sub={piece.sub}) -> x={x}, rot={rot}")
-        engine.move(x, rot)
-        engine.print_board()
-        print(f"Total Score: {engine.get_total_score()}")
-        print()
-
-    if engine.is_game_over():
-        print("Game Over!")
-
-    print("Demo finished successfully.")
+    def step_until_decision(self):
+        return self.match.step_until_decision()

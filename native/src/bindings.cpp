@@ -10,6 +10,8 @@
 #include <puyotan/game/simulator.hpp>
 #include <puyotan/game/scorer.hpp>
 #include <puyotan/game/puyotan_match.hpp>
+#include <puyotan/game/onnx_policy.hpp>
+#include <puyotan/game/puyotan_vector_match.hpp>
 
 namespace puyotan {
 
@@ -55,14 +57,14 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("empty", &BitBoard::empty);
 
     static auto BoardToObs = [](const Board& b) {
-        // Returns a float32 numpy array of shape [kNumColors, kWidth, kHeight]:
-        //   [color_idx, col, row] -> 1.0f if occupied, else 0.0f
-        pybind11::array_t<float> arr({config::Board::kNumColors, config::Board::kWidth, config::Board::kHeight});
+        // Returns a uint8 numpy array of shape [kNumColors, kWidth, kHeight]:
+        //   [color_idx, col, row] -> 1 if occupied, else 0
+        pybind11::array_t<uint8_t> arr({(size_t)config::Board::kNumColors, (size_t)config::Board::kWidth, (size_t)config::Board::kHeight});
         auto r = arr.mutable_unchecked<3>();
         for (int c = 0; c < config::Board::kNumColors; ++c)
             for (int x = 0; x < config::Board::kWidth; ++x)
                 for (int y = 0; y < config::Board::kHeight; ++y)
-                    r(c, x, y) = b.getBitboard(static_cast<Cell>(c)).get(x, y) ? 1.0f : 0.0f;
+                    r(c, x, y) = b.getBitboard(static_cast<Cell>(c)).get(x, y) ? 1 : 0;
         return arr;
     };
 
@@ -154,20 +156,16 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("non_active_ojama", &puyotan::PuyotanPlayer::non_active_ojama)
         .def_readwrite("active_ojama", &puyotan::PuyotanPlayer::active_ojama)
         .def_readwrite("chain_count", &puyotan::PuyotanPlayer::chain_count)
-        .def_property_readonly("action_histories", [](const puyotan::PuyotanPlayer& p) {
-            std::vector<puyotan::ActionState> v(256);
-            for (int i = 0; i < 256; ++i) v[i] = p.action_histories[i];
-            return v;
-        })
+        .def_readwrite("current_action", &puyotan::PuyotanPlayer::current_action)
+        .def_readwrite("next_action", &puyotan::PuyotanPlayer::next_action)
         .def("to_obs_flat", [](const puyotan::PuyotanPlayer& p) {
-            // Re-implement or call common logic to avoid scope issues with static lambdas
-            pybind11::array_t<float> arr({config::Board::kNumColors, config::Board::kWidth, config::Board::kHeight});
+            pybind11::array_t<uint8_t> arr({(size_t)config::Board::kNumColors, (size_t)config::Board::kWidth, (size_t)config::Board::kHeight});
             auto r = arr.mutable_unchecked<3>();
             for (int c = 0; c < config::Board::kNumColors; ++c) {
                 auto bb = p.field.getBitboard(static_cast<puyotan::Cell>(c));
                 for (int x = 0; x < config::Board::kWidth; ++x)
                     for (int y = 0; y < config::Board::kHeight; ++y)
-                        r(c, x, y) = bb.get(x, y) ? 1.0f : 0.0f;
+                        r(c, x, y) = bb.get(x, y) ? 1 : 0;
             }
             return arr;
         }, "Returns the player's field as a NumPy array [kNumColors, kWidth, kHeight]");
@@ -194,10 +192,38 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("step_until_decision", &puyotan::PuyotanMatch::stepUntilDecision,
              pybind11::call_guard<pybind11::gil_scoped_release>())
         .def("getPlayer", &puyotan::PuyotanMatch::getPlayer, pybind11::return_value_policy::reference_internal)
+        .def("getTsumo", &puyotan::PuyotanMatch::getTsumo, pybind11::return_value_policy::reference_internal)
         .def("getPiece", &puyotan::PuyotanMatch::getPiece)
         .def_property_readonly("frame", &puyotan::PuyotanMatch::getFrame)
         .def_property_readonly("status", &puyotan::PuyotanMatch::getStatus)
         .def_property_readonly("status_text", &puyotan::PuyotanMatch::getStatusText);
+    
+    pybind11::class_<puyotan::PuyotanVectorMatch>(m, "PuyotanVectorMatch")
+        .def(pybind11::init<int, int32_t>(), pybind11::arg("num_matches"), pybind11::arg("base_seed") = 0)
+        .def("reset", &puyotan::PuyotanVectorMatch::reset, pybind11::arg("id") = -1,
+             pybind11::call_guard<pybind11::gil_scoped_release>())
+        .def("step_until_decision", &puyotan::PuyotanVectorMatch::step_until_decision,
+             pybind11::call_guard<pybind11::gil_scoped_release>())
+        .def("set_actions", &puyotan::PuyotanVectorMatch::set_actions,
+             pybind11::arg("match_indices"), pybind11::arg("player_ids"), pybind11::arg("actions"))
+        .def("get_observations_all", &puyotan::PuyotanVectorMatch::get_observations_all)
+        .def("get_match", &puyotan::PuyotanVectorMatch::get_match, pybind11::return_value_policy::reference_internal)
+        .def_property_readonly("size", &puyotan::PuyotanVectorMatch::size);
+
+    // ===== OnnxPolicy =====
+    pybind11::class_<puyotan::OnnxPolicy>(m, "OnnxPolicy")
+        .def(pybind11::init<const std::string&, bool>(),
+             pybind11::arg("model_path"),
+             pybind11::arg("use_cpu") = true)
+        .def("infer",
+             [](puyotan::OnnxPolicy& self,
+                pybind11::array_t<uint8_t, pybind11::array::c_style | pybind11::array::forcecast> obs) {
+                 pybind11::gil_scoped_release release;
+                 return self.infer(obs.data(), static_cast<int64_t>(obs.shape(0)));
+             },
+             pybind11::arg("obs"),
+             "Run inference on a batch of uint8 observations. Returns list of action indices.")
+        .def("is_loaded", &puyotan::OnnxPolicy::is_loaded);
 }
 
 } // namespace puyotan

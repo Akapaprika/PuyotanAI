@@ -6,4 +6,28 @@ memo.md
 # Python
 __pycache__/
 *.pyc
+.ipynb_checkpoints/
+.venv/
+build/
+dist/
+
+# Models (Keep repository lightweight)
+models/*.pt
+models/*.onnx
+models/*.onnx.data
+
+# Native (C++ Build & External Libs)
+native/build*/
+native/dist/
+native/onnxruntime/
+*.pyd
+*.obj
+*.lib
+*.exp
+*.pdb
+*.pyd.recipe
+*.iobj
+*.ipdb
+
+# Test artifacts
 tests/*.txt

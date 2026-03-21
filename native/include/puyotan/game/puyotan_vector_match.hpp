@@ -1,0 +1,52 @@
+#pragma once
+
+#include <vector>
+#include <memory>
+#include <pybind11/pybind11.h>
+#include <pybind11/numpy.h>
+#include <puyotan/game/puyotan_match.hpp>
+
+namespace puyotan {
+
+/**
+ * PuyotanVectorMatch
+ *   Manages a collection of PuyotanMatch instances for high-throughput batch simulation.
+ *   Optimized for RL training loops where multiple agents act in parallel.
+ */
+class PuyotanVectorMatch {
+public:
+    explicit PuyotanVectorMatch(int num_matches, int32_t base_seed = 0);
+
+    /**
+     * Resets one or all matches.
+     */
+    void reset(int id = -1);
+
+    /**
+     * Runs all matches until they require decision (Step until decision).
+     * @return Array of masks [N] where mask & (1 << player_id) means decision needed.
+     */
+    std::vector<int> step_until_decision();
+
+    /**
+     * Batch-set actions for multiple players across matches.
+     */
+    void set_actions(const std::vector<int>& match_indices, 
+                     const std::vector<int>& player_ids,
+                     const std::vector<Action>& actions);
+
+    /**
+     * Bulk observation generation.
+     * @return Flat array of [N, 2, 5, 6, 13] representing all fields.
+     */
+    pybind11::array_t<uint8_t> get_observations_all() const;
+
+    size_t size() const { return matches_.size(); }
+    PuyotanMatch& get_match(int i) { return *matches_[i]; }
+
+private:
+    std::vector<std::unique_ptr<PuyotanMatch>> matches_;
+    int32_t base_seed_;
+};
+
+} // namespace puyotan

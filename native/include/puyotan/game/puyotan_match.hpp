@@ -13,8 +13,9 @@ namespace puyotan {
  * Player state for Puyotan frame-based match.
  */
 struct PuyotanPlayer {
-    Board field;                                     // 96 bytes (aligned 16)
-    std::array<ActionState, 256> action_histories{}; // frame & 255 -> state (NONE type if empty)
+    Board field;                // 96 bytes (aligned 16)
+    ActionState current_action{};
+    ActionState next_action{};
 
     // Grouping for 16-byte alignment
     int score = 0;              // 4 bytes
@@ -25,6 +26,7 @@ struct PuyotanPlayer {
     uint8_t chain_count = 0;       // 1 byte
     uint8_t padding = 0;           // 1 byte (explict for 16-byte block)
 
+    PuyotanPlayer() = default;
     void fallOjama(int num, int32_t& seed);
 };
 
@@ -46,6 +48,7 @@ public:
     PuyoPiece getPiece(int player_id, int index_offset) const {
         return tsumo_.get(players_[player_id].active_next_pos + index_offset);
     }
+    const Tsumo& getTsumo() const { return tsumo_; }
     int getFrame() const { return frame_; }
     MatchStatus getStatus() const { return status_; }
     std::string getStatusText() const;
@@ -70,8 +73,8 @@ public:
 private:
     int32_t seed_;
     Tsumo tsumo_;
-    PuyotanPlayer players_[2];
-    int frame_ = 0;
+    PuyotanPlayer players_[config::Rule::kNumPlayers];
+    int frame_ = 1;
     MatchStatus status_ = MatchStatus::READY;
 
     void sendOjama(int sender_id, int ojama);

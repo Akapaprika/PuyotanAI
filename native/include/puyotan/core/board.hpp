@@ -67,6 +67,12 @@ struct alignas(16) BitBoard {
         (&lo)[x >> 2] &= ~(1ULL << (((x & 3) << 4) | y));
     }
 
+    static __forceinline BitBoard fromColumnMask(uint8_t cols) {
+        uint64_t mask_lo = _pdep_u64(cols & 0x0F, 0x0001000100010001ULL) * 0xFFFFULL;
+        uint64_t mask_hi = _pdep_u64((cols >> 4) & 0x03, 0x0000000000010001ULL) * 0xFFFFULL;
+        return {mask_lo, mask_hi};
+    }
+
     [[nodiscard]] __forceinline int popcount() const {
         return static_cast<int>(std::popcount(lo) + std::popcount(hi));
     }
@@ -111,6 +117,16 @@ public:
     Cell get(int x, int y) const;
     void set(int x, int y, Cell color);
     void clear(int x, int y);
+
+    void setRowMask(int y, Cell cell, uint8_t cols_mask) {
+        uint64_t target_lo = _pdep_u64(cols_mask & 0x0F, 0x0001000100010001ULL) << y;
+        uint64_t target_hi = _pdep_u64((cols_mask >> 4) & 0x03, 0x0000000000010001ULL) << y;
+
+        boards_[static_cast<int>(cell)].lo |= target_lo;
+        boards_[static_cast<int>(cell)].hi |= target_hi;
+        occupancy_.lo |= target_lo;
+        occupancy_.hi |= target_hi;
+    }
 
     void placePiece(int col, Cell color);
 

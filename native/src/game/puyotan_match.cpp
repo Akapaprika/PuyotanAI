@@ -10,43 +10,31 @@ void PuyotanPlayer::fallOjama(int num, int32_t& seed) {
     constexpr int width = config::Board::kWidth;
     while (num > 0) {
         if (num >= width) {
-            for (int x = 0; x < width; ++x) {
-                field.set(x, config::Board::kSpawnRow, Cell::Ojama);
-            }
+            field.setRowMask(config::Board::kSpawnRow, Cell::Ojama, 0x3F);
             Gravity::execute(field);
             num -= width;
         } else {
-            uint8_t mask = 0;
+            uint32_t mask = 0;
             for (int i = 0; i < num; ++i) {
                 int pos = PuyotanMatch::nextInt(seed, width - i);
-                int cnt = 0;
-                for (int x = 0; x < width; ++x) {
-                    if (!(mask & (1 << x))) {
-                        if (cnt++ == pos) {
-                            mask |= (1 << x);
-                            break;
-                        }
-                    }
-                }
+                mask |= _pdep_u32(1U << pos, ~mask & 0x3F);
             }
-            for (int x = 0; x < width; ++x) {
-                if (mask & (1 << x)) {
-                    field.set(x, config::Board::kSpawnRow, Cell::Ojama);
-                }
-            }
+            field.setRowMask(config::Board::kSpawnRow, Cell::Ojama, static_cast<uint8_t>(mask));
             Gravity::execute(field);
             num = 0;
         }
     }
 }
 
-PuyotanMatch::PuyotanMatch(int32_t seed) : seed_(seed), tsumo_(seed) {}
+PuyotanMatch::PuyotanMatch(int32_t seed) : seed_(seed == 0 ? 1 : seed), tsumo_(seed == 0 ? 1 : seed) {
+    for (auto& p : players_) {
+        p = PuyotanPlayer();
+    }
+}
 
 void PuyotanMatch::start() {
-    if (frame_ == 0) {
-        ++frame_;
-        status_ = MatchStatus::PLAYING;
-    }
+    assert(status_ == MatchStatus::READY && "start() should only be called once when match is ready");
+    status_ = MatchStatus::PLAYING;
 }
 
 std::string PuyotanMatch::getStatusText() const {
@@ -61,27 +49,26 @@ std::string PuyotanMatch::getStatusText() const {
 }
 
 bool PuyotanMatch::setAction(int id, Action action) {
-    if (frame_ <= 0) return false;
-    auto& history = players_[id].action_histories[frame_ & 255];
-    if (history.action.type == ActionType::NONE) {
-        switch (action.type) {
-            case ActionType::PASS:
-                history = {action, 0};
-                return true;
-            case ActionType::PUT:
-                history = {action, 1};
-                return true;
-            default:
-                return false;
-        }
+    assert(status_ == MatchStatus::PLAYING && "Cannot set action to match not in PLAYING status");
+    auto& p = players_[id];
+    assert(p.current_action.action.type == ActionType::NONE && "Action already set for this player in this turn");
+
+    switch (action.type) {
+        case ActionType::PASS:
+            p.current_action = {action, 0};
+            return true;
+        case ActionType::PUT:
+            p.current_action = {action, 1};
+            return true;
+        default:
+            return false;
     }
-    return false;
 }
 
 bool PuyotanMatch::canStepNextFrame() const {
-    if (frame_ <= 0) return false;
-    for (int id = 0; id < 2; ++id) {
-        if (players_[id].action_histories[frame_ & 255].action.type == ActionType::NONE) return false;
+    if (status_ != MatchStatus::PLAYING) return false;
+    for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
+        if (players_[id].current_action.action.type == ActionType::NONE) return false;
     }
     return true;
 }
@@ -90,20 +77,18 @@ void PuyotanMatch::stepNextFrame() {
     if (!canStepNextFrame()) return;
 
     // 1. 行動選択・予約
-    for (int id = 0; id < 2; ++id) {
+    for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         auto& p = players_[id];
-        auto& current = p.action_histories[frame_ & 255];
-        if (current.action.type != ActionType::NONE && current.remaining_frame > 0) {
-            p.action_histories[(frame_ + 1) & 255] = {current.action, static_cast<uint8_t>(current.remaining_frame - 1)};
+        if (p.current_action.action.type != ActionType::NONE && p.current_action.remaining_frame > 0) {
+            p.next_action = {p.current_action.action, static_cast<uint8_t>(p.current_action.remaining_frame - 1)};
         }
     }
 
     // 2. 行動実行
-    for (int id = 0; id < 2; ++id) {
+    for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         auto& p = players_[id];
-        auto& current = p.action_histories[frame_ & 255];
-        if (current.action.type != ActionType::NONE && current.remaining_frame == 0) {
-            const auto& action = current.action;
+        if (p.current_action.action.type != ActionType::NONE && p.current_action.remaining_frame == 0) {
+            const auto& action = p.current_action.action;
             switch (action.type) {
                 case ActionType::PASS:
                     break;
@@ -113,7 +98,6 @@ void PuyotanMatch::stepNextFrame() {
                     const int r = static_cast<int>(action.rotation);
                     assert(x >= 0 && x < config::Board::kWidth);
                     assert(r >= 0 && r < 4);
-
 
                     const int h_axis = p.field.getColumnHeight(x);
                     const int sub_dx = kSubDx[r];
@@ -134,7 +118,7 @@ void PuyotanMatch::stepNextFrame() {
                     uint8_t dirty_colors = (1 << static_cast<int>(tumo.axis)) | (1 << static_cast<int>(tumo.sub));
                     if (Chain::canFire(p.field, dirty_colors)) {
                         p.chain_count = 0;
-                        p.action_histories[(frame_ + 1) & 255] = {Action{ActionType::CHAIN}, 1};
+                        p.next_action = {Action{ActionType::CHAIN}, 1};
                     }
                     break;
                 }
@@ -166,7 +150,7 @@ void PuyotanMatch::stepNextFrame() {
                     }
 
                     if (Gravity::canFall(p.field)) {
-                        p.action_histories[(frame_ + 1) & 255] = {Action{ActionType::CHAIN_FALL}, 0};
+                        p.next_action = {Action{ActionType::CHAIN_FALL}, 0};
                     } else {
                         activateOjama(id);
                     }
@@ -175,8 +159,7 @@ void PuyotanMatch::stepNextFrame() {
                 case ActionType::CHAIN_FALL: {
                     uint8_t dirty_colors = Gravity::execute(p.field);
                     if (Chain::canFire(p.field, dirty_colors)) {
-                        // 継続連鎖なので chain_count はリセットしない (そのままインクリメントさせる)
-                        p.action_histories[(frame_ + 1) & 255] = {Action{ActionType::CHAIN}, 1};
+                        p.next_action = {Action{ActionType::CHAIN}, 1};
                     } else {
                         activateOjama(id);
                     }
@@ -196,13 +179,14 @@ void PuyotanMatch::stepNextFrame() {
 
     // 3. 窒息判定 (Branchless Status Map)
     uint32_t alive_mask = 0;
-    for (int id = 0; id < 2; ++id) {
+    for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         auto& p = players_[id];
-        bool is_alive = p.action_histories[(frame_ + 1) & 255].action.type != ActionType::NONE || 
+        bool is_alive = p.next_action.action.type != ActionType::NONE || 
                         p.field.get(config::Rule::kDeathCol, config::Rule::kDeathRow) == Cell::Empty;
         alive_mask |= (is_alive << id);
     }
 
+    static_assert(config::Rule::kNumPlayers == 2, "Match status mapping explicitly assumes 2 players");
     if (alive_mask != 3) { // 少なくとも一人が死亡
         static constexpr MatchStatus kNextStatus[] = {
             MatchStatus::DRAW,   // 00: 両者死亡
@@ -214,32 +198,29 @@ void PuyotanMatch::stepNextFrame() {
     }
 
     // 4. おじゃま処理
-    for (int id = 0; id < 2; ++id) {
+    for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         auto& p = players_[id];
-        auto& next = p.action_histories[(frame_ + 1) & 255];
-        if (next.action.type == ActionType::NONE && p.active_ojama > 0) {
-            auto& current = p.action_histories[frame_ & 255];
-            if (current.action.type != ActionType::OJAMA) {
-                next = {Action{ActionType::OJAMA}, 0};
+        if (p.next_action.action.type == ActionType::NONE && p.active_ojama > 0) {
+            if (p.current_action.action.type != ActionType::OJAMA) {
+                p.next_action = {Action{ActionType::OJAMA}, 0};
             }
         }
     }
 
     // 5. ツモ・フレーム遷移
-    for (int id = 0; id < 2; ++id) {
+    for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         auto& p = players_[id];
-        auto& next = p.action_histories[(frame_ + 1) & 255];
-        if (next.action.type == ActionType::NONE) {
-            auto& current = p.action_histories[frame_ & 255];
-            if (current.action.type != ActionType::PASS) {
+        if (p.next_action.action.type == ActionType::NONE) {
+            if (p.current_action.action.type != ActionType::PASS) {
                 ++(p.active_next_pos);
             }
         }
     }
 
-    // Clear current frame history for next cycle (to ensure it represents "empty" 256 frames later)
-    for (int id = 0; id < 2; ++id) {
-        players_[id].action_histories[frame_ & 255] = {};
+    // Advance actions: current = next, and clear next for the next step.
+    for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
+        players_[id].current_action = players_[id].next_action;
+        players_[id].next_action = {};
     }
 
     ++frame_;
@@ -260,8 +241,9 @@ void PuyotanMatch::activateOjama(int finishing_player_id) {
 int PuyotanMatch::stepUntilDecision() {
     while (status_ == MatchStatus::PLAYING) {
         int mask = 0;
-        if (players_[0].action_histories[frame_ & 255].action.type == ActionType::NONE) mask |= 1;
-        if (players_[1].action_histories[frame_ & 255].action.type == ActionType::NONE) mask |= 2;
+        for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
+            if (players_[id].current_action.action.type == ActionType::NONE) mask |= (1 << id);
+        }
 
         if (mask != 0) return mask;
 
@@ -295,7 +277,7 @@ int64_t PuyotanMatch::runBatch(int num_games, int32_t seed) {
 
         while (match.getStatus() == MatchStatus::PLAYING) {
             bool action_set = false;
-            if (match.players_[0].action_histories[match.frame_ & 255].action.type == ActionType::NONE) {
+            if (match.players_[0].current_action.action.type == ActionType::NONE) {
                 int col = (p1_move < num_moves) ? move_plan[p1_move] : 2;
                 if (match.setAction(0, Action{ActionType::PUT, static_cast<int8_t>(col), Rotation::Up})) {
                     p1_move++;
@@ -303,7 +285,7 @@ int64_t PuyotanMatch::runBatch(int num_games, int32_t seed) {
                 }
             }
 
-            if (match.players_[1].action_histories[match.frame_ & 255].action.type == ActionType::NONE) {
+            if (match.players_[1].current_action.action.type == ActionType::NONE) {
                 int col = (p2_move < num_moves) ? move_plan[p2_move] : 2;
                 if (match.setAction(1, Action{ActionType::PUT, static_cast<int8_t>(col), Rotation::Up})) {
                     p2_move++;
