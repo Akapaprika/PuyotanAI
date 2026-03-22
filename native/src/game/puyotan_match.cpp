@@ -16,12 +16,16 @@ void PuyotanPlayer::fallOjama(int num, uint32_t& seed) {
         } else {
             uint32_t mask = 0;
             for (int i = 0; i < num; ++i) {
-                int pos = PuyotanMatch::nextInt(seed, width - i);
-                mask |= _pdep_u32(1U << pos, ~mask & 0x3F);
+                const int pos = PuyotanMatch::nextInt(seed, width - i);
+                uint32_t free = ~mask & 0x3F;
+                for (int j = 0; j < pos; ++j) {
+                    free &= (free - 1); // BLSR: Clear the lowest set bit
+                }
+                mask |= (free & -free); // Extract the new lowest set bit
             }
             field.setRowMask(config::Board::kSpawnRow, Cell::Ojama, mask);
             Gravity::execute(field);
-            num = 0;
+            break;
         }
     }
 }
@@ -36,17 +40,6 @@ PuyotanMatch::PuyotanMatch(uint32_t seed) : seed_(seed), tsumo_(seed) {
 void PuyotanMatch::start() {
     assert(status_ == MatchStatus::READY && "start() should only be called once when match is ready");
     status_ = MatchStatus::PLAYING;
-}
-
-std::string PuyotanMatch::getStatusText() const {
-    switch (status_) {
-        case MatchStatus::READY: return "READY";
-        case MatchStatus::PLAYING: return "PLAYING";
-        case MatchStatus::WIN_P1: return "1P WIN";
-        case MatchStatus::WIN_P2: return "2P WIN";
-        case MatchStatus::DRAW: return "DRAW";
-        default: return "UNKNOWN";
-    }
 }
 
 bool PuyotanMatch::setAction(int id, Action action) {
@@ -284,7 +277,7 @@ int64_t PuyotanMatch::runBatch(int num_games, uint32_t seed) {
             if (match.players_[0].current_action.action.type == ActionType::NONE) {
                 int col = (p1_move < num_moves) ? move_plan[p1_move] : 2;
                 if (match.setAction(0, Action{ActionType::PUT, static_cast<int8_t>(col), Rotation::Up})) {
-                    p1_move++;
+                    ++p1_move;
                     action_set = true;
                 }
             }
@@ -292,14 +285,14 @@ int64_t PuyotanMatch::runBatch(int num_games, uint32_t seed) {
             if (match.players_[1].current_action.action.type == ActionType::NONE) {
                 int col = (p2_move < num_moves) ? move_plan[p2_move] : 2;
                 if (match.setAction(1, Action{ActionType::PUT, static_cast<int8_t>(col), Rotation::Up})) {
-                    p2_move++;
+                    ++p2_move;
                     action_set = true;
                 }
             }
 
             if (match.canStepNextFrame()) {
                 match.stepNextFrame();
-                total_frames++;
+                ++total_frames;
             } else if (!action_set) {
                 // If we can't step and we didn't just set an action, we are stuck.
                 // This shouldn't happen with the current engine logic, but let's be safe.

@@ -195,8 +195,7 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("getTsumo", &puyotan::PuyotanMatch::getTsumo, pybind11::return_value_policy::reference_internal)
         .def("getPiece", &puyotan::PuyotanMatch::getPiece)
         .def_property_readonly("frame", &puyotan::PuyotanMatch::getFrame)
-        .def_property_readonly("status", &puyotan::PuyotanMatch::getStatus)
-        .def_property_readonly("status_text", &puyotan::PuyotanMatch::getStatusText);
+        .def_property_readonly("status", &puyotan::PuyotanMatch::getStatus);
     
     pybind11::class_<puyotan::PuyotanVectorMatch>(m, "PuyotanVectorMatch")
         .def(pybind11::init<int, int32_t>(), pybind11::arg("num_matches"), pybind11::arg("base_seed") = 0)
@@ -210,7 +209,7 @@ PYBIND11_MODULE(puyotan_native, m) {
              pybind11::arg("p1_actions"), pybind11::arg("p2_actions") = pybind11::none(),
              "Fast OpenMP bulk step, returning (obs, rewards, terminated)")
         .def("get_observations_all", &puyotan::PuyotanVectorMatch::get_observations_all)
-        .def("get_match", &puyotan::PuyotanVectorMatch::get_match, pybind11::return_value_policy::reference_internal)
+        .def("get_match", static_cast<puyotan::PuyotanMatch& (puyotan::PuyotanVectorMatch::*)(int)>(&puyotan::PuyotanVectorMatch::get_match), pybind11::return_value_policy::reference_internal)
         .def_property_readonly("size", &puyotan::PuyotanVectorMatch::size);
 
     // ===== OnnxPolicy =====

@@ -51,7 +51,6 @@ public:
     const Tsumo& getTsumo() const noexcept { return tsumo_; }
     int32_t getFrame() const noexcept { return frame_; }
     MatchStatus getStatus() const noexcept { return status_; }
-    std::string getStatusText() const;
 
      /**
      * Runs num_games full matches in pure C++ using the benchmark move pattern

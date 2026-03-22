@@ -17,6 +17,14 @@
 
 namespace puyotan {
 
+// 4-bit PDEP LUT for 16-bit column spacing (Bits: 0, 16, 32, 48)
+static constexpr uint64_t kPdepLut[16] = {
+    0x0000000000000000ULL, 0x0000000000000001ULL, 0x0000000000010000ULL, 0x0000000000010001ULL,
+    0x0000000100000000ULL, 0x0000000100000001ULL, 0x0000000100010000ULL, 0x0000000100010001ULL,
+    0x0001000000000000ULL, 0x0001000000000001ULL, 0x0001000000010000ULL, 0x0001000000010001ULL,
+    0x0001000100000000ULL, 0x0001000100000001ULL, 0x0001000100010000ULL, 0x0001000100010001ULL
+};
+
 /**
  * BitBoard
  *   128-bit SIMD-optimized bitfield representing the positions of one piece
@@ -80,8 +88,8 @@ struct alignas(16) BitBoard {
     }
 
     static [[nodiscard]] __forceinline BitBoard fromColumnMask(uint32_t cols) noexcept {
-        uint64_t mask_lo = _pdep_u64(cols & 0x0F, 0x0001000100010001ULL) * 0xFFFFULL;
-        uint64_t mask_hi = _pdep_u64((cols >> 4) & 0x03, 0x0000000000010001ULL) * 0xFFFFULL;
+        const uint64_t mask_lo = kPdepLut[cols & 0x0Fu] * 0xFFFFULL;
+        const uint64_t mask_hi = kPdepLut[(cols >> 4) & 0x03u] * 0xFFFFULL;
         return {mask_lo, mask_hi};
     }
 
@@ -134,8 +142,8 @@ public:
     void clear(int x, int y) noexcept;
 
     void setRowMask(int y, Cell cell, uint32_t cols_mask) noexcept {
-        const uint64_t target_lo = _pdep_u64(cols_mask & 0x0Fu, 0x0001000100010001ULL) << y;
-        const uint64_t target_hi = _pdep_u64((cols_mask >> 4) & 0x03u, 0x0000000000010001ULL) << y;
+        const uint64_t target_lo = kPdepLut[cols_mask & 0x0Fu] << y;
+        const uint64_t target_hi = kPdepLut[(cols_mask >> 4) & 0x03u] << y;
 
         boards_[static_cast<int>(cell)].lo |= target_lo;
         boards_[static_cast<int>(cell)].hi |= target_hi;
