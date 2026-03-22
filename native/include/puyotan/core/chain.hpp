@@ -12,10 +12,11 @@ namespace puyotan {
  *   Uses a fixed-size stack array for group_sizes to avoid heap allocation.
  */
 struct ErasureData {
-    std::array<uint8_t, config::Rule::kMaxErasureGroups> group_sizes{};
-    uint8_t num_erased = 0;
-    uint8_t num_colors = 0;
-    uint8_t num_groups = 0;
+    // Optimized: leave uninitialized as it is always accessed via num_groups.
+    std::array<uint8_t, config::Rule::kMaxErasureGroups> group_sizes;
+    int num_erased = 0;
+    int num_colors = 0;
+    int num_groups = 0;
 };
 
 /**
@@ -25,20 +26,22 @@ struct ErasureData {
  */
 class Chain {
 public:
+    static constexpr uint8_t kAllColorsMask = (1 << config::Rule::kColors) - 1;
+
     /**
      * Finds and erases groups of connected puyos.
      * @param board The board to process.
      * @param color_mask Bitmask of colors to check.
      * @return ErasureData detailing the erasures in this step.
      */
-    static ErasureData execute(Board& board, uint8_t color_mask = 0x0F);
+    static ErasureData execute(Board& board, uint8_t color_mask = kAllColorsMask);
 
     /**
      * Checks if any groups can be erased.
      * @param board The board to check.
      * @return True if at least one group can be fired.
      */
-    static bool canFire(const Board& board, uint8_t color_mask = 0x0F);
+    static bool canFire(const Board& board, uint8_t color_mask = kAllColorsMask);
 };
 
 } // namespace puyotan

@@ -48,6 +48,10 @@ struct alignas(16) BitBoard {
     [[nodiscard]] __forceinline BitBoard operator~ ()                  const { return _mm_xor_si128(m128, _mm_set1_epi32(-1)); }
     __forceinline BitBoard& operator&=(const BitBoard& o) { m128 = _mm_and_si128(m128, o.m128); return *this; }
     __forceinline BitBoard& operator|=(const BitBoard& o) { m128 = _mm_or_si128(m128, o.m128);  return *this; }
+    __forceinline BitBoard& andNot(const BitBoard& o)     { m128 = _mm_andnot_si128(o.m128, m128); return *this; }
+    [[nodiscard]] static __forceinline BitBoard andNot(const BitBoard& a, const BitBoard& b) { 
+        return _mm_andnot_si128(b.m128, a.m128); // result = (~b) & a
+    }
 
     // PTEST (SSE4.1): single instruction — tests if all bits are zero.
     [[nodiscard]] __forceinline bool empty() const { return _mm_testz_si128(m128, m128) != 0; }
