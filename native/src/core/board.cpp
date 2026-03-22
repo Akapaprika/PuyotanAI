@@ -4,7 +4,7 @@
 
 namespace puyotan {
 
-Cell Board::get(int x, int y) const {
+Cell Board::get(int x, int y) const noexcept {
     if (!occupancy_.get(x, y)) {
         return Cell::Empty;
     }
@@ -24,40 +24,40 @@ Cell Board::get(int x, int y) const {
     return static_cast<Cell>(found_index);
 }
 
-void Board::set(int x, int y, Cell color) {
+void Board::set(int x, int y, Cell color) noexcept {
     assert(color != Cell::Empty);
     clear(x, y);
     boards_[toIndex(color)].set(x, y);
     occupancy_.set(x, y);
 }
 
-void Board::clear(int x, int y) {
+void Board::clear(int x, int y) noexcept {
     for (auto& bb : boards_) {
         bb.clear(x, y);
     }
     occupancy_.clear(x, y);
 }
 
-void Board::placePiece(int col, Cell color) {
+void Board::placePiece(int col, Cell color) noexcept {
     assert(col >= 0 && col < config::Board::kWidth);
     set(col, config::Board::kSpawnRow, color);
 }
 
-int Board::getDropDistance(int x, int y) const {
+int Board::getDropDistance(int x, int y) const noexcept {
     assert(x >= 0 && x < config::Board::kWidth);
     assert(y > 0 && y <= static_cast<int>(config::Board::kHeight));
     return y - getColumnHeight(x);
 }
 
-const BitBoard& Board::getBitboard(Cell color) const {
+const BitBoard& Board::getBitboard(Cell color) const noexcept {
     return boards_[toIndex(color)];
 }
 
-void Board::setBitboard(Cell color, const BitBoard& bb) {
+void Board::setBitboard(Cell color, const BitBoard& bb) noexcept {
     boards_[toIndex(color)] = bb;
 }
 
-void Board::updateOccupancyFromBoards() {
+void Board::updateOccupancyFromBoards() noexcept {
     occupancy_ = boards_[0];
     for (int i = 1; i < config::Board::kNumColors; ++i) {
         occupancy_ |= boards_[i];

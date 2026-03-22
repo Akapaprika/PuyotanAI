@@ -2,7 +2,7 @@
 
 namespace puyotan {
 
-ErasureData Chain::execute(Board& board, uint8_t color_mask) {
+ErasureData Chain::execute(Board& board, uint32_t color_mask) noexcept {
     ErasureData data;
     BitBoard total_erased_mask;
 
@@ -87,7 +87,7 @@ ErasureData Chain::execute(Board& board, uint8_t color_mask) {
     return data;
 }
 
-bool Chain::canFire(const Board& board, uint8_t color_mask) {
+bool Chain::canFire(const Board& board, uint32_t color_mask) noexcept {
     for (int i = 0; i < config::Rule::kColors; ++i) {
         if (!((color_mask >> i) & 1)) continue;
 

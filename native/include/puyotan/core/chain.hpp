@@ -26,7 +26,7 @@ struct ErasureData {
  */
 class Chain {
 public:
-    static constexpr uint8_t kAllColorsMask = (1 << config::Rule::kColors) - 1;
+    static constexpr uint32_t kAllColorsMask = (1u << config::Rule::kColors) - 1u;
 
     /**
      * Finds and erases groups of connected puyos.
@@ -34,14 +34,14 @@ public:
      * @param color_mask Bitmask of colors to check.
      * @return ErasureData detailing the erasures in this step.
      */
-    static ErasureData execute(Board& board, uint8_t color_mask = kAllColorsMask);
+    static ErasureData execute(Board& board, uint32_t color_mask = kAllColorsMask) noexcept;
 
     /**
      * Checks if any groups can be erased.
      * @param board The board to check.
      * @return True if at least one group can be fired.
      */
-    static bool canFire(const Board& board, uint8_t color_mask = kAllColorsMask);
+    static bool canFire(const Board& board, uint32_t color_mask = kAllColorsMask) noexcept;
 };
 
 } // namespace puyotan

@@ -18,9 +18,9 @@ struct PuyotanPlayer {
     ActionState next_action{};
 
     // Grouping for 16-byte alignment
+    int32_t active_next_pos = 0; // 4 bytes
     int score = 0;              // 4 bytes
     int used_score = 0;         // 4 bytes
-    uint16_t active_next_pos = 0; // 2 bytes (0-1000)
     uint16_t non_active_ojama = 0; // 2 bytes
     uint16_t active_ojama = 0;     // 2 bytes
     uint8_t chain_count = 0;       // 1 byte
@@ -49,7 +49,7 @@ public:
         return tsumo_.get(players_[player_id].active_next_pos + index_offset);
     }
     const Tsumo& getTsumo() const { return tsumo_; }
-    int getFrame() const { return frame_; }
+    int32_t getFrame() const { return frame_; }
     MatchStatus getStatus() const { return status_; }
     std::string getStatusText() const;
 
@@ -74,7 +74,7 @@ private:
     int32_t seed_;
     Tsumo tsumo_;
     PuyotanPlayer players_[config::Rule::kNumPlayers];
-    int frame_ = 1;
+    int32_t frame_ = 1;
     MatchStatus status_ = MatchStatus::READY;
 
     void sendOjama(int sender_id, int ojama);

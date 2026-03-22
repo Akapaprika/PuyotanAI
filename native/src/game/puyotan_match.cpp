@@ -19,7 +19,7 @@ void PuyotanPlayer::fallOjama(int num, int32_t& seed) {
                 int pos = PuyotanMatch::nextInt(seed, width - i);
                 mask |= _pdep_u32(1U << pos, ~mask & 0x3F);
             }
-            field.setRowMask(config::Board::kSpawnRow, Cell::Ojama, static_cast<uint8_t>(mask));
+            field.setRowMask(config::Board::kSpawnRow, Cell::Ojama, mask);
             Gravity::execute(field);
             num = 0;
         }
@@ -115,7 +115,7 @@ void PuyotanMatch::stepNextFrame() {
                     p.field.dropNewPiece(x, final_y_axis, tumo.axis);
                     p.field.dropNewPiece(sub_x, final_y_sub, tumo.sub);
 
-                    uint8_t dirty_colors = (1 << static_cast<int>(tumo.axis)) | (1 << static_cast<int>(tumo.sub));
+                    uint32_t dirty_colors = (1u << static_cast<int>(tumo.axis)) | (1u << static_cast<int>(tumo.sub));
                     if (Chain::canFire(p.field, dirty_colors)) {
                         p.chain_count = 0;
                         p.next_action = {Action{ActionType::CHAIN}, 1};
@@ -157,7 +157,7 @@ void PuyotanMatch::stepNextFrame() {
                     break;
                 }
                 case ActionType::CHAIN_FALL: {
-                    uint8_t dirty_colors = Gravity::execute(p.field);
+                    uint32_t dirty_colors = Gravity::execute(p.field);
                     if (Chain::canFire(p.field, dirty_colors)) {
                         p.next_action = {Action{ActionType::CHAIN}, 1};
                     } else {

@@ -11,7 +11,7 @@ Tsumo::Tsumo(int32_t seed) {
 void Tsumo::setSeed(int32_t seed) {
     seed_ = seed;
     generated_count_ = 0;
-    generateMore(); // Initial 128
+    generateMore(); // Initial chunk
 }
 
 int Tsumo::nextInt() const {
@@ -29,11 +29,11 @@ Cell Tsumo::nextKind() const {
 void Tsumo::generateMore() const {
     // We can generate beyond kTsumoPoolSize because pool_ is used as a ring buffer.
     // However, generated_count_ represents the absolute count of pieces generated.
-    int next_limit = generated_count_ + config::Rule::kTsumoChunkSize;
+    int32_t next_limit = generated_count_ + config::Rule::kTsumoChunkSize;
 
     while (generated_count_ < next_limit) {
         // Use mask for array index
-        pool_[generated_count_ & (config::Rule::kTsumoPoolSize - 1)] = {nextKind(), nextKind()};
+        pool_[static_cast<std::size_t>(generated_count_) & (config::Rule::kTsumoPoolSize - 1)] = {nextKind(), nextKind()};
         ++generated_count_;
     }
 }

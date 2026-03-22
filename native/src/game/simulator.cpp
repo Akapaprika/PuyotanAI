@@ -56,7 +56,7 @@ int Simulator::step(int x, Rotation rotation) {
     board_.dropNewPiece(x, final_y_axis, piece.axis);
     board_.dropNewPiece(sub_x, final_y_sub, piece.sub);
 
-    uint8_t dirty_colors = (1 << std::to_underlying(piece.axis)) | (1 << std::to_underlying(piece.sub));
+    uint32_t dirty_colors = (1u << std::to_underlying(piece.axis)) | (1u << std::to_underlying(piece.sub));
 
     int chain_count = 0;
     while (dirty_colors & 0x0F) { // only normal colors chain
