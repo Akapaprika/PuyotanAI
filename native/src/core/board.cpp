@@ -8,12 +8,20 @@ Cell Board::get(int x, int y) const {
     if (!occupancy_.get(x, y)) {
         return Cell::Empty;
     }
-    for (int i = 0; i < config::Board::kNumColors; ++i) {
-        if (boards_[i].get(x, y)) {
-            return static_cast<Cell>(i);
-        }
+    
+    // SNEAKY OPTIMIZATION: This branchless implementation relies on the specific order of Cell enum (0, 1, 2, 3, 4).
+    static_assert(static_cast<int>(Cell::Red)    == 0);
+    static_assert(static_cast<int>(Cell::Green)  == 1);
+    static_assert(static_cast<int>(Cell::Blue)   == 2);
+    static_assert(static_cast<int>(Cell::Yellow) == 3);
+    static_assert(static_cast<int>(Cell::Ojama)  == 4);
+    static_assert(config::Board::kNumColors      == 5);
+
+    int found_index = 0;
+    for (int i = 1; i < config::Board::kNumColors; ++i) {
+        found_index += boards_[i].get(x, y) * i;
     }
-    return Cell::Empty;
+    return static_cast<Cell>(found_index);
 }
 
 void Board::set(int x, int y, Cell color) {

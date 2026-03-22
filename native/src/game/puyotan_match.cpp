@@ -76,7 +76,7 @@ bool PuyotanMatch::canStepNextFrame() const {
 void PuyotanMatch::stepNextFrame() {
     if (!canStepNextFrame()) return;
 
-    // 1. 行動選択・予約
+    // 1. Action selection and reservation
     for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         auto& p = players_[id];
         if (p.current_action.action.type != ActionType::NONE && p.current_action.remaining_frame > 0) {
@@ -84,7 +84,7 @@ void PuyotanMatch::stepNextFrame() {
         }
     }
 
-    // 2. 行動実行
+    // 2. Execute actions
     for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         auto& p = players_[id];
         if (p.current_action.action.type != ActionType::NONE && p.current_action.remaining_frame == 0) {
@@ -177,7 +177,7 @@ void PuyotanMatch::stepNextFrame() {
         }
     }
 
-    // 3. 窒息判定 (Branchless Status Map)
+    // 3. Death check (Branchless Status Map)
     uint32_t alive_mask = 0;
     for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         auto& p = players_[id];
@@ -187,7 +187,7 @@ void PuyotanMatch::stepNextFrame() {
     }
 
     static_assert(config::Rule::kNumPlayers == 2, "Match status mapping explicitly assumes 2 players");
-    if (alive_mask != 3) { // 少なくとも一人が死亡
+    if (alive_mask != 3) { // At least one player is dead
         static constexpr MatchStatus kNextStatus[] = {
             MatchStatus::DRAW,   // 00: 両者死亡
             MatchStatus::WIN_P1, // 01: P1生存・P2死亡
@@ -197,7 +197,7 @@ void PuyotanMatch::stepNextFrame() {
         status_ = kNextStatus[alive_mask];
     }
 
-    // 4. おじゃま処理
+    // 4. Ojama (garbage) processing
     for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         auto& p = players_[id];
         if (p.next_action.action.type == ActionType::NONE && p.active_ojama > 0) {
@@ -207,7 +207,7 @@ void PuyotanMatch::stepNextFrame() {
         }
     }
 
-    // 5. ツモ・フレーム遷移
+    // 5. Tsumo and frame transition
     for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         auto& p = players_[id];
         if (p.next_action.action.type == ActionType::NONE) {

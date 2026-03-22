@@ -206,6 +206,9 @@ PYBIND11_MODULE(puyotan_native, m) {
              pybind11::call_guard<pybind11::gil_scoped_release>())
         .def("set_actions", &puyotan::PuyotanVectorMatch::set_actions,
              pybind11::arg("match_indices"), pybind11::arg("player_ids"), pybind11::arg("actions"))
+        .def("step", &puyotan::PuyotanVectorMatch::step,
+             pybind11::arg("p1_actions"), pybind11::arg("p2_actions") = pybind11::none(),
+             "Fast OpenMP bulk step, returning (obs, rewards, terminated)")
         .def("get_observations_all", &puyotan::PuyotanVectorMatch::get_observations_all)
         .def("get_match", &puyotan::PuyotanVectorMatch::get_match, pybind11::return_value_policy::reference_internal)
         .def_property_readonly("size", &puyotan::PuyotanVectorMatch::size);

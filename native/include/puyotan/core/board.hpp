@@ -36,10 +36,12 @@ struct alignas(16) BitBoard {
     // Operators — __forceinline prevents deoptimization on monomorphic hot paths.
     // -----------------------------------------------------------------------
     [[nodiscard]] __forceinline bool     operator==(const BitBoard& o) const { 
-        return _mm_testz_si128(_mm_xor_si128(m128, o.m128), _mm_xor_si128(m128, o.m128)) != 0; 
+        __m128i x = _mm_xor_si128(m128, o.m128);
+        return _mm_testz_si128(x, x) != 0; 
     }
     [[nodiscard]] __forceinline bool     operator!=(const BitBoard& o) const { 
-        return _mm_testz_si128(_mm_xor_si128(m128, o.m128), _mm_xor_si128(m128, o.m128)) == 0; 
+        __m128i x = _mm_xor_si128(m128, o.m128);
+        return _mm_testz_si128(x, x) == 0; 
     }
     [[nodiscard]] __forceinline BitBoard operator& (const BitBoard& o) const { return _mm_and_si128(m128, o.m128); }
     [[nodiscard]] __forceinline BitBoard operator| (const BitBoard& o) const { return _mm_or_si128(m128, o.m128); }
@@ -54,17 +56,23 @@ struct alignas(16) BitBoard {
     [[nodiscard]] __forceinline bool get(int x, int y) const {
         assert(x >= 0 && x < config::Board::kWidth);
         assert(y >= 0 && y < config::Board::kHeight + 1);
-        return ((&lo)[x >> 2] >> (((x & 3) << 4) | y)) & 1;
+        int idx = x >> 2;
+        int shift = ((x & 3) << 4) | y;
+        return ((&lo)[idx] >> shift) & 1;
     }
     __forceinline void set(int x, int y) {
         assert(x >= 0 && x < config::Board::kWidth);
         assert(y >= 0 && y < config::Board::kHeight + 1);
-        (&lo)[x >> 2] |= (1ULL << (((x & 3) << 4) | y));
+        int idx = x >> 2;
+        int shift = ((x & 3) << 4) | y;
+        (&lo)[idx] |= (1ULL << shift);
     }
     __forceinline void clear(int x, int y) {
         assert(x >= 0 && x < config::Board::kWidth);
         assert(y >= 0 && y < config::Board::kHeight + 1);
-        (&lo)[x >> 2] &= ~(1ULL << (((x & 3) << 4) | y));
+        int idx = x >> 2;
+        int shift = ((x & 3) << 4) | y;
+        (&lo)[idx] &= ~(1ULL << shift);
     }
 
     static __forceinline BitBoard fromColumnMask(uint8_t cols) {
@@ -82,10 +90,13 @@ struct alignas(16) BitBoard {
      * Simplified: if lo==0 and hi==0, hi&-hi = 0 & 0 = 0, so result is {0,0} correctly.
      */
     [[nodiscard]] __forceinline BitBoard extractLSB() const {
-        if (lo != 0) {
-            return { lo & (0ULL - lo), 0ULL };
-        }
-        return { 0ULL, hi & (0ULL - hi) };
+        uint64_t new_lo = lo & (0ULL - lo);
+        // If we simply apply extractLSB to both lo and hi, we might extract two bits, which is a bug.
+        // Therefore, we must only process hi if lo is empty.
+        // Using a ternary operator here allows the compiler to use a Conditional Move (CMOV)
+        // instruction instead of a branch (JMP), effectively eliminating branch misprediction penalties.
+        uint64_t new_hi = (lo == 0) ? (hi & (0ULL - hi)) : 0ULL;
+        return { new_lo, new_hi };
     }
 
 

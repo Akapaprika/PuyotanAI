@@ -14,16 +14,16 @@ OnnxPolicy::OnnxPolicy(const std::string& model_path, bool use_cpu)
     session_options_.SetIntraOpNumThreads(1);
     session_options_.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
-    // DirectML プロバイダーを試みる（use_cpu=false かつ利用可能な場合）
-    // 現時点では CPU のみサポート（将来的に OrtSessionOptionsAppendExecutionProvider_DML() を追加可能）
-    (void)use_cpu;  // 将来の DirectML 対応のために残す
+    // Try DirectML provider (if use_cpu=false and available)
+    // Currently only CPU is supported (OrtSessionOptionsAppendExecutionProvider_DML() can be added later)
+    (void)use_cpu;  // Reserved for future DirectML support
 
 #ifdef _WIN32
-    // UTF-8 -> UTF-16 (Windows) 変換
+    // UTF-8 -> UTF-16 conversion for Windows
     int size_needed = MultiByteToWideChar(CP_UTF8, 0, model_path.c_str(), -1, NULL, 0);
     std::wstring wpath(size_needed, 0);
     MultiByteToWideChar(CP_UTF8, 0, model_path.c_str(), -1, &wpath[0], size_needed);
-    // wpath はヌル終端を含んでいるため、末尾の \0 を削除（もしあれば）
+    // Remove null terminator from wpath if present
     if (!wpath.empty() && wpath.back() == L'\0') wpath.pop_back();
     session_ = std::make_unique<Ort::Session>(env_, wpath.c_str(), session_options_);
 #else
@@ -32,13 +32,13 @@ OnnxPolicy::OnnxPolicy(const std::string& model_path, bool use_cpu)
 }
 
 std::vector<int64_t> OnnxPolicy::infer(const uint8_t* obs_data, int64_t num_envs) {
-    // 入力テンソルを構築: [num_envs, 2, 5, 6, 13] (uint8)
+    // Build input tensor: [num_envs, 2, 5, 6, 13] (uint8)
     std::array<int64_t, 5> input_shape{num_envs, kPlayers, kColors, kWidth, kHeight};
     const int64_t total_elems = num_envs * kObsPerEnv;
 
     auto memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
     
-    // uint8 データをそのままテンソルとして使用（定数を明示的に指定して float 誤認識を防ぐ）
+    // Use uint8 data directly as a tensor (specify type explicitly to avoid float misinterpretation)
     Ort::Value input_tensor = Ort::Value::CreateTensor(
         memory_info,
         const_cast<uint8_t*>(obs_data), total_elems * sizeof(uint8_t),
@@ -46,7 +46,7 @@ std::vector<int64_t> OnnxPolicy::infer(const uint8_t* obs_data, int64_t num_envs
         ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8
     );
 
-    // 推論実行
+    // Run inference
     const char* input_names[]  = { input_name_.c_str()  };
     const char* output_names[] = { output_name_.c_str() };
 
@@ -56,7 +56,7 @@ std::vector<int64_t> OnnxPolicy::infer(const uint8_t* obs_data, int64_t num_envs
         output_names, 1
     );
 
-    // logits [num_envs, 22] → argmax → 行動インデックス
+    // logits [num_envs, 22] -> argmax -> action index
     const float* logits = output_tensors[0].GetTensorData<float>();
     auto logits_shape   = output_tensors[0].GetTensorTypeAndShapeInfo().GetShape();
     const int64_t num_actions = logits_shape[1]; // 22
