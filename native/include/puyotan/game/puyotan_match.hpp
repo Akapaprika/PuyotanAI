@@ -1,6 +1,7 @@
 #pragma once
 
 #include <puyotan/core/board.hpp>
+#include <puyotan/core/chain.hpp>
 #include <puyotan/game/tsumo.hpp>
 #include <puyotan/common/types.hpp>
 #include <string>
@@ -78,6 +79,10 @@ private:
 
     void sendOjama(int sender_id, int ojama);
     void activateOjama(int finishing_player_id);
+
+    // Pre-computed chain group data, cached between CHAIN_FALL/PUT → CHAIN turns.
+    // Stored here (not in PuyotanPlayer) to keep PuyotanPlayer compact and cache-friendly.
+    std::array<ErasureData, config::Rule::kNumPlayers> pending_erasure_;
 };
 
 } // namespace puyotan

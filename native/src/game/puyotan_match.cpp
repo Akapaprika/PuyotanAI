@@ -110,14 +110,16 @@ void PuyotanMatch::stepNextFrame() {
                     p.field.dropNewPiece(sub_x, final_y_sub, tumo.sub);
 
                     uint32_t dirty_colors = (1u << static_cast<int>(tumo.axis)) | (1u << static_cast<int>(tumo.sub));
-                    if (Chain::canFire(p.field, dirty_colors)) {
+                    pending_erasure_[id] = Chain::findGroups(p.field, dirty_colors);
+                    if (pending_erasure_[id].num_erased > 0) {
                         p.chain_count = 0;
                         p.next_action = {Action{ActionType::CHAIN}, 1};
                     }
                     break;
                 }
                 case ActionType::CHAIN: {
-                    ErasureData info = Chain::execute(p.field);
+                    Chain::applyErasure(p.field, pending_erasure_[id]);
+                    const ErasureData& info = pending_erasure_[id];
                     ++p.chain_count;
                     p.score += Scorer::calculateStepScore(info, p.chain_count);
                     
@@ -152,7 +154,8 @@ void PuyotanMatch::stepNextFrame() {
                 }
                 case ActionType::CHAIN_FALL: {
                     uint32_t dirty_colors = Gravity::execute(p.field);
-                    if (Chain::canFire(p.field, dirty_colors)) {
+                    pending_erasure_[id] = Chain::findGroups(p.field, dirty_colors);
+                    if (pending_erasure_[id].num_erased > 0) {
                         p.next_action = {Action{ActionType::CHAIN}, 1};
                     } else {
                         activateOjama(id);

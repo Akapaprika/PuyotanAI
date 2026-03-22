@@ -11,7 +11,7 @@ for d in [BASE_DIR/"native"/"dist", BASE_DIR/"native"/"build_Release"/"Release"]
 import puyotan_native as p
 
 def benchmark_sequential(num_games=1000):
-    matches = [p.PuyotanMatch(i) for i in range(num_games)]
+    matches = [p.PuyotanMatch(i + 1) for i in range(num_games)]
     for m in matches: m.start()
     
     total_frames = 0
@@ -27,7 +27,7 @@ def benchmark_sequential(num_games=1000):
             if m.status == p.MatchStatus.PLAYING:
                 mask = m.step_until_decision()
                 if mask == 0: 
-                    total_frames += m.frame
+                    total_frames += m.frame - 1
                     continue
                 
                 for pid in range(2):
@@ -41,14 +41,14 @@ def benchmark_sequential(num_games=1000):
                         moves_made[i][pid] += 1
                 still_alive.append(i)
             else:
-                total_frames += m.frame # Already finished somehow?
+                total_frames += m.frame - 1 # Already finished somehow?
         unfinished = still_alive
         
     elapsed = time.perf_counter() - start_time
     return total_frames, elapsed
 
 def benchmark_vectorized(num_games=1000):
-    vm = p.PuyotanVectorMatch(num_games, 0)
+    vm = p.PuyotanVectorMatch(num_games, 1)
     for i in range(num_games):
         vm.get_match(i).start()
 
@@ -81,7 +81,7 @@ def benchmark_vectorized(num_games=1000):
         for i in unfinished:
             mask = masks[i]
             if mask == 0:
-                total_frames += vm.get_match(i).frame
+                total_frames += vm.get_match(i).frame - 1
                 to_remove.append(i)
                 continue
             
@@ -113,7 +113,7 @@ def benchmark_vectorized(num_games=1000):
 
 if __name__ == "__main__":
     N = 10000  # Realistic N for strategy-based benchmark
-    EXPECTED_FRAMES = 612714
+    EXPECTED_FRAMES = 602708
     
     print(f"--- Sequential Benchmark (N={N}) ---")
     f_seq, t_seq = benchmark_sequential(N)
