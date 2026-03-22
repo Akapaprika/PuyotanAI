@@ -17,7 +17,7 @@ public:
      * Calculates the score for a single chain step.
      */
     // Called only after Chain::execute confirms num_erased > 0.
-    static int calculateStepScore(const ErasureData& data, int chain_number) {
+    static int calculateStepScore(const ErasureData& data, int chain_number) noexcept {
         const int chain_bonus = getChainBonus(chain_number);
         const int color_bonus = getColorBonus(data.num_colors);
         int group_bonus = 0;
@@ -34,19 +34,19 @@ public:
     static_assert(config::Score::kGroupBonusesSize >= 1, "Group bonus array cannot be empty");
 
 private:
-    static constexpr int getChainBonus(int chain) {
+    static constexpr int getChainBonus(int chain) noexcept {
         // Chain count is bounded by board dimensions (max 19-21); assert is sufficient.
         assert(chain >= 1 && chain <= config::Score::kChainBonusesSize);
         return config::Score::kChainBonuses[chain - 1];
     }
 
-    static constexpr int getColorBonus(int count) {
+    static constexpr int getColorBonus(int count) noexcept {
         // Number of colors is fixed at 4 (+1 ojama); assert is sufficient.
         assert(count >= 1 && count < config::Score::kColorBonusesSize);
         return config::Score::kColorBonuses[count];
     }
 
-    static constexpr int getGroupBonus(int size) {
+    static constexpr int getGroupBonus(int size) noexcept {
         const int idx = size - config::Rule::kConnectCount;
         assert(idx >= 0);
         // Groups can physically exceed size 11 (max bonus index); clamp to the last element.

@@ -53,6 +53,7 @@ namespace Rule {
     constexpr int kNumPlayers   = 2;  // number of players in a standard match
     constexpr int kConnectCount = 4;  // minimum group size to fire
     constexpr int kColors       = 4;  // number of normal puyo colors
+    static_assert((kColors & (kColors - 1)) == 0, "kColors must be power of 2 for bitmask optimization in Tsumo");
     constexpr int kPuyosPerPiece = 2; // number of puyos in each falling piece (tsumo)
     constexpr int kTsumoPoolSize = 256; // Ring buffer size (2^8)
     constexpr int kTsumoChunkSize = 64; // increment size (2^6)

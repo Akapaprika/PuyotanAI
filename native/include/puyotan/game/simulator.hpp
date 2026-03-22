@@ -11,7 +11,7 @@ namespace puyotan {
  */
 class Simulator {
 public:
-    explicit Simulator(int32_t seed = 0);
+    explicit Simulator(uint32_t seed = 1u);
 
     /**
      * Executes one move: places a piece, applies gravity, and processes chains.
@@ -22,26 +22,26 @@ public:
     /**
      * Checks if the death condition is met.
      */
-    bool isGameOver() const { return is_game_over_; }
+    bool isGameOver() const noexcept { return is_game_over_; }
 
     /**
      * Resets the game state.
      */
-    void reset(int32_t seed);
+    void reset(uint32_t seed);
 
-    const Board& getBoard() const { return board_; }
-    const Tsumo& getTsumo() const { return tsumo_; }
-    int getTsumoIndex() const { return tsumo_index_; }
-    int getTotalScore() const { return total_score_; }
+    const Board& getBoard() const noexcept { return board_; }
+    const Tsumo& getTsumo() const noexcept { return tsumo_; }
+    int getTsumoIndex() const noexcept { return tsumo_index_; }
+    int getTotalScore() const noexcept { return total_score_; }
     
-    PuyoPiece getCurrentPiece() const;
+    PuyoPiece getCurrentPiece();
 
     /**
      * Runs num_games full games in pure C++ using the benchmark move pattern:
      *   - 6 moves at col 5, 6 at col 4, 6 at col 3, then col 2 until game over.
      * Returns total steps executed (for throughput calculation).
      */
-    int64_t runBatch(int num_games, int32_t seed);
+    int64_t runBatch(int num_games, uint32_t seed);
 
 private:
     Board board_;

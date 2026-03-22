@@ -175,8 +175,8 @@ public:
     // Full recalculation of occupancy_ from all color boards (O(N))
     void updateOccupancyFromBoards() noexcept;
 
-    void updateOccupancy(const BitBoard& bb) { occupancy_ = bb; }
-    const BitBoard& getOccupied() const { return occupancy_; }
+    void updateOccupancy(const BitBoard& bb) noexcept { occupancy_ = bb; }
+    const BitBoard& getOccupied() const noexcept { return occupancy_; }
 
 private:
     friend class Gravity; // Allow direct lane access for O(1) per-column gravity

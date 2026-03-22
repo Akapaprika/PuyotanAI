@@ -4,38 +4,47 @@
 
 namespace puyotan {
 
-Tsumo::Tsumo(int32_t seed) {
+Tsumo::Tsumo(uint32_t seed) noexcept {
     setSeed(seed);
 }
 
-void Tsumo::setSeed(int32_t seed) {
-    seed_ = seed;
+void Tsumo::setSeed(uint32_t seed) noexcept {
+    seed_ = (seed == 0) ? 1 : seed; // XORSHIFT requires non-zero seed
     generated_count_ = 0;
     generateMore(); // Initial chunk
 }
 
-int Tsumo::nextInt() const {
-    seed_ ^= (seed_ << 13);
-    seed_ ^= (seed_ >> 17);
-    seed_ ^= (seed_ << 15);
-    uint32_t r = static_cast<uint32_t>(seed_);
-    return static_cast<int>(r & (config::Rule::kColors - 1));
-}
+void Tsumo::generateMore() noexcept {
+    // Optimization: Since ChunkSize (64) is a power of 2 and a factor of PoolSize (256),
+    // and generated_count_ always starts at 0 and increments by 64, 
+    // we never cross the wrap-around boundary within a single generateMore() call.
+    static_assert((config::Rule::kTsumoPoolSize % config::Rule::kTsumoChunkSize) == 0,
+                  "ChunkSize must be a factor of PoolSize for fast contiguous writes");
 
-Cell Tsumo::nextKind() const {
-    return static_cast<Cell>(nextInt());
-}
+    uint32_t s = seed_;
+    const size_t start_idx = static_cast<size_t>(generated_count_) & (config::Rule::kTsumoPoolSize - 1);
+    PuyoPiece* __restrict p = &pool_[start_idx];
+    const uint32_t color_mask = config::Rule::kColors - 1;
 
-void Tsumo::generateMore() const {
-    // We can generate beyond kTsumoPoolSize because pool_ is used as a ring buffer.
-    // However, generated_count_ represents the absolute count of pieces generated.
-    int32_t next_limit = generated_count_ + config::Rule::kTsumoChunkSize;
+    for (int i = 0; i < config::Rule::kTsumoChunkSize; ++i) {
+        // Generate Axis Puyo (XORSHIFT 13, 17, 15)
+        s ^= (s << 13);
+        s ^= (s >> 17);
+        s ^= (s << 15);
+        Cell c1 = static_cast<Cell>(s & color_mask);
 
-    while (generated_count_ < next_limit) {
-        // Use mask for array index
-        pool_[static_cast<std::size_t>(generated_count_) & (config::Rule::kTsumoPoolSize - 1)] = {nextKind(), nextKind()};
-        ++generated_count_;
+        // Generate Sub Puyo
+        s ^= (s << 13);
+        s ^= (s >> 17);
+        s ^= (s << 15);
+        Cell c2 = static_cast<Cell>(s & color_mask);
+
+        // Direct contiguous write without inner-loop masking
+        p[i] = {c1, c2};
     }
+
+    seed_ = s;
+    generated_count_ += config::Rule::kTsumoChunkSize;
 }
 
 } // namespace puyotan

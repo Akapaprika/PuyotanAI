@@ -6,7 +6,7 @@
 
 namespace puyotan {
 
-void PuyotanPlayer::fallOjama(int num, int32_t& seed) {
+void PuyotanPlayer::fallOjama(int num, uint32_t& seed) {
     constexpr int width = config::Board::kWidth;
     while (num > 0) {
         if (num >= width) {
@@ -26,7 +26,8 @@ void PuyotanPlayer::fallOjama(int num, int32_t& seed) {
     }
 }
 
-PuyotanMatch::PuyotanMatch(int32_t seed) : seed_(seed == 0 ? 1 : seed), tsumo_(seed == 0 ? 1 : seed) {
+PuyotanMatch::PuyotanMatch(uint32_t seed) : seed_(seed), tsumo_(seed) {
+    assert(seed != 0u);
     for (auto& p : players_) {
         p = PuyotanPlayer();
     }
@@ -257,7 +258,10 @@ int PuyotanMatch::stepUntilDecision() {
     return 0;
 }
 
-int64_t PuyotanMatch::runBatch(int num_games, int32_t seed) {
+
+
+
+int64_t PuyotanMatch::runBatch(int num_games, uint32_t seed) {
     int64_t total_frames = 0;
     
     // 6 at col 5, 6 at 4, 6 at 3, etc.
@@ -269,7 +273,7 @@ int64_t PuyotanMatch::runBatch(int num_games, int32_t seed) {
     const int num_moves = sizeof(move_plan) / sizeof(move_plan[0]);
 
     for (int i = 0; i < num_games; ++i) {
-        PuyotanMatch match(seed + i);
+        PuyotanMatch match(seed + static_cast<uint32_t>(i));
         match.start();
 
         int p1_move = 0;
@@ -309,13 +313,12 @@ int64_t PuyotanMatch::runBatch(int num_games, int32_t seed) {
     return total_frames;
 }
 
-int PuyotanMatch::nextInt(int32_t& seed, int max) {
+int PuyotanMatch::nextInt(uint32_t& seed, int max) noexcept {
+    assert(seed != 0u);
     seed ^= (seed << 13);
     seed ^= (seed >> 17);
     seed ^= (seed << 15);
-    // JS does `this.y >>> 0`, which casts the bit pattern to uint32_t.
-    uint32_t r = static_cast<uint32_t>(seed);
-    return static_cast<int>(r % static_cast<uint32_t>(max));
+    return static_cast<int>(seed % static_cast<uint32_t>(max));
 }
 
 } // namespace puyotan

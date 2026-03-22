@@ -7,7 +7,7 @@
 
 namespace puyotan {
 
-PuyotanVectorMatch::PuyotanVectorMatch(int num_matches, int32_t base_seed) 
+PuyotanVectorMatch::PuyotanVectorMatch(int num_matches, uint32_t base_seed) 
     : base_seed_(base_seed) {
     matches_.reserve(num_matches);
     prev_scores_.assign(num_matches, 0);

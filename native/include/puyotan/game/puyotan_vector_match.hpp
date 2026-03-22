@@ -15,7 +15,7 @@ namespace puyotan {
  */
 class PuyotanVectorMatch {
 public:
-    explicit PuyotanVectorMatch(int num_matches, int32_t base_seed = 0);
+    explicit PuyotanVectorMatch(int num_matches, uint32_t base_seed = 1u);
 
     /**
      * Resets one or all matches.
@@ -51,10 +51,11 @@ public:
 
     size_t size() const { return matches_.size(); }
     PuyotanMatch& get_match(int i) { return *matches_[i]; }
+    const PuyotanMatch& get_match(int i) const { return *matches_[i]; }
 
 private:
     std::vector<std::unique_ptr<PuyotanMatch>> matches_;
-    int32_t base_seed_;
+    uint32_t base_seed_;
     
     // For reward calculation caching
     std::vector<int> prev_scores_;

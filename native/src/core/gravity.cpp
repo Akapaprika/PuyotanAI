@@ -61,7 +61,7 @@ static __forceinline uint32_t compactCols(
             if (lane == 0) continue;
 
             // Bypass the microcoded BMI2 _pext_u32 on Zen architectures
-            uint32_t compacted = pext_u16_swar(lane, occ_lane) & new_occ;
+            const uint32_t compacted = pext_u16_swar(lane, occ_lane) & new_occ;
             fallen_mask |= (compacted != lane) << i;
             cw = (cw & clear) | (static_cast<uint64_t>(compacted) << shift);
         }
@@ -72,12 +72,12 @@ static __forceinline uint32_t compactCols(
 }
 
 uint32_t Gravity::execute(Board& board) noexcept {
-    uint32_t m1 = compactCols<config::Board::kColsInLo, false>(
+    const uint32_t m1 = compactCols<config::Board::kColsInLo, false>(
         &board.occupancy_.lo,
         board.boards_.data()
     );
 
-    uint32_t m2 = compactCols<config::Board::kColsInHi, true>(
+    const uint32_t m2 = compactCols<config::Board::kColsInHi, true>(
         &board.occupancy_.hi,
         board.boards_.data()
     );

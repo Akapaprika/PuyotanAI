@@ -27,7 +27,7 @@ struct PuyotanPlayer {
     uint8_t padding = 0;           // 1 byte (explict for 16-byte block)
 
     PuyotanPlayer() = default;
-    void fallOjama(int num, int32_t& seed);
+    void fallOjama(int num, uint32_t& seed);
 };
 
 /**
@@ -35,7 +35,7 @@ struct PuyotanPlayer {
  */
 class PuyotanMatch {
 public:
-    explicit PuyotanMatch(int32_t seed = 0);
+    explicit PuyotanMatch(uint32_t seed = 1u);
     PuyotanMatch(const PuyotanMatch&) = default;
     PuyotanMatch& operator=(const PuyotanMatch&) = default;
 
@@ -44,20 +44,20 @@ public:
     bool canStepNextFrame() const;
     void stepNextFrame();
 
-    const PuyotanPlayer& getPlayer(int id) const { return players_[id]; }
-    PuyoPiece getPiece(int player_id, int index_offset) const {
-        return tsumo_.get(players_[player_id].active_next_pos + index_offset);
+    const PuyotanPlayer& getPlayer(int id) const noexcept { return players_[id]; }
+    PuyoPiece getPiece(int player_id, int index_offset) const noexcept {
+        return const_cast<Tsumo&>(tsumo_).get(players_[player_id].active_next_pos + index_offset);
     }
-    const Tsumo& getTsumo() const { return tsumo_; }
-    int32_t getFrame() const { return frame_; }
-    MatchStatus getStatus() const { return status_; }
+    const Tsumo& getTsumo() const noexcept { return tsumo_; }
+    int32_t getFrame() const noexcept { return frame_; }
+    MatchStatus getStatus() const noexcept { return status_; }
     std::string getStatusText() const;
 
      /**
      * Runs num_games full matches in pure C++ using the benchmark move pattern
      * for both players. Returns total frames executed.
      */
-    static int64_t runBatch(int num_games, int32_t seed);
+    static int64_t runBatch(int num_games, uint32_t seed);
 
     /**
      * Steps the match until at least one player needs to make a decision
@@ -68,10 +68,10 @@ public:
     int stepUntilDecision();
 
     // Helper to get random int for ojama fall positions
-    static int nextInt(int32_t& seed, int max);
+    static int nextInt(uint32_t& seed, int max) noexcept;
 
 private:
-    int32_t seed_;
+    uint32_t seed_;
     Tsumo tsumo_;
     PuyotanPlayer players_[config::Rule::kNumPlayers];
     int32_t frame_ = 1;

@@ -8,9 +8,9 @@
 
 namespace puyotan {
 
-Simulator::Simulator(int32_t seed) : tsumo_(seed) {}
+Simulator::Simulator(uint32_t seed) : tsumo_(seed) {}
 
-void Simulator::reset(int32_t seed) {
+void Simulator::reset(uint32_t seed) {
     board_ = Board();
     tsumo_.setSeed(seed);
     tsumo_index_ = 0;
@@ -18,7 +18,7 @@ void Simulator::reset(int32_t seed) {
     is_game_over_ = false;
 }
 
-PuyoPiece Simulator::getCurrentPiece() const {
+PuyoPiece Simulator::getCurrentPiece() {
     return tsumo_.get(tsumo_index_);
 }
 
@@ -80,7 +80,7 @@ void Simulator::updateGameOver() {
     }
 }
 
-int64_t Simulator::runBatch(int num_games, int32_t seed) {
+int64_t Simulator::runBatch(int num_games, uint32_t seed) {
     // Move pattern matching tests/benchmark.py:
     //   6 moves at col 5, 6 at col 4, 6 at col 3, then col 2 until game over.
     int64_t total_steps = 0;

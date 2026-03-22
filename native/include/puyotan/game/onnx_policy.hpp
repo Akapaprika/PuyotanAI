@@ -28,7 +28,7 @@ public:
      * @param num_envs  Number of parallel environments.
      * @return          Action indices for each environment [0, 21].
      */
-    std::vector<int64_t> infer(const uint8_t* obs_data, int64_t num_envs);
+    std::vector<int64_t> infer(const uint8_t* obs_data, int64_t num_envs) const;
 
     /** Whether the model is successfully loaded. */
     bool is_loaded() const { return session_ != nullptr; }

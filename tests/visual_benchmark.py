@@ -119,23 +119,23 @@ def run_visual_benchmark(seed=1, speed=0.05):
     p2 = match.getPlayer(1)
 
     assert match.frame == 57, f"Frame mismatch! Expected 57, got {match.frame}"
-    assert p1.score == 286, f"P1 Score mismatch! Expected 286, got {p1.score}"
-    assert p2.score == 286, f"P2 Score mismatch! Expected 286, got {p2.score}"
+    assert p1.score == 280, f"P1 Score mismatch! Expected 280, got {p1.score}"
+    assert p2.score == 280, f"P2 Score mismatch! Expected 280, got {p2.score}"
 
     expected_board = [
         "..Y...",
-        "..G..G",
-        "..G..B",
-        "..R..R",
-        "..B.YB",
-        "..GBGY",
+        "..Y...",
+        "..B.G.",
+        "..R.R.",
+        "..GRGR",
         "..GBYY",
-        "..YBGB",
-        "..YGYY",
-        "..GGBY",
-        "..RYYG",
-        "..GRBG",
-        "..YYYG"
+        "..BYBY",
+        "..GYGG",
+        "..RGYR",
+        "..BGBY",
+        "..RRGG",
+        "..BRBY",
+        "..YYRY"
     ]
 
     for y, exp_row in zip(range(12, -1, -1), expected_board):
@@ -149,7 +149,7 @@ def run_visual_benchmark(seed=1, speed=0.05):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=1)
-    parser.add_argument("--speed", type=float, default=0.1)
+    parser.add_argument("--speed", type=float, default=0.05)
     args = parser.parse_args()
     
     # Hide cursor
