@@ -36,6 +36,14 @@ public:
                      const std::vector<Action>& actions);
 
     /**
+     * Bulk step function incorporating action decoding, stepping, auto-reset, and reward calculation (OpenMP accelerated).
+     * @param p1_actions Action indices [0-21] for Player 1.
+     * @param p2_actions Action indices [0-21] for Player 2. If empty, P2 passes.
+     * @return A tuple of (observations, rewards, terminated).
+     */
+    pybind11::tuple step(pybind11::array_t<int> p1_actions, std::optional<pybind11::array_t<int>> p2_actions);
+
+    /**
      * Bulk observation generation.
      * @return Flat array of [N, 2, 5, 6, 13] representing all fields.
      */
@@ -47,6 +55,10 @@ public:
 private:
     std::vector<std::unique_ptr<PuyotanMatch>> matches_;
     int32_t base_seed_;
+    
+    // For reward calculation caching
+    std::vector<int> prev_scores_;
+    std::vector<int> prev_ojama_;
 };
 
 } // namespace puyotan

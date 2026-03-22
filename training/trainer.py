@@ -21,13 +21,13 @@ CLIP_EPS        = 0.2
 ENTROPY_COEF    = 0.01
 VALUE_LOSS_COEF = 0.5
 MAX_GRAD_NORM   = 0.5
-NUM_EPOCHS      = 4
-MINIBATCH_SIZE  = 256
+NUM_EPOCHS      = 2
+MINIBATCH_SIZE  = 1024
 LEARNING_RATE   = 3e-4
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class PPOTrainer:
-    def __init__(self, env: PuyotanVectorEnv, hidden_dim=256):
+    def __init__(self, env: PuyotanVectorEnv, hidden_dim=128):
         self.env = env
         self.num_envs = env.num_envs
         self.model = PuyotanPolicy(hidden_dim=hidden_dim).to(DEVICE)
@@ -44,7 +44,7 @@ class PPOTrainer:
     def train(self, num_steps=128, p2_policy=None):
         """1イテレーション分の学習を実行。"""
         # 1. ロールアウト収集
-        b_obs, b_actions, b_log_probs, b_advantages, b_returns, b_values = \
+        b_obs, b_actions, b_log_probs, b_advantages, b_returns, b_values, max_chain = \
             self.collect_rollouts(num_steps, p2_policy)
 
         # 2. PPOアップデート
@@ -53,16 +53,18 @@ class PPOTrainer:
             loss = self.ppo_update(b_obs, b_actions, b_log_probs, b_advantages, b_returns, b_values)
             total_loss += loss
             
-        return {"loss": total_loss / NUM_EPOCHS}
+        return {"loss": total_loss / NUM_EPOCHS, "max_chain": max_chain}
 
     def collect_rollouts(self, num_steps, p2_policy=None):
         all_obs, all_actions, all_log_probs, all_rewards, all_dones, all_values = [], [], [], [], [], []
+        max_chain = 0
 
         obs = self.obs_buf
         for _ in range(num_steps):
             if not isinstance(obs, np.ndarray):
                 print(f"CRITICAL: obs is NOT ndarray! type={type(obs)}")
-            obs_t = torch.from_numpy(obs).to(DEVICE)
+            # Floatキャストをここで一度だけ行う
+            obs_t = torch.from_numpy(obs).float().to(DEVICE)
             with torch.no_grad():
                 action, log_prob, _, value = self.model.get_action_and_value(obs_t)
 
@@ -74,18 +76,23 @@ class PPOTrainer:
 
             # 環境を1ステップ進める
             try:
-                next_obs, rewards, dones, _, _ = self.env.step(action.cpu().numpy(), actions_p2)
+                next_obs, rewards, dones, _, info = self.env.step(action.cpu().numpy(), actions_p2)
             except Exception as e:
                 print(f"FAILED AT env.step: {e}")
                 obs_dump = self.env._get_obs_all()
                 print(f"OBS DUMP Type: {type(obs_dump)}")
                 raise e
 
+            chains = info.get("chains", np.zeros_like(rewards))
+            step_max = int(np.max(chains))
+            if step_max > max_chain:
+                max_chain = step_max
+
             all_obs.append(obs_t)
             all_actions.append(action)
             all_log_probs.append(log_prob)
-            all_rewards.append(torch.tensor(rewards, dtype=torch.float32, device=DEVICE))
-            all_dones.append(torch.tensor(dones, dtype=torch.float32, device=DEVICE))
+            all_rewards.append(torch.as_tensor(rewards, dtype=torch.float32, device=DEVICE))
+            all_dones.append(torch.as_tensor(dones, dtype=torch.float32, device=DEVICE))
             all_values.append(value)
 
             obs = next_obs
@@ -118,20 +125,21 @@ class PPOTrainer:
             torch.cat(all_log_probs).view(-1),
             advantages.view(-1),
             returns.view(-1),
-            all_values_t.view(-1)
+            all_values_t.view(-1),
+            max_chain
         )
 
     def ppo_update(self, b_obs, b_actions, b_log_probs, b_advantages, b_returns, b_values):
         n = b_obs.shape[0]
         indices = torch.randperm(n, device=DEVICE)
+        b_advantages = (b_advantages - b_advantages.mean()) / (b_advantages.std() + 1e-8)
+
         total_loss = 0
         for start in range(0, n, MINIBATCH_SIZE):
             idx = indices[start:start + MINIBATCH_SIZE]
             _, new_log_prob, entropy, new_value = self.model.get_action_and_value(b_obs[idx], b_actions[idx])
             
             adv = b_advantages[idx]
-            if len(adv) > 1 and adv.std() > 0:
-                adv = (adv - adv.mean()) / (adv.std() + 1e-8)
             
             ratio = torch.exp(new_log_prob - b_log_probs[idx])
             loss_pi = -torch.min(ratio * adv, torch.clamp(ratio, 1-CLIP_EPS, 1+CLIP_EPS) * adv).mean()
@@ -139,7 +147,7 @@ class PPOTrainer:
             loss_ent = -entropy.mean()
             
             loss = loss_pi + VALUE_LOSS_COEF * loss_v + ENTROPY_COEF * loss_ent
-            self.optimizer.zero_grad()
+            self.optimizer.zero_grad(set_to_none=True)
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), MAX_GRAD_NORM)
             self.optimizer.step()

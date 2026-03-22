@@ -10,6 +10,8 @@ namespace puyotan {
 PuyotanVectorMatch::PuyotanVectorMatch(int num_matches, int32_t base_seed) 
     : base_seed_(base_seed) {
     matches_.reserve(num_matches);
+    prev_scores_.assign(num_matches, 0);
+    prev_ojama_.assign(num_matches, 0);
     for (int i = 0; i < num_matches; ++i) {
         matches_.emplace_back(std::make_unique<PuyotanMatch>(base_seed + i));
     }
@@ -47,6 +49,95 @@ void PuyotanVectorMatch::set_actions(const std::vector<int>& match_indices,
     for (int i = 0; i < n; ++i) {
         matches_[match_indices[i]]->setAction(player_ids[i], actions[i]);
     }
+}
+
+namespace {
+    struct ActionCode {
+        int col;
+        Rotation rot;
+    };
+    inline ActionCode decode_action(int code) {
+        if (code < 0) return { 2, Rotation::Up }; 
+        if (code < 6) return { code, Rotation::Up };
+        if (code < 11) return { code - 6, Rotation::Right };
+        if (code < 17) return { code - 11, Rotation::Down };
+        if (code < 22) return { code - 16, Rotation::Left };
+        return { 2, Rotation::Up };
+    }
+}
+
+pybind11::tuple PuyotanVectorMatch::step(pybind11::array_t<int> p1_actions, std::optional<pybind11::array_t<int>> p2_actions) {
+    auto req1 = p1_actions.request();
+    int* p1_ptr = static_cast<int*>(req1.ptr);
+    int* p2_ptr = nullptr;
+
+    if (p2_actions.has_value()) {
+        p2_ptr = static_cast<int*>(p2_actions->request().ptr);
+    }
+
+    const int n = static_cast<int>(matches_.size());
+    pybind11::array_t<float> rewards(n);
+    pybind11::array_t<bool> terminated(n);
+    pybind11::array_t<int> chains(n);
+
+    float* rew_ptr = static_cast<float*>(rewards.mutable_data());
+    bool* term_ptr = static_cast<bool*>(terminated.mutable_data());
+    int* chain_ptr = static_cast<int*>(chains.mutable_data());
+
+    {
+        pybind11::gil_scoped_release release;
+
+        #pragma omp parallel for
+        for (int i = 0; i < n; ++i) {
+            auto& m = matches_[i];
+
+            int act1 = p1_ptr[i];
+            ActionCode c1 = decode_action(act1);
+            m->setAction(0, Action(ActionType::PUT, c1.col, c1.rot));
+
+            if (p2_ptr) {
+                int act2 = p2_ptr[i];
+                if (act2 >= 0) {
+                    ActionCode c2 = decode_action(act2);
+                    m->setAction(1, Action(ActionType::PUT, c2.col, c2.rot));
+                } else {
+                    m->setAction(1, Action(ActionType::PASS, 0, Rotation::Up));
+                }
+            } else {
+                m->setAction(1, Action(ActionType::PASS, 0, Rotation::Up));
+            }
+
+            m->stepNextFrame();
+            m->stepUntilDecision();
+
+            const auto& p1 = m->getPlayer(0);
+            float r = 0.0f;
+            r += (p1.score - prev_scores_[i]) * 0.002f;
+            r -= (p1.active_ojama - prev_ojama_[i]) * 0.001f;
+
+            if (m->getStatus() == MatchStatus::WIN_P1) r += 10.0f;
+            else if (m->getStatus() == MatchStatus::WIN_P2) r -= 10.0f;
+
+            rew_ptr[i] = r;
+            chain_ptr[i] = static_cast<int>(p1.chain_count);
+
+            bool is_term = (m->getStatus() != MatchStatus::PLAYING);
+            term_ptr[i] = is_term;
+
+            prev_scores_[i] = p1.score;
+            prev_ojama_[i] = p1.active_ojama;
+
+            if (is_term) {
+                *m = PuyotanMatch(base_seed_ + i);
+                m->start();
+                m->stepUntilDecision();
+                prev_scores_[i] = m->getPlayer(0).score;
+                prev_ojama_[i] = m->getPlayer(0).active_ojama;
+            }
+        }
+    }
+
+    return pybind11::make_tuple(get_observations_all(), std::move(rewards), std::move(terminated), std::move(chains));
 }
 
 #include <immintrin.h>

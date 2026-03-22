@@ -17,11 +17,19 @@ from training.export import export_to_onnx
 
 # 設定
 NUM_ENVS = 128
-STEPS_PER_ITER = 64
+STEPS_PER_ITER = 128
 TOTAL_ITERS = 1000
 MODELS_DIR = BASE_DIR / "models"
 CHECKPOINT_PT = MODELS_DIR / "puyotan_latest.pt"
 CHECKPOINT_ONNX = MODELS_DIR / "puyotan_latest.onnx"
+
+class RandomPolicy:
+    def __init__(self):
+        self.is_loaded = lambda: True
+        
+    def infer(self, obs, num_envs):
+        # 22 actions
+        return np.random.randint(0, 22, size=num_envs).astype(np.int32)
 
 def selfplay_loop():
     print("=== PuyotanAI Self-Play & Training Loop Starting ===")
@@ -39,25 +47,64 @@ def selfplay_loop():
         
         print(f"Training Config: envs={NUM_ENVS}, steps={STEPS_PER_ITER}")
         
+        # Policies
+        random_policy = RandomPolicy()
+        past_policy = None
+        
         # 2. メインループ
         for i in range(TOTAL_ITERS):
             start_time = time.time()
             iteration = i + 1
             print(f"\n--- Iteration {iteration}/{TOTAL_ITERS} ---")
             
-            # 対戦相手の決定
+            # Curriculum: Stage 1 = PASS, Stage 2 = Random, Stage 3 = Self-Play
             p2_policy = None
-            # Stage 1: P2 = PASS (Learning the basics)
+            stage_name = "Stage 1 (PASS)"
+            
+            if iteration > 50 and iteration <= 150:
+                p2_policy = random_policy
+                stage_name = "Stage 2 (Random)"
+            elif iteration > 150:
+                # Update snapshot every 50 iterations
+                if iteration % 50 == 1 or past_policy is None:
+                    print(f"Exporting snapshot for Self-Play...")
+                    trainer.save(str(CHECKPOINT_PT))
+                    export_to_onnx(str(CHECKPOINT_PT), str(CHECKPOINT_ONNX))
+                    
+                    import shutil
+                    import tempfile
+                    try:
+                        # Workaround for ONNX Runtime Japanese path issues
+                        temp_onnx = Path(tempfile.gettempdir()) / "puyotan_snapshot.onnx"
+                        shutil.copy2(CHECKPOINT_ONNX, temp_onnx)
+                        
+                        data_path = Path(CHECKPOINT_ONNX).with_suffix(".onnx.data")
+                        if data_path.exists():
+                            shutil.copy2(data_path, temp_onnx.with_suffix(".onnx.data"))
+                            
+                        past_policy = p.OnnxPolicy(str(temp_onnx), use_cpu=True)
+                        if not past_policy.is_loaded():
+                            print("Failed to load ONNX. Falling back to Random.")
+                            past_policy = random_policy
+                    except Exception as e:
+                        print(f"Load Error: {e}")
+                        past_policy = random_policy
+                        
+                p2_policy = past_policy
+                stage_name = "Stage 3 (Self-Play)"
+                
+            print(f"Opponent: {stage_name}")
             
             # 学習実行
             metrics = trainer.train(num_steps=STEPS_PER_ITER, p2_policy=p2_policy)
             
             elapsed = time.time() - start_time
             fps = (NUM_ENVS * STEPS_PER_ITER) / elapsed
-            print(f"Iteration {iteration} Finished. Loss={metrics['loss']:.4f}, FPS={fps:.1f}")
+            print(f"Iteration {iteration} Finished. Loss={metrics['loss']:.4f}, MaxChain={metrics['max_chain']}, FPS={fps:.1f}")
             
-            # 定期的なモデル保存 (とりあえず毎回)
-            # trainer.save(str(CHECKPOINT_PT))
+            # 定期的なモデル保存
+            if iteration % 10 == 0:
+                trainer.save(str(CHECKPOINT_PT))
             
     except Exception:
         print("CRITICAL ERROR in selfplay_loop:")

@@ -3,7 +3,6 @@ from gymnasium import spaces
 import numpy as np
 import sys
 from pathlib import Path
-from training.reward import calculate_reward
 
 # Add the native library path
 BASE_DIR = Path(__file__).resolve().parent
@@ -145,83 +144,41 @@ class PuyotanVectorEnv:
         self.observation_space = spaces.Box(
             low=0, high=1, shape=(2, 5, 6, 13), dtype=np.uint8
         )
-        self.base_seed = base_seed
-        
-        # 報酬計算用の前回状態を保持
-        self.prev_scores = np.zeros(num_envs, dtype=np.int32)
-        self.prev_ojama = np.zeros(num_envs, dtype=np.int32)
 
     def reset(self, seed=None):
-        # We don't support individual reset yet, just reset all
-        self.vm.reset(-1) # Reset all
-        for i in range(self.num_envs):
-            match = self.vm.get_match(i)
-            match.start()
-            # Advance to first decision
-            match.step_until_decision()
-            
-            self.prev_scores[i] = match.getPlayer(0).score
-            self.prev_ojama[i] = match.getPlayer(0).active_ojama
-
+        self.vm.reset(-1) # Reset all instances
         return self._get_obs_all(), {}
 
     def step(self, actions_p1, actions_p2=None):
         """
         Takes P1 actions and optionally P2 actions.
-        If actions_p2 is None, P2 will PASS.
         """
-        # 1. Set P1 actions
-        match_indices = list(range(self.num_envs))
-        p1_ids = [0] * self.num_envs
-        p1_acts = []
-        for a in actions_p1:
-            col, rot = ActionMapper.get(a)
-            p1_acts.append(p.Action(p.ActionType.PUT, col, rot))
-        self.vm.set_actions(match_indices, p1_ids, p1_acts)
-
-        # 2. Set P2 actions (if provided, otherwise PASS)
-        p2_ids = [1] * self.num_envs
-        p2_acts = []
-        if actions_p2 is not None:
-            for a in actions_p2:
-                col, rot = ActionMapper.get(a)
-                p2_acts.append(p.Action(p.ActionType.PUT, col, rot))
+        if hasattr(actions_p1, 'astype'):
+            a1 = actions_p1.astype(np.int32, copy=False)
         else:
-            p2_acts = [p.Action(p.ActionType.PASS, 0, p.Rotation.Up)] * self.num_envs
-        self.vm.set_actions(match_indices, p2_ids, p2_acts)
+            a1 = np.asarray(actions_p1, dtype=np.int32)
+            
+        a2 = None
+        if actions_p2 is not None:
+            if hasattr(actions_p2, 'astype'):
+                a2 = actions_p2.astype(np.int32, copy=False)
+            else:
+                a2 = np.asarray(actions_p2, dtype=np.int32)
+
+        # C++ ネイティブでの一括実行（報酬計算とリセットも内包）
+        res = self.vm.step(a1, a2)
         
-        # 3. Step all environments & Collect rewards/dones
-        rewards = np.zeros(self.num_envs, dtype=np.float32)
-        terminated = np.zeros(self.num_envs, dtype=bool)
+        # Handle tuple output explicitly
+        obs = res[0]
+        rewards = res[1]
+        terminated = res[2]
+        chains = res[3]
         truncated = np.zeros(self.num_envs, dtype=bool)
         
-        for i in range(self.num_envs):
-            match = self.vm.get_match(i)
-            match.step_until_decision()
-            
-            # 報酬計算 (P1視点)
-            rewards[i] = calculate_reward(
-                self.prev_scores[i], match.getPlayer(0).score,
-                self.prev_ojama[i], match.getPlayer(0).active_ojama,
-                match.status
-            )
-            
-            # 状態更新
-            self.prev_scores[i] = match.getPlayer(0).score
-            self.prev_ojama[i] = match.getPlayer(0).active_ojama
-            
-            # 終了判定
-            if match.status != p.MatchStatus.PLAYING:
-                terminated[i] = True
-                # 自動リセット（強化学習の標準的な挙動）
-                match.reset()
-                match.start()
-                match.step_until_decision()
-                self.prev_scores[i] = match.getPlayer(0).score
-                self.prev_ojama[i] = match.getPlayer(0).active_ojama
+        # Pack info
+        info = {"chains": chains}
         
-        obs = self._get_obs_all()
-        return obs, rewards, terminated, truncated, {}
+        return obs, rewards, terminated, truncated, info
 
     def _get_obs_all(self):
         res = self.vm.get_observations_all()
