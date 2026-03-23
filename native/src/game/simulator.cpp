@@ -8,9 +8,9 @@
 
 namespace puyotan {
 
-Simulator::Simulator(uint32_t seed) : tsumo_(seed) {}
+Simulator::Simulator(uint32_t seed) noexcept : tsumo_(seed) {}
 
-void Simulator::reset(uint32_t seed) {
+void Simulator::reset(uint32_t seed) noexcept {
     board_ = Board();
     tsumo_.setSeed(seed);
     tsumo_index_ = 0;
@@ -18,43 +18,34 @@ void Simulator::reset(uint32_t seed) {
     is_game_over_ = false;
 }
 
-PuyoPiece Simulator::getCurrentPiece() {
+PuyoPiece Simulator::getCurrentPiece() noexcept {
     return tsumo_.get(tsumo_index_);
 }
 
-int Simulator::step(int x, Rotation rotation) {
+int Simulator::step(int x, Rotation rotation) noexcept {
     if (is_game_over_) return 0;
 
     const int score_before = total_score_;
 
-    PuyoPiece piece = getCurrentPiece();
+    const PuyoPiece piece = getCurrentPiece();
     if (++tsumo_index_ >= config::Rule::kTsumoPoolSize) {
         tsumo_index_ = 0;
     }
 
-    // -----------------------------------------------------------------------
-    // Branchless placement via compile-time LUT indexed by Rotation (0-3).
-    //   Up=0:    axis at (x, h),     sub at (x,   h+1)
-    //   Right=1: axis at (x, h_ax),  sub at (x+1, h_sub)
-    //   Down=2:  axis at (x, h+1),   sub at (x,   h)
-    //   Left=3:  axis at (x, h_ax),  sub at (x-1, h_sub)
-    // -----------------------------------------------------------------------
     const int r = std::to_underlying(rotation);
-    const int h_axis = board_.getColumnHeight(x);
+    const int x_axis = x;
+    const int x_sub  = x_axis + kSubDx[r];
 
-    const int sub_x  = x + kSubDx[r];
-    assert(sub_x >= 0 && sub_x < config::Board::kWidth);
+    // O(1) base height calculation
+    const int h_axis = board_.getColumnHeight(x_axis);
+    const int h_sub  = board_.getColumnHeight(x_sub);
 
-    const int h_sub = board_.getColumnHeight(sub_x);
+    // Soft drop score = SpawnRow(12) - max landing base height
+    total_score_ += (config::Board::kSpawnRow - std::max(h_axis, h_sub)) * config::Score::kSoftDropBonusPerGrid;
 
-    const int final_y_axis = h_axis + kAxisDy[r];
-    const int final_y_sub  = h_sub  + kSubDy_Simple[r];
-
-    const int drop_dist   = config::Board::kSpawnRow - std::max(h_axis, h_sub);
-    total_score_ += drop_dist * config::Score::kSoftDropBonusPerGrid;
-
-    board_.dropNewPiece(x, final_y_axis, piece.axis);
-    board_.dropNewPiece(sub_x, final_y_sub, piece.sub);
+    // Direct BitBoard bit set (1 clock each, bypasses Gravity)
+    board_.dropNewPiece(x_axis, h_axis + kAxisDy[r], piece.axis);
+    board_.dropNewPiece(x_sub,  h_sub  + kSubDy_Simple[r], piece.sub);
 
     uint32_t dirty_colors = (1u << std::to_underlying(piece.axis)) | (1u << std::to_underlying(piece.sub));
 
@@ -65,6 +56,9 @@ int Simulator::step(int x, Rotation rotation) {
 
         ++chain_count;
         total_score_ += Scorer::calculateStepScore(data, chain_count);
+
+        // All Clear check (Pure mathematical branchless)
+        total_score_ += static_cast<int>(board_.getOccupied().empty()) * config::Score::kAllClearBonus;
         
         dirty_colors = Gravity::execute(board_);
     }
@@ -73,14 +67,14 @@ int Simulator::step(int x, Rotation rotation) {
     return total_score_ - score_before;
 }
 
-void Simulator::updateGameOver() {
+void Simulator::updateGameOver() noexcept {
     // Check the occupancy board once — faster than checking all 4 color planes.
     if (board_.getOccupied().get(config::Rule::kDeathCol, config::Rule::kDeathRow)) {
         is_game_over_ = true;
     }
 }
 
-int64_t Simulator::runBatch(int num_games, uint32_t seed) {
+int64_t Simulator::runBatch(int num_games, uint32_t seed) noexcept {
     // Move pattern matching tests/benchmark.py:
     //   6 moves at col 5, 6 at col 4, 6 at col 3, then col 2 until game over.
     int64_t total_steps = 0;

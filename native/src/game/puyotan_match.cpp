@@ -78,33 +78,29 @@ void PuyotanMatch::stepNextFrame() noexcept {
                 case ActionType::PASS:
                     break;
                 case ActionType::PUT: {
-                    PuyoPiece tumo = tsumo_.get(p.active_next_pos);
-                    const int x = action.x;
+                    const PuyoPiece tumo = tsumo_.get(p.active_next_pos);
                     const int r = static_cast<int>(action.rotation);
-                    assert(x >= 0 && x < config::Board::kWidth);
-                    assert(r >= 0 && r < 4);
+                    const int x_axis = action.x;
+                    const int x_sub  = x_axis + kSubDx[r];
 
-                    const int h_axis = p.field.getColumnHeight(x);
-                    const int sub_dx = kSubDx[r];
-                    const int sub_x  = x + sub_dx;
-                    assert(sub_x >= 0 && sub_x < config::Board::kWidth);
+                    // O(1) base height calculation
+                    const int h_axis = p.field.getColumnHeight(x_axis);
+                    const int h_sub  = p.field.getColumnHeight(x_sub);
 
-                    const int h_sub = p.field.getColumnHeight(sub_x);
+                    // Soft drop score = SpawnRow(12) - max landing base height
+                    p.score += (config::Board::kSpawnRow - std::max(h_axis, h_sub)) * config::Score::kSoftDropBonusPerGrid;
 
-                    const int final_y_axis = h_axis + kAxisDy[r];
-                    const int final_y_sub  = h_sub  + kSubDy_Simple[r];
+                    // Direct BitBoard bit set (1 clock each, bypasses Gravity)
+                    p.field.dropNewPiece(x_axis, h_axis + kAxisDy[r], tumo.axis);
+                    p.field.dropNewPiece(x_sub,  h_sub  + kSubDy_Simple[r], tumo.sub);
 
-                    const int drop_dist   = config::Board::kSpawnRow - std::max(h_axis, h_sub);
-                    p.score += drop_dist * config::Score::kSoftDropBonusPerGrid;
-
-                    p.field.dropNewPiece(x, final_y_axis, tumo.axis);
-                    p.field.dropNewPiece(sub_x, final_y_sub, tumo.sub);
-
-                    uint32_t dirty_colors = (1u << static_cast<int>(tumo.axis)) | (1u << static_cast<int>(tumo.sub));
+                    // Zero-overhead erasure check restricted to only the 2 deposited colors
+                    const uint32_t dirty_colors = (1u << static_cast<int>(tumo.axis)) | (1u << static_cast<int>(tumo.sub));
                     pending_erasure_[id] = Chain::findGroups(p.field, dirty_colors);
+                    
                     if (pending_erasure_[id].num_erased > 0) {
                         p.chain_count = 0;
-                        p.next_action = {Action{ActionType::CHAIN}, 1};
+                        p.next_action = {Action{ActionType::CHAIN}, 1}; 
                     }
                     break;
                 }
