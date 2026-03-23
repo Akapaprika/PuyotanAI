@@ -6,7 +6,7 @@
 
 namespace puyotan {
 
-void PuyotanPlayer::fallOjama(int num, uint32_t& seed) {
+void PuyotanPlayer::fallOjama(int num, uint32_t& seed) noexcept {
     constexpr int width = config::Board::kWidth;
     while (num > 0) {
         if (num >= width) {
@@ -30,19 +30,16 @@ void PuyotanPlayer::fallOjama(int num, uint32_t& seed) {
     }
 }
 
-PuyotanMatch::PuyotanMatch(uint32_t seed) : seed_(seed), tsumo_(seed) {
+PuyotanMatch::PuyotanMatch(uint32_t seed) noexcept : seed_(seed), tsumo_(seed) {
     assert(seed != 0u);
-    for (auto& p : players_) {
-        p = PuyotanPlayer();
-    }
 }
 
-void PuyotanMatch::start() {
+void PuyotanMatch::start() noexcept {
     assert(status_ == MatchStatus::READY && "start() should only be called once when match is ready");
     status_ = MatchStatus::PLAYING;
 }
 
-bool PuyotanMatch::setAction(int id, Action action) {
+bool PuyotanMatch::setAction(int id, Action action) noexcept {
     assert(status_ == MatchStatus::PLAYING && "Cannot set action to match not in PLAYING status");
     auto& p = players_[id];
     assert(p.current_action.action.type == ActionType::NONE && "Action already set for this player in this turn");
@@ -59,7 +56,7 @@ bool PuyotanMatch::setAction(int id, Action action) {
     }
 }
 
-bool PuyotanMatch::canStepNextFrame() const {
+bool PuyotanMatch::canStepNextFrame() const noexcept {
     if (status_ != MatchStatus::PLAYING) return false;
     for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         if (players_[id].current_action.action.type == ActionType::NONE) return false;
@@ -67,21 +64,15 @@ bool PuyotanMatch::canStepNextFrame() const {
     return true;
 }
 
-void PuyotanMatch::stepNextFrame() {
+void PuyotanMatch::stepNextFrame() noexcept {
     if (!canStepNextFrame()) return;
 
-    // 1. Action selection and reservation
+    // 1. Execute or reserve actions
     for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         auto& p = players_[id];
-        if (p.current_action.action.type != ActionType::NONE && p.current_action.remaining_frame > 0) {
+        if (p.current_action.remaining_frame > 0) {
             p.next_action = {p.current_action.action, static_cast<uint8_t>(p.current_action.remaining_frame - 1)};
-        }
-    }
-
-    // 2. Execute actions
-    for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
-        auto& p = players_[id];
-        if (p.current_action.action.type != ActionType::NONE && p.current_action.remaining_frame == 0) {
+        } else {
             const auto& action = p.current_action.action;
             switch (action.type) {
                 case ActionType::PASS:
@@ -140,10 +131,8 @@ void PuyotanMatch::stepNextFrame() {
                         sendOjama(id, ojama);
                     }
                     
-                    // All Clear check
-                    if (p.field.getOccupied().empty()) {
-                        p.score += config::Score::kAllClearBonus;
-                    }
+                    // All Clear check (Pure mathematical branchless)
+                    p.score += static_cast<int>(p.field.getOccupied().empty()) * config::Score::kAllClearBonus;
 
                     if (Gravity::canFall(p.field)) {
                         p.next_action = {Action{ActionType::CHAIN_FALL}, 0};
@@ -194,52 +183,46 @@ void PuyotanMatch::stepNextFrame() {
         status_ = kNextStatus[alive_mask];
     }
 
-    // 4. Ojama (garbage) processing
+    // 4 & 5. Post-turn processing (Ojama, Tsumo, and Action Advance)
     for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         auto& p = players_[id];
-        if (p.next_action.action.type == ActionType::NONE && p.active_ojama > 0) {
-            if (p.current_action.action.type != ActionType::OJAMA) {
-                p.next_action = {Action{ActionType::OJAMA}, 0};
-            }
-        }
-    }
-
-    // 5. Tsumo and frame transition
-    for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
-        auto& p = players_[id];
+        
         if (p.next_action.action.type == ActionType::NONE) {
-            if (p.current_action.action.type != ActionType::PASS) {
+            // 4. Ojama (garbage) processing: Fall garbage if available and didn't just fall
+            if (p.active_ojama > 0 && p.current_action.action.type != ActionType::OJAMA) {
+                p.next_action = {Action{ActionType::OJAMA}, 0};
+            } 
+            // 5. Tsumo and frame transition: Otherwise, pull the next piece (unless passing)
+            else if (p.current_action.action.type != ActionType::PASS) {
                 ++(p.active_next_pos);
             }
         }
-    }
 
-    // Advance actions: current = next, and clear next for the next step.
-    for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
-        players_[id].current_action = players_[id].next_action;
-        players_[id].next_action = {};
+        // Advance actions: current = next, and clear next for the next step.
+        p.current_action = p.next_action;
+        p.next_action = {};
     }
 
     ++frame_;
 }
 
-void PuyotanMatch::sendOjama(int sender_id, int ojama) {
+void PuyotanMatch::sendOjama(int sender_id, int ojama) noexcept {
     int target_id = 1 - sender_id;
     players_[target_id].non_active_ojama += ojama;
 }
 
-void PuyotanMatch::activateOjama(int finishing_player_id) {
+void PuyotanMatch::activateOjama(int finishing_player_id) noexcept {
     int target_id = 1 - finishing_player_id;
     auto& p = players_[target_id];
     p.active_ojama += p.non_active_ojama;
     p.non_active_ojama = 0;
 }
 
-int PuyotanMatch::stepUntilDecision() {
+int PuyotanMatch::stepUntilDecision() noexcept {
     while (status_ == MatchStatus::PLAYING) {
         int mask = 0;
         for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
-            if (players_[id].current_action.action.type == ActionType::NONE) mask |= (1 << id);
+            mask |= (static_cast<int>(players_[id].current_action.action.type == ActionType::NONE) << id);
         }
 
         if (mask != 0) return mask;
@@ -257,7 +240,7 @@ int PuyotanMatch::stepUntilDecision() {
 
 
 
-int64_t PuyotanMatch::runBatch(int num_games, uint32_t seed) {
+int64_t PuyotanMatch::runBatch(int num_games, uint32_t seed) noexcept {
     int64_t total_frames = 0;
     
     // 6 at col 5, 6 at 4, 6 at 3, etc.
@@ -278,7 +261,9 @@ int64_t PuyotanMatch::runBatch(int num_games, uint32_t seed) {
         while (match.getStatus() == MatchStatus::PLAYING) {
             bool action_set = false;
             if (match.players_[0].current_action.action.type == ActionType::NONE) {
-                int col = (p1_move < num_moves) ? move_plan[p1_move] : 2;
+                // Safe branchless arithmetic: always accesses valid index
+                int safe_idx_1 = p1_move * (p1_move < num_moves);
+                int col = (p1_move < num_moves) * move_plan[safe_idx_1] + (p1_move >= num_moves) * 2;
                 if (match.setAction(0, Action{ActionType::PUT, static_cast<int8_t>(col), Rotation::Up})) {
                     ++p1_move;
                     action_set = true;
@@ -286,7 +271,9 @@ int64_t PuyotanMatch::runBatch(int num_games, uint32_t seed) {
             }
 
             if (match.players_[1].current_action.action.type == ActionType::NONE) {
-                int col = (p2_move < num_moves) ? move_plan[p2_move] : 2;
+                // Safe branchless arithmetic: always accesses valid index
+                int safe_idx_2 = p2_move * (p2_move < num_moves);
+                int col = (p2_move < num_moves) * move_plan[safe_idx_2] + (p2_move >= num_moves) * 2;
                 if (match.setAction(1, Action{ActionType::PUT, static_cast<int8_t>(col), Rotation::Up})) {
                     ++p2_move;
                     action_set = true;

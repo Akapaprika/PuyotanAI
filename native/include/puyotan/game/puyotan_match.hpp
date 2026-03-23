@@ -28,7 +28,7 @@ struct PuyotanPlayer {
     uint8_t padding = 0;           // 1 byte (explict for 16-byte block)
 
     PuyotanPlayer() = default;
-    void fallOjama(int num, uint32_t& seed);
+    void fallOjama(int num, uint32_t& seed) noexcept;
 };
 
 /**
@@ -36,14 +36,14 @@ struct PuyotanPlayer {
  */
 class PuyotanMatch {
 public:
-    explicit PuyotanMatch(uint32_t seed = 1u);
+    explicit PuyotanMatch(uint32_t seed = 1u) noexcept;
     PuyotanMatch(const PuyotanMatch&) = default;
     PuyotanMatch& operator=(const PuyotanMatch&) = default;
 
-    void start();
-    bool setAction(int player_id, Action action);
-    bool canStepNextFrame() const;
-    void stepNextFrame();
+    void start() noexcept;
+    bool setAction(int player_id, Action action) noexcept;
+    bool canStepNextFrame() const noexcept;
+    void stepNextFrame() noexcept;
 
     const PuyotanPlayer& getPlayer(int id) const noexcept { return players_[id]; }
     PuyoPiece getPiece(int player_id, int index_offset) const noexcept {
@@ -57,7 +57,7 @@ public:
      * Runs num_games full matches in pure C++ using the benchmark move pattern
      * for both players. Returns total frames executed.
      */
-    static int64_t runBatch(int num_games, uint32_t seed);
+    static int64_t runBatch(int num_games, uint32_t seed) noexcept;
 
     /**
      * Steps the match until at least one player needs to make a decision
@@ -65,7 +65,7 @@ public:
      * Returns a bitmask of player IDs that need actions (1: P1, 2: P2, 3: Both),
      * or 0 if game over or error.
      */
-    int stepUntilDecision();
+    int stepUntilDecision() noexcept;
 
     // Helper to get random int for ojama fall positions
     static int nextInt(uint32_t& seed, int max) noexcept;
@@ -77,8 +77,8 @@ private:
     int32_t frame_ = 1;
     MatchStatus status_ = MatchStatus::READY;
 
-    void sendOjama(int sender_id, int ojama);
-    void activateOjama(int finishing_player_id);
+    void sendOjama(int sender_id, int ojama) noexcept;
+    void activateOjama(int finishing_player_id) noexcept;
 
     // Pre-computed chain group data, cached between CHAIN_FALL/PUT → CHAIN turns.
     // Stored here (not in PuyotanPlayer) to keep PuyotanPlayer compact and cache-friendly.

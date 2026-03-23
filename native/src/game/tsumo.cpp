@@ -9,7 +9,8 @@ Tsumo::Tsumo(uint32_t seed) noexcept {
 }
 
 void Tsumo::setSeed(uint32_t seed) noexcept {
-    seed_ = (seed == 0) ? 1 : seed; // XORSHIFT requires non-zero seed
+    // Replace 0 with 1 mathematically to avoid conditional move (CMOV) overhead
+    seed_ = seed + (seed == 0); // XORSHIFT requires non-zero seed
     generated_count_ = 0;
     generateMore(); // Initial chunk
 }

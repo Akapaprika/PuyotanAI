@@ -39,7 +39,7 @@ def print_game_state(match, moves_made):
     
     # Header
     print("\033[H\033[J", end="") # Clear screen (ANSI)
-    print(f"=== Puyotan Visual Benchmark | Frame: {match.frame:4d} | Status: {match.status_text} ===")
+    print(f"=== Puyotan Visual Benchmark | Frame: {match.frame:4d} ===")
     
     # Next Queue
     tsumo = match.getTsumo()
@@ -111,7 +111,6 @@ def run_visual_benchmark(seed=1, speed=0.05):
             break
 
     print_game_state(match, moves_made)
-    print(f"\nFinal Result: {match.status_text}")
     print(f"Total Frames: {match.frame}")
 
     # --- Automated Verification ---
