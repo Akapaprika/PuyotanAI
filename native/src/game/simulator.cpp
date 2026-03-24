@@ -28,9 +28,8 @@ int Simulator::step(int x, Rotation rotation) noexcept {
     const int score_before = total_score_;
 
     const PuyoPiece piece = getCurrentPiece();
-    if (++tsumo_index_ >= config::Rule::kTsumoPoolSize) {
-        tsumo_index_ = 0;
-    }
+    // Branchless wrap: kTsumoPoolSize is a power of 2, so AND mask eliminates branch
+    tsumo_index_ = (tsumo_index_ + 1) & (config::Rule::kTsumoPoolSize - 1);
 
     const int r = std::to_underlying(rotation);
     const int x_axis = x;
@@ -40,14 +39,14 @@ int Simulator::step(int x, Rotation rotation) noexcept {
     const int h_axis = board_.getColumnHeight(x_axis);
     const int h_sub  = board_.getColumnHeight(x_sub);
 
-    // Soft drop score = SpawnRow(12) - max landing base height
-    total_score_ += (config::Board::kSpawnRow - std::max(h_axis, h_sub)) * config::Score::kSoftDropBonusPerGrid;
+    // kSoftDropBonusPerGrid == 1: multiply eliminated (static_assert in puyotan_match.cpp)
+    total_score_ += (config::Board::kSpawnRow - std::max(h_axis, h_sub));
 
     // Direct BitBoard bit set (1 clock each, bypasses Gravity)
     board_.dropNewPiece(x_axis, h_axis + kAxisDy[r], piece.axis);
     board_.dropNewPiece(x_sub,  h_sub  + kSubDy_Simple[r], piece.sub);
 
-    uint32_t dirty_colors = (1u << std::to_underlying(piece.axis)) | (1u << std::to_underlying(piece.sub));
+    uint32_t dirty_colors = piece.dirty_flag;
 
     int chain_count = 0;
     while (dirty_colors & 0x0F) { // only normal colors chain

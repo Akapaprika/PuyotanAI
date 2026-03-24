@@ -33,6 +33,8 @@ enum class Rotation : uint8_t {
 struct PuyoPiece {
     Cell axis;
     Cell sub;
+    uint8_t dirty_flag; // Precomputed (1<<axis)|(1<<sub)
+    uint8_t _pad;       // 4-byte padding alignment
 };
 
 /**

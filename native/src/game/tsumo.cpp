@@ -40,8 +40,11 @@ void Tsumo::generateMore() noexcept {
         s ^= (s << 15);
         Cell c2 = static_cast<Cell>(s & color_mask);
 
+        // Precompute dirty flag for O(1) retrieval during simulation
+        uint8_t dirty = static_cast<uint8_t>((1u << static_cast<int>(c1)) | (1u << static_cast<int>(c2)));
+
         // Direct contiguous write without inner-loop masking
-        p[i] = {c1, c2};
+        p[i] = {c1, c2, dirty, 0};
     }
 
     seed_ = s;

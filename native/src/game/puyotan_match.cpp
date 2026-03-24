@@ -87,15 +87,16 @@ void PuyotanMatch::stepNextFrame() noexcept {
                     const int h_axis = p.field.getColumnHeight(x_axis);
                     const int h_sub  = p.field.getColumnHeight(x_sub);
 
-                    // Soft drop score = SpawnRow(12) - max landing base height
-                    p.score += (config::Board::kSpawnRow - std::max(h_axis, h_sub)) * config::Score::kSoftDropBonusPerGrid;
+                    // kSoftDropBonusPerGrid == 1: multiply eliminated (static_assert below)
+                    p.score += (config::Board::kSpawnRow - std::max(h_axis, h_sub));
+                    static_assert(config::Score::kSoftDropBonusPerGrid == 1, "Assumed 1 for multiply elision");
 
                     // Direct BitBoard bit set (1 clock each, bypasses Gravity)
                     p.field.dropNewPiece(x_axis, h_axis + kAxisDy[r], tumo.axis);
                     p.field.dropNewPiece(x_sub,  h_sub  + kSubDy_Simple[r], tumo.sub);
 
                     // Zero-overhead erasure check restricted to only the 2 deposited colors
-                    const uint32_t dirty_colors = (1u << static_cast<int>(tumo.axis)) | (1u << static_cast<int>(tumo.sub));
+                    const uint32_t dirty_colors = tumo.dirty_flag;
                     pending_erasure_[id] = Chain::findGroups(p.field, dirty_colors);
                     
                     if (pending_erasure_[id].num_erased > 0) {
@@ -113,16 +114,15 @@ void PuyotanMatch::stepNextFrame() noexcept {
                     int ojama = (p.score - p.used_score) / config::Score::kTargetScore;
                     p.used_score += ojama * config::Score::kTargetScore;
                     
-                    if (p.non_active_ojama > 0) {
-                        int used = std::min(ojama, static_cast<int>(p.non_active_ojama));
-                        p.non_active_ojama -= static_cast<uint16_t>(used);
-                        ojama -= used;
-                    }
-                    if (p.active_ojama > 0) {
-                        int used = std::min(ojama, static_cast<int>(p.active_ojama));
-                        p.active_ojama -= static_cast<uint16_t>(used);
-                        ojama -= used;
-                    }
+                    // Branchless ojama offset: min clamps to 0 automatically when ojama == 0
+                    int used_non = std::min(ojama, static_cast<int>(p.non_active_ojama));
+                    p.non_active_ojama -= static_cast<uint16_t>(used_non);
+                    ojama -= used_non;
+
+                    int used_active = std::min(ojama, static_cast<int>(p.active_ojama));
+                    p.active_ojama -= static_cast<uint16_t>(used_active);
+                    ojama -= used_active;
+
                     if (ojama > 0) {
                         sendOjama(id, ojama);
                     }
@@ -163,8 +163,8 @@ void PuyotanMatch::stepNextFrame() noexcept {
     uint32_t alive_mask = 0;
     for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         auto& p = players_[id];
-        bool is_alive = p.next_action.action.type != ActionType::NONE || 
-                        p.field.get(config::Rule::kDeathCol, config::Rule::kDeathRow) == Cell::Empty;
+        bool is_alive = (p.next_action.action.type != ActionType::NONE) |
+                        (p.field.get(config::Rule::kDeathCol, config::Rule::kDeathRow) == Cell::Empty);
         alive_mask |= (is_alive << id);
     }
 

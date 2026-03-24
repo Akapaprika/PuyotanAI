@@ -17,9 +17,10 @@ public:
     explicit PuyotanVectorMatch(int num_matches, uint32_t base_seed = 1u);
 
     /**
-     * Resets one or all matches.
+     * Resets a specific match (0-indexed).
+     * If id is -1 (default), resets all matches in parallel.
      */
-    void reset(int id = -1);
+    void reset(int id = -1) noexcept;
 
     /**
      * Runs all matches until they require decision (Step until decision).

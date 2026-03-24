@@ -17,7 +17,7 @@ PuyotanVectorMatch::PuyotanVectorMatch(int num_matches, uint32_t base_seed)
     }
 }
 
-void PuyotanVectorMatch::reset(int id) {
+void PuyotanVectorMatch::reset(int id) noexcept {
     if (id >= 0) {
         matches_[id] = PuyotanMatch(base_seed_ + id);
     } else {
@@ -71,7 +71,7 @@ namespace {
     static constexpr auto kExpandTable = generateBitExpandTable();
 
 #include <cassert>
-    inline ActionCode decodeAction(int code) {
+    inline ActionCode decodeAction(int code) noexcept {
         assert(code >= 0 && code < 22);
         static constexpr ActionCode kTable[22] = {
             {0, Rotation::Up}, {1, Rotation::Up}, {2, Rotation::Up}, {3, Rotation::Up}, {4, Rotation::Up}, {5, Rotation::Up},

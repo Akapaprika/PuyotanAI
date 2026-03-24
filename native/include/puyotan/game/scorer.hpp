@@ -25,7 +25,12 @@ public:
             group_bonus += getGroupBonus(data.group_sizes[g]);
         }
 
-        const int total_bonus = std::max(1, chain_bonus + color_bonus + group_bonus);
+        const int bonus_sum = chain_bonus + color_bonus + group_bonus;
+        // Branchless CMOV-eliminated max(1, sum): sum is never negative, so if sum == 0 we add 1.
+        const int total_bonus = bonus_sum + (bonus_sum == 0);
+        
+        // (data.num_erased * 10) is computed in parallel with bonus_sum on the CPU 
+        // because it has no dependencies, minimizing critical path latency.
         return (data.num_erased * 10) * total_bonus;
     }
 
@@ -46,12 +51,25 @@ private:
         return config::Score::kColorBonuses[count];
     }
 
+    // Generates a fully padded group bonus array to avoid std::min(idx, max_idx) bounding entirely.
+    // Max board size is 6x14=84 cells, so size-4 index max is ~80. Array size 128 is safe.
+    static constexpr auto kPaddedGroupBonuses = []() consteval {
+        std::array<int, 128> arr{};
+        for (int i = 0; i < 128; ++i) {
+            if (i < config::Score::kGroupBonusesSize) {
+                arr[i] = config::Score::kGroupBonuses[i];
+            } else {
+                arr[i] = config::Score::kGroupBonuses[config::Score::kGroupBonusesSize - 1]; // pad max
+            }
+        }
+        return arr;
+    }();
+
     static constexpr int getGroupBonus(int size) noexcept {
         const int idx = size - config::Rule::kConnectCount;
-        assert(idx >= 0);
-        // Groups can physically exceed size 11 (max bonus index); clamp to the last element.
-        const int clamped_idx = std::min(idx, config::Score::kGroupBonusesSize - 1);
-        return config::Score::kGroupBonuses[clamped_idx];
+        assert(idx >= 0 && idx < 128); // Safe bounding limit
+        // O(1) direct lookup without std::min clamping (CMOV eliminated)
+        return kPaddedGroupBonuses[idx];
     }
 };
 
