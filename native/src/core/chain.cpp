@@ -11,7 +11,11 @@ static void scanGroups(const Board& board, uint32_t color_mask, ErasureData& dat
     for (int i = 0; i < config::Rule::kColors; ++i) {
         if (!((color_mask >> i) & 1)) continue;
         const Cell c = static_cast<Cell>(i);
-        const BitBoard color_board = board.getBitboard(c);
+        
+        // 13段目 (y=12) 以上にある幽霊ぷよは連結・消滅の対象にならないようマスク
+        // Use static __m128i to ensure the compiler loads directly from .rodata and avoids store-to-load stack penalties
+        static const __m128i kGhostMask = _mm_set_epi64x(config::Board::kChainableHiMask, config::Board::kChainableLoMask);
+        const BitBoard color_board(_mm_and_si128(board.getBitboard(c).m128, kGhostMask));
         if (color_board.empty()) continue;
 
         // --- Bitwise Connectivity Pruning ('has_2' filter) ---

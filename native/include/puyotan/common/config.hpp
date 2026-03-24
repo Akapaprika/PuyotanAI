@@ -42,6 +42,21 @@ namespace Board {
     constexpr uint64_t kHiMask = kColMask | 
                                  (kColMask << (1 * kBitsPerCol));
 
+    // --------------------------------------------------------
+    // Chainable mask: Ghost row (13th row, index 12) doesn't pop.
+    // So only rows 0-11 (12 rows) are chainable.
+    // --------------------------------------------------------
+    constexpr int kChainableRows = 12; // Rows 0-11
+    static constexpr uint64_t kChainableColMask = (1ULL << kChainableRows) - 1;
+
+    constexpr uint64_t kChainableLoMask = kChainableColMask | 
+                                 (kChainableColMask << (1 * kBitsPerCol)) | 
+                                 (kChainableColMask << (2 * kBitsPerCol)) | 
+                                 (kChainableColMask << (3 * kBitsPerCol));
+
+    constexpr uint64_t kChainableHiMask = kChainableColMask | 
+                                 (kChainableColMask << (1 * kBitsPerCol));
+
     // Mask for a full 16-bit lane (bits 0-15)
     static constexpr uint32_t kFullLaneMask = (1U << kBitsPerCol) - 1;
 }

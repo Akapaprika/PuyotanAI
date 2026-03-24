@@ -113,7 +113,7 @@ def benchmark_vectorized(num_games=1000):
 
 if __name__ == "__main__":
     N = 10000  # Realistic N for strategy-based benchmark
-    EXPECTED_FRAMES = 602708
+    EXPECTED_FRAMES = 602415
     
     print(f"--- Sequential Benchmark (N={N}) ---")
     f_seq, t_seq = benchmark_sequential(N)
