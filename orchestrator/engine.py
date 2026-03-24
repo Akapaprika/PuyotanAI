@@ -25,7 +25,7 @@ class PuyotanEngine:
 
     def start(self):
         self.match.start()
-        self.match.step_until_decision()
+        self.match.stepUntilDecision()
 
     def is_playing(self) -> bool:
         return self.match.status == p.MatchStatus.PLAYING
@@ -47,5 +47,5 @@ class PuyotanEngine:
     def set_action(self, pid: int, action) -> bool:
         return self.match.setAction(pid, action)
 
-    def step_until_decision(self):
-        return self.match.step_until_decision()
+    def stepUntilDecision(self):
+        return self.match.stepUntilDecision()

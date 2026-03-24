@@ -189,7 +189,7 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("setAction", &puyotan::PuyotanMatch::setAction)
         .def("canStepNextFrame", &puyotan::PuyotanMatch::canStepNextFrame)
         .def("stepNextFrame", &puyotan::PuyotanMatch::stepNextFrame)
-        .def("step_until_decision", &puyotan::PuyotanMatch::stepUntilDecision,
+        .def("stepUntilDecision", &puyotan::PuyotanMatch::stepUntilDecision,
              pybind11::call_guard<pybind11::gil_scoped_release>())
         .def("getPlayer", &puyotan::PuyotanMatch::getPlayer, pybind11::return_value_policy::reference_internal)
         .def("getTsumo", &puyotan::PuyotanMatch::getTsumo, pybind11::return_value_policy::reference_internal)
@@ -201,15 +201,15 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def(pybind11::init<int, int32_t>(), pybind11::arg("num_matches"), pybind11::arg("base_seed") = 0)
         .def("reset", &puyotan::PuyotanVectorMatch::reset, pybind11::arg("id") = -1,
              pybind11::call_guard<pybind11::gil_scoped_release>())
-        .def("step_until_decision", &puyotan::PuyotanVectorMatch::step_until_decision,
+        .def("stepUntilDecision", &puyotan::PuyotanVectorMatch::stepUntilDecision,
              pybind11::call_guard<pybind11::gil_scoped_release>())
-        .def("set_actions", &puyotan::PuyotanVectorMatch::set_actions,
+        .def("setActions", &puyotan::PuyotanVectorMatch::setActions,
              pybind11::arg("match_indices"), pybind11::arg("player_ids"), pybind11::arg("actions"))
         .def("step", &puyotan::PuyotanVectorMatch::step,
              pybind11::arg("p1_actions"), pybind11::arg("p2_actions") = pybind11::none(),
              "Fast OpenMP bulk step, returning (obs, rewards, terminated)")
-        .def("get_observations_all", &puyotan::PuyotanVectorMatch::get_observations_all)
-        .def("get_match", static_cast<puyotan::PuyotanMatch& (puyotan::PuyotanVectorMatch::*)(int)>(&puyotan::PuyotanVectorMatch::get_match), pybind11::return_value_policy::reference_internal)
+        .def("getObservationsAll", &puyotan::PuyotanVectorMatch::getObservationsAll)
+        .def("getMatch", static_cast<puyotan::PuyotanMatch& (puyotan::PuyotanVectorMatch::*)(int)>(&puyotan::PuyotanVectorMatch::getMatch), pybind11::return_value_policy::reference_internal)
         .def_property_readonly("size", &puyotan::PuyotanVectorMatch::size);
 
     // ===== OnnxPolicy =====

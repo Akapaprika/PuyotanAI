@@ -1,7 +1,6 @@
 #pragma once
 
 #include <vector>
-#include <memory>
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <puyotan/game/puyotan_match.hpp>
@@ -26,12 +25,12 @@ public:
      * Runs all matches until they require decision (Step until decision).
      * @return Array of masks [N] where mask & (1 << player_id) means decision needed.
      */
-    std::vector<int> step_until_decision();
+    std::vector<int> stepUntilDecision();
 
     /**
      * Batch-set actions for multiple players across matches.
      */
-    void set_actions(const std::vector<int>& match_indices, 
+    void setActions(const std::vector<int>& match_indices, 
                      const std::vector<int>& player_ids,
                      const std::vector<Action>& actions);
 
@@ -47,19 +46,22 @@ public:
      * Bulk observation generation.
      * @return Flat array of [N, 2, 5, 6, 13] representing all fields.
      */
-    pybind11::array_t<uint8_t> get_observations_all() const;
+    pybind11::array_t<uint8_t> getObservationsAll() const;
 
     size_t size() const { return matches_.size(); }
-    PuyotanMatch& get_match(int i) { return *matches_[i]; }
-    const PuyotanMatch& get_match(int i) const { return *matches_[i]; }
+    PuyotanMatch& getMatch(int i) { return matches_[i]; }
+    const PuyotanMatch& getMatch(int i) const { return matches_[i]; }
 
 private:
-    std::vector<std::unique_ptr<PuyotanMatch>> matches_;
+    std::vector<PuyotanMatch> matches_;
     uint32_t base_seed_;
     
     // For reward calculation caching
-    std::vector<int> prev_scores_;
-    std::vector<int> prev_ojama_;
+    struct PrevState {
+        int score = 0;
+        int ojama = 0;
+    };
+    std::vector<PrevState> prev_states_;
 };
 
 } // namespace puyotan

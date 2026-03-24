@@ -68,7 +68,7 @@ class PuyotanEnv(gym.Env):
         self.match.start()
         
         # Advance to first decision
-        self.match.step_until_decision()
+        self.match.stepUntilDecision()
         
         return self._get_obs(), {}
 
@@ -81,7 +81,7 @@ class PuyotanEnv(gym.Env):
         # 2. Set opponent (P2) action (Simple dummy: PASS or Random)
         # For a standard gym env, P2 is usually part of the env.
         # Here we make P2 just PASS to allow P1 to play alone for now.
-        status_mask = self.match.step_until_decision() # This won't advance if P2 is unset
+        status_mask = self.match.stepUntilDecision() # This won't advance if P2 is unset
         if status_mask & 2: # P2 needs action
             self.match.setAction(1, p.Action(p.ActionType.PASS, 0, p.Rotation.Up))
 
@@ -89,7 +89,7 @@ class PuyotanEnv(gym.Env):
         self.match.stepNextFrame()
         
         # 4. Advance until next decision or game over
-        self.match.step_until_decision()
+        self.match.stepUntilDecision()
         
         obs = self._get_obs()
         reward = self._calculate_reward()
@@ -181,7 +181,7 @@ class PuyotanVectorEnv:
         return obs, rewards, terminated, truncated, info
 
     def _get_obs_all(self):
-        res = self.vm.get_observations_all()
+        res = self.vm.getObservationsAll()
         # Explicit type check for debugging
         if not isinstance(res, np.ndarray):
             try:

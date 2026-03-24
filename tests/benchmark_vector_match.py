@@ -25,7 +25,7 @@ def benchmark_sequential(num_games=1000):
         for i in unfinished:
             m = matches[i]
             if m.status == p.MatchStatus.PLAYING:
-                mask = m.step_until_decision()
+                mask = m.stepUntilDecision()
                 if mask == 0: 
                     total_frames += m.frame - 1
                     continue
@@ -50,7 +50,7 @@ def benchmark_sequential(num_games=1000):
 def benchmark_vectorized(num_games=1000):
     vm = p.PuyotanVectorMatch(num_games, 1)
     for i in range(num_games):
-        vm.get_match(i).start()
+        vm.getMatch(i).start()
 
     total_frames = 0
     start_time = time.perf_counter()
@@ -65,13 +65,13 @@ def benchmark_vectorized(num_games=1000):
     while unfinished:
         # REALISTIC: Retrieve observation EVERY step (simulating policy input)
         t0 = time.perf_counter()
-        obs = vm.get_observations_all()
+        obs = vm.getObservationsAll()
         # Simulate accessing the data (e.g. data validation or dummy sum)
         _ = obs.shape[0] 
         obs_time += (time.perf_counter() - t0)
         obs_calls += 1
 
-        masks = vm.step_until_decision()
+        masks = vm.stepUntilDecision()
         
         match_indices = []
         player_ids = []
@@ -81,7 +81,7 @@ def benchmark_vectorized(num_games=1000):
         for i in unfinished:
             mask = masks[i]
             if mask == 0:
-                total_frames += vm.get_match(i).frame - 1
+                total_frames += vm.getMatch(i).frame - 1
                 to_remove.append(i)
                 continue
             
@@ -101,7 +101,7 @@ def benchmark_vectorized(num_games=1000):
             unfinished.remove(i)
             
         if match_indices:
-            vm.set_actions(match_indices, player_ids, actions)
+            vm.setActions(match_indices, player_ids, actions)
 
     elapsed = time.perf_counter() - start_time
     

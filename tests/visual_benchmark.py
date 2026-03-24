@@ -81,7 +81,7 @@ def run_visual_benchmark(seed=1, speed=0.05):
     
     while match.status == p.MatchStatus.PLAYING:
         # 1. Advance simulation until someone needs a decision
-        mask = match.step_until_decision()
+        mask = match.stepUntilDecision()
         
         if mask == 0: # Match ended
             break

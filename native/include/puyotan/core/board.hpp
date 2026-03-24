@@ -103,11 +103,11 @@ struct alignas(16) BitBoard {
      */
     [[nodiscard]] __forceinline BitBoard extractLSB() const noexcept {
         uint64_t new_lo = lo & (0ULL - lo);
-        // If we simply apply extractLSB to both lo and hi, we might extract two bits, which is a bug.
-        // Therefore, we must only process hi if lo is empty.
-        // Using a ternary operator here allows the compiler to use a Conditional Move (CMOV)
-        // instruction instead of a branch (JMP), effectively eliminating branch misprediction penalties.
-        uint64_t new_hi = (lo == 0) ? (hi & (0ULL - hi)) : 0ULL;
+        // Using a bitwise mask to eliminate ternary/branches while being faster than multiplication.
+        // If lo != 0, (lo | -lo) has the 63rd bit set. Arithmetic right shift makes it all 1s.
+        // We flip it to get all 1s only when lo == 0.
+        uint64_t lo_is_zero_mask = ~((int64_t)(lo | (0ULL - lo)) >> 63);
+        uint64_t new_hi = (hi & (0ULL - hi)) & lo_is_zero_mask;
         return { new_lo, new_hi };
     }
 
@@ -161,9 +161,11 @@ public:
      */
     inline int getColumnHeight(int x) const noexcept {
         assert(x >= 0 && x < config::Board::kWidth);
-        uint64_t val = (x < config::Board::kColsInLo) ? occupancy_.lo : occupancy_.hi;
-        int shift = (x & 3) << 4; // x % 4 * 16
-        const uint32_t lane = (static_cast<uint32_t>(val >> shift)) & ((1u << config::Board::kBitsPerCol) - 1);
+        // BitBoard's lo and hi are contiguous, so we can access them as a 2-element array.
+        // x >> 2 (x / 4) maps 0-3 to index 0 (lo) and 4-5 to index 1 (hi).
+        const uint64_t val = (&occupancy_.lo)[x >> 2];
+        const int shift = (x & 3) << 4; // x % 4 * 16 bits per col
+        const uint32_t lane = static_cast<uint32_t>(val >> shift) & 0xFFFFu;
         return static_cast<int>(_mm_popcnt_u32(lane));
     }
     /**

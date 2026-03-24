@@ -16,7 +16,7 @@ def test_rl_api():
     
     # Test step_until_decision
     print(f"Initial frame: {match.frame}")
-    mask = match.step_until_decision()
+    mask = match.stepUntilDecision()
     print(f"Step until decision returned mask: {mask} at frame {match.frame}")
     assert mask == 3, "Both players should need an action at start"
     
@@ -31,7 +31,7 @@ def test_rl_api():
     match.setAction(0, p.Action(p.ActionType.PUT, 2, p.Rotation.Up))
     match.setAction(1, p.Action(p.ActionType.PUT, 3, p.Rotation.Up))
     
-    mask = match.step_until_decision()
+    mask = match.stepUntilDecision()
     print(f"Next decision at frame {match.frame}, mask: {mask}")
     
     # Verify observation after a move
@@ -39,8 +39,8 @@ def test_rl_api():
     print(f"Sum of obs after move: {np.sum(obs)}")
     assert np.sum(obs) == 2, "P1 should have placed 2 puyos"
 
-    # Benchmarking step_until_decision efficiency
-    print("\n--- Benchmarking step_until_decision ---")
+    # Benchmarking stepUntilDecision efficiency
+    print("\n--- Benchmarking stepUntilDecision ---")
     num_games = 50000
     start = time.perf_counter()
     total_frames = 0
@@ -49,7 +49,7 @@ def test_rl_api():
         m.start()
         moves_made = [0, 0]
         while m.status == p.MatchStatus.PLAYING:
-            mask = m.step_until_decision()
+            mask = m.stepUntilDecision()
             if mask == 0: break
             for id in range(2):
                 if mask & (1 << id):
