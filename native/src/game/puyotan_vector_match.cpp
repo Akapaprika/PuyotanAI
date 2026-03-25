@@ -83,7 +83,7 @@ namespace {
     }
 }
 
-pybind11::tuple PuyotanVectorMatch::step(pybind11::array_t<int> p1_actions, std::optional<pybind11::array_t<int>> p2_actions) {
+pybind11::tuple PuyotanVectorMatch::step(pybind11::array_t<int> p1_actions, std::optional<pybind11::array_t<int>> p2_actions, std::optional<pybind11::array_t<uint8_t>> out_obs) {
     auto req1 = p1_actions.request();
     int* p1_ptr = static_cast<int*>(req1.ptr);
     
@@ -163,19 +163,24 @@ pybind11::tuple PuyotanVectorMatch::step(pybind11::array_t<int> p1_actions, std:
         }
     }
 
-    return pybind11::make_tuple(getObservationsAll(), std::move(rewards), std::move(terminated), std::move(chains));
+    return pybind11::make_tuple(getObservationsAll(out_obs), std::move(rewards), std::move(terminated), std::move(chains));
 }
 
 #include <immintrin.h>
 
-pybind11::array_t<uint8_t> PuyotanVectorMatch::getObservationsAll() const {
+pybind11::array_t<uint8_t> PuyotanVectorMatch::getObservationsAll(std::optional<pybind11::array_t<uint8_t>> out_obs) const {
     const int n = static_cast<int>(matches_.size());
     const int colors = config::Board::kNumColors;
     const int width  = config::Board::kWidth;
     const int height = config::Board::kHeight;
 
-    // 1. Allocate array (Must hold GIL)
-    pybind11::array_t<uint8_t> arr({(std::size_t)n, (std::size_t)config::Rule::kNumPlayers, (std::size_t)colors, (std::size_t)width, (std::size_t)height});
+    // 1. Allocate or use existing array (Must hold GIL)
+    pybind11::array_t<uint8_t> arr;
+    if (out_obs.has_value()) {
+        arr = *out_obs;
+    } else {
+        arr = pybind11::array_t<uint8_t>({(std::size_t)n, (std::size_t)config::Rule::kNumPlayers, (std::size_t)colors, (std::size_t)width, (std::size_t)height});
+    }
     uint8_t* out_base = static_cast<uint8_t*>(arr.mutable_data());
 
     // 2. Parallel processing (Release GIL)

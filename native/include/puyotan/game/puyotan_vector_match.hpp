@@ -39,15 +39,16 @@ public:
      * Bulk step function incorporating action decoding, stepping, auto-reset, and reward calculation (OpenMP accelerated).
      * @param p1_actions Action indices [0-21] for Player 1.
      * @param p2_actions Action indices [0-21] for Player 2. If empty, P2 passes.
+     * @param out_obs Optional allocated buffer for observations to avoid allocation overhead.
      * @return A tuple of (observations, rewards, terminated).
      */
-    pybind11::tuple step(pybind11::array_t<int> p1_actions, std::optional<pybind11::array_t<int>> p2_actions);
+    pybind11::tuple step(pybind11::array_t<int> p1_actions, std::optional<pybind11::array_t<int>> p2_actions = std::nullopt, std::optional<pybind11::array_t<uint8_t>> out_obs = std::nullopt);
 
     /**
      * Bulk observation generation.
      * @return Flat array of [N, 2, 5, 6, 13] representing all fields.
      */
-    pybind11::array_t<uint8_t> getObservationsAll() const;
+    pybind11::array_t<uint8_t> getObservationsAll(std::optional<pybind11::array_t<uint8_t>> out_obs = std::nullopt) const;
 
     size_t size() const { return matches_.size(); }
     PuyotanMatch& getMatch(int i) { return matches_[i]; }

@@ -43,89 +43,6 @@ class ActionMapper:
         cls.initialize()
         return cls.ACTIONS[idx]
 
-class PuyotanEnv(gym.Env):
-    """
-    Puyo Puyo environment for a single match (Self vs Random/Fixed P2).
-    """
-    metadata = {"render_modes": ["human"]}
-
-    def __init__(self, seed=None):
-        super().__init__()
-        self.action_space = spaces.Discrete(len(ActionMapper.ACTIONS))
-        # 2 players, 5 colors, 6 width, 13 height
-        self.observation_space = spaces.Box(
-            low=0, high=1, shape=(2, 5, 6, 13), dtype=np.uint8
-        )
-        self.match = None
-        self._seed = seed if seed is not None else 1
-
-    def reset(self, seed=None, options=None):
-        super().reset(seed=seed)
-        if seed is not None:
-            self._seed = seed
-            
-        self.match = p.PuyotanMatch(self._seed)
-        self.match.start()
-        
-        # Advance to first decision
-        self.match.stepUntilDecision()
-        
-        return self._get_obs(), {}
-
-    def step(self, action):
-        col, rot = ActionMapper.get(action)
-        
-        # 1. Set self (P1) action
-        self.match.setAction(0, p.Action(p.ActionType.PUT, col, rot))
-        
-        # 2. Set opponent (P2) action (Simple dummy: PASS or Random)
-        # For a standard gym env, P2 is usually part of the env.
-        # Here we make P2 just PASS to allow P1 to play alone for now.
-        status_mask = self.match.stepUntilDecision() # This won't advance if P2 is unset
-        if status_mask & 2: # P2 needs action
-            self.match.setAction(1, p.Action(p.ActionType.PASS, 0, p.Rotation.Up))
-
-        # 3. Step simulation
-        self.match.stepNextFrame()
-        
-        # 4. Advance until next decision or game over
-        self.match.stepUntilDecision()
-        
-        obs = self._get_obs()
-        reward = self._calculate_reward()
-        terminated = (self.match.status != p.MatchStatus.PLAYING)
-        truncated = False
-        
-        return obs, reward, terminated, truncated, {}
-
-    def _get_obs(self):
-        # We need to collect observations for both players
-        p1 = self.match.getPlayer(0)
-        p2 = self.match.getPlayer(1)
-        
-        obs = np.zeros((2, 5, 6, 13), dtype=np.uint8)
-        # to_obs_flat returns (5, 6, 13) uint8
-        obs[0] = p1.to_obs_flat()
-        obs[1] = p2.to_obs_flat()
-        return obs
-
-    def _calculate_reward(self):
-        # This is a simplified reward based on P1's score growth
-        # In a real scenario, you might want to track score delta
-        p1 = self.match.getPlayer(0)
-        # Reward for sending ojama
-        reward = p1.score / 70.0 
-        
-        if self.match.status == p.MatchStatus.WIN_P1:
-            reward += 10.0
-        elif self.match.status == p.MatchStatus.WIN_P2:
-            reward -= 10.0
-            
-        return float(reward)
-
-    def render(self):
-        pass
-
 class PuyotanVectorEnv:
     """
     Hig-performance Vectorized environment for Puyotan!
@@ -144,6 +61,7 @@ class PuyotanVectorEnv:
         self.observation_space = spaces.Box(
             low=0, high=1, shape=(2, 5, 6, 13), dtype=np.uint8
         )
+        self._obs_buffer = np.zeros((num_envs, 2, 5, 6, 13), dtype=np.uint8)
 
     def reset(self, seed=None):
         self.vm.reset(-1) # Reset all instances
@@ -166,7 +84,7 @@ class PuyotanVectorEnv:
                 a2 = np.asarray(actions_p2, dtype=np.int32)
 
         # C++ ネイティブでの一括実行（報酬計算とリセットも内包）
-        res = self.vm.step(a1, a2)
+        res = self.vm.step(a1, a2, self._obs_buffer)
         
         # Handle tuple output explicitly
         obs = res[0]
@@ -181,7 +99,7 @@ class PuyotanVectorEnv:
         return obs, rewards, terminated, truncated, info
 
     def _get_obs_all(self):
-        res = self.vm.getObservationsAll()
+        res = self.vm.getObservationsAll(self._obs_buffer)
         # Explicit type check for debugging
         if not isinstance(res, np.ndarray):
             try:

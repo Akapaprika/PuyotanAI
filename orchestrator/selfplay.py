@@ -10,7 +10,7 @@ import traceback
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
 
-from puyotan_env import PuyotanVectorEnv
+from training.env import PuyotanVectorEnv
 import puyotan_native as p
 from training.trainer import PPOTrainer
 from training.export import export_to_onnx
@@ -38,7 +38,7 @@ def selfplay_loop():
     try:
         # 1. 環境とトレーナーの初期化
         env = PuyotanVectorEnv(num_envs=NUM_ENVS)
-        trainer = PPOTrainer(env)
+        trainer = PPOTrainer(env, num_rollout_steps=STEPS_PER_ITER)
         
         # 既存のチェックポイントがあればロード
         if CHECKPOINT_PT.exists():
@@ -96,7 +96,7 @@ def selfplay_loop():
             print(f"Opponent: {stage_name}")
             
             # 学習実行
-            metrics = trainer.train(num_steps=STEPS_PER_ITER, p2_policy=p2_policy)
+            metrics = trainer.train(p2_policy=p2_policy)
             
             elapsed = time.time() - start_time
             fps = (NUM_ENVS * STEPS_PER_ITER) / elapsed

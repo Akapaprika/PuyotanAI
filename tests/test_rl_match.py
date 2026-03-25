@@ -19,13 +19,6 @@ def test_rl_api():
     mask = match.stepUntilDecision()
     print(f"Step until decision returned mask: {mask} at frame {match.frame}")
     assert mask == 3, "Both players should need an action at start"
-    
-    # Test to_obs_flat
-    p1 = match.getPlayer(0)
-    obs = p1.to_obs_flat()
-    print(f"Observation shape: {obs.shape}")
-    assert obs.shape == (5, 6, 13)
-    assert np.all(obs == 0), "Board should be empty at start"
 
     # Set actions and step
     match.setAction(0, p.Action(p.ActionType.PUT, 2, p.Rotation.Up))
@@ -33,11 +26,6 @@ def test_rl_api():
     
     mask = match.stepUntilDecision()
     print(f"Next decision at frame {match.frame}, mask: {mask}")
-    
-    # Verify observation after a move
-    obs = match.getPlayer(0).to_obs_flat()
-    print(f"Sum of obs after move: {np.sum(obs)}")
-    assert np.sum(obs) == 2, "P1 should have placed 2 puyos"
 
     # Benchmarking stepUntilDecision efficiency
     print("\n--- Benchmarking stepUntilDecision ---")
