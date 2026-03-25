@@ -7,15 +7,15 @@ PyTorch モデル → ONNX 書き出しモジュール（単一責務）
 import argparse
 from pathlib import Path
 import torch
-from training.model import PuyotanPolicy, INPUT_DIM
+from training.model import PuyotanPolicy
 
 
-def export_to_onnx(model_or_path, output_path: str):
+def export_to_onnx(model_or_path, output_path: str, hidden_dim=128):
     """
     指定した PyTorch モデル（またはチェックポイントパス）を ONNX 形式で書き出す。
     """
     if isinstance(model_or_path, (str, Path)):
-        model = PuyotanPolicy()
+        model = PuyotanPolicy(hidden_dim=hidden_dim)
         model.load_state_dict(torch.load(model_or_path, map_location="cpu"))
         print(f"Exporting: {model_or_path} -> {output_path}")
     else:

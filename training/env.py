@@ -4,13 +4,13 @@ import numpy as np
 import sys
 from pathlib import Path
 
-# Add the native library path
-BASE_DIR = Path(__file__).resolve().parent
+# Add the project root and native library path
+BASE_DIR = Path(__file__).resolve().parent.parent
 DIST_DIR = BASE_DIR / "native" / "dist"
 RELEASE_DIR = BASE_DIR / "native" / "build_Release" / "Release"
 
 for d in [DIST_DIR, RELEASE_DIR]:
-    if d.exists():
+    if d.exists() and str(d) not in sys.path:
         sys.path.insert(0, str(d))
         break
 
@@ -49,11 +49,9 @@ class PuyotanVectorEnv:
     Directly wraps PuyotanVectorMatch for massive parallel training.
     """
     def __init__(self, num_envs=1, base_seed=1):
-        print(f"DEBUG: PuyotanVectorEnv __init__ with num_envs={num_envs}, base_seed={base_seed}")
         self.num_envs = num_envs
         self.base_seed = base_seed
         self.vm = p.PuyotanVectorMatch(num_envs, base_seed)
-        print("DEBUG: PuyotanVectorMatch created.")
         
         # Ensure ActionMapper is ready
         ActionMapper.initialize()
@@ -62,6 +60,7 @@ class PuyotanVectorEnv:
             low=0, high=1, shape=(2, 5, 6, 13), dtype=np.uint8
         )
         self._obs_buffer = np.zeros((num_envs, 2, 5, 6, 13), dtype=np.uint8)
+        self._truncated_buffer = np.zeros(num_envs, dtype=bool)
 
     def reset(self, seed=None):
         self.vm.reset(-1) # Reset all instances
@@ -71,40 +70,22 @@ class PuyotanVectorEnv:
         """
         Takes P1 actions and optionally P2 actions.
         """
-        if hasattr(actions_p1, 'astype'):
-            a1 = actions_p1.astype(np.int32, copy=False)
-        else:
-            a1 = np.asarray(actions_p1, dtype=np.int32)
+        a1 = np.asarray(actions_p1, dtype=np.int32)
             
         a2 = None
         if actions_p2 is not None:
-            if hasattr(actions_p2, 'astype'):
-                a2 = actions_p2.astype(np.int32, copy=False)
-            else:
-                a2 = np.asarray(actions_p2, dtype=np.int32)
+            a2 = np.asarray(actions_p2, dtype=np.int32)
 
         # C++ ネイティブでの一括実行（報酬計算とリセットも内包）
         res = self.vm.step(a1, a2, self._obs_buffer)
         
         # Handle tuple output explicitly
-        obs = res[0]
-        rewards = res[1]
-        terminated = res[2]
-        chains = res[3]
-        truncated = np.zeros(self.num_envs, dtype=bool)
+        obs, rewards, terminated, chains = res
         
         # Pack info
         info = {"chains": chains}
         
-        return obs, rewards, terminated, truncated, info
+        return obs, rewards, terminated, self._truncated_buffer, info
 
     def _get_obs_all(self):
-        res = self.vm.getObservationsAll(self._obs_buffer)
-        # Explicit type check for debugging
-        if not isinstance(res, np.ndarray):
-            try:
-                # If it's a tuple/list, the actual array is likely the 0th element
-                return res[0]
-            except:
-                pass
-        return res
+        return self.vm.getObservationsAll(self._obs_buffer)

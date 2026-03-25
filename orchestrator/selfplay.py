@@ -69,7 +69,7 @@ def selfplay_loop():
                 if iteration % 50 == 1 or past_policy is None:
                     print(f"Exporting snapshot for Self-Play...")
                     trainer.save(str(CHECKPOINT_PT))
-                    export_to_onnx(str(CHECKPOINT_PT), str(CHECKPOINT_ONNX))
+                    export_to_onnx(trainer.model, str(CHECKPOINT_ONNX))
                     
                     import shutil
                     import tempfile

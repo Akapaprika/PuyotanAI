@@ -8,7 +8,6 @@ Actor-Critic ネットワーク定義モジュール（単一責務）
 """
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 # 行動数: 22 種（0-5: Up, 6-10: Right, 11-16: Down, 17-21: Left）
 NUM_ACTIONS = 22

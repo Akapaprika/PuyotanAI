@@ -1,5 +1,4 @@
 import sys
-import time
 from pathlib import Path
 import numpy as np
 import torch
@@ -10,8 +9,7 @@ import torch.optim as optim
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
 
-import puyotan_native as p
-from .env import PuyotanVectorEnv, ActionMapper
+from .env import PuyotanVectorEnv
 from training.model import PuyotanPolicy
 
 # ───────────────── ハイパーパラメータ ─────────────────
@@ -35,16 +33,19 @@ class PPOTrainer:
         self.optimizer = optim.Adam(self.model.parameters(), lr=LEARNING_RATE, eps=1e-5)
 
         # Pre-allocate rollout buffers on GPU
-        self.obs_buf = torch.zeros((self.num_steps, self.num_envs, 2, 5, 6, 13), dtype=torch.uint8, device=DEVICE)
-        self.actions_buf = torch.zeros((self.num_steps, self.num_envs), dtype=torch.long, device=DEVICE)
-        self.logprobs_buf = torch.zeros((self.num_steps, self.num_envs), device=DEVICE)
-        self.rewards_buf = torch.zeros((self.num_steps, self.num_envs), device=DEVICE)
-        self.dones_buf = torch.zeros((self.num_steps, self.num_envs), device=DEVICE)
-        self.values_buf = torch.zeros((self.num_steps, self.num_envs), device=DEVICE)
-        self.advantages_buf = torch.zeros((self.num_steps, self.num_envs), device=DEVICE)
-        self.returns_buf = torch.zeros((self.num_steps, self.num_envs), device=DEVICE)
+        # obs_buf は float32 で保持し、毎ステップの .float() キャストを排除
+        self.obs_buf      = torch.zeros((self.num_steps, self.num_envs, 2, 5, 6, 13), dtype=torch.float32, device=DEVICE)
+        self.actions_buf  = torch.zeros((self.num_steps, self.num_envs), dtype=torch.long,    device=DEVICE)
+        self.logprobs_buf = torch.zeros((self.num_steps, self.num_envs), dtype=torch.float32, device=DEVICE)
+        self.values_buf   = torch.zeros((self.num_steps, self.num_envs), dtype=torch.float32, device=DEVICE)
+        self.advantages_buf = torch.zeros((self.num_steps, self.num_envs), dtype=torch.float32, device=DEVICE)
+        self.returns_buf    = torch.zeros((self.num_steps, self.num_envs), dtype=torch.float32, device=DEVICE)
 
-        # Latest observation (CPU)
+        # rewards / dones は CPU numpy で収集してロールアウト終了後に一括転送
+        self.rewards_np = np.zeros((self.num_steps, self.num_envs), dtype=np.float32)
+        self.dones_np   = np.zeros((self.num_steps, self.num_envs), dtype=np.float32)
+
+        # Latest observation (CPU numpy)
         self.curr_obs, _ = self.env.reset()
 
     def train(self, p2_policy=None):
@@ -53,19 +54,19 @@ class PPOTrainer:
         max_chain = self.collect_rollouts(p2_policy)
 
         # 2. PPOアップデート
-        # バッファをフラット化して学習に使用
-        b_obs = self.obs_buf.view(-1, 2, 5, 6, 13).float()
-        b_actions = self.actions_buf.view(-1)
-        b_log_probs = self.logprobs_buf.view(-1)
+        # バッファはすでに正しい型・デバイスにあるため .view() だけで使用可能
+        b_obs        = self.obs_buf.view(-1, 2, 5, 6, 13)
+        b_actions    = self.actions_buf.view(-1)
+        b_log_probs  = self.logprobs_buf.view(-1)
         b_advantages = self.advantages_buf.view(-1)
-        b_returns = self.returns_buf.view(-1)
-        b_values = self.values_buf.view(-1)
+        b_returns    = self.returns_buf.view(-1)
+        b_values     = self.values_buf.view(-1)
 
         total_loss = 0
         for _ in range(NUM_EPOCHS):
             loss = self.ppo_update(b_obs, b_actions, b_log_probs, b_advantages, b_returns, b_values)
             total_loss += loss
-            
+
         return {"loss": total_loss / NUM_EPOCHS, "max_chain": max_chain}
 
     def collect_rollouts(self, p2_policy=None):
@@ -73,13 +74,12 @@ class PPOTrainer:
         obs_cpu = self.curr_obs
 
         for t in range(self.num_steps):
-            # 現時点の観測をGPUバッファに保存（float変換は後で一括で行うためuint8で保持）
-            self.obs_buf[t].copy_(torch.from_numpy(obs_cpu))
-            
+            # 観測を GPU バッファに保存 (uint8 → float32 キャスト不要)
+            self.obs_buf[t].copy_(torch.from_numpy(obs_cpu), non_blocking=True)
+
             # 方策からのアクション決定
-            obs_t = self.obs_buf[t].float() # 勾配計算なしの推論用
-            with torch.no_grad():
-                action, log_prob, _, value = self.model.get_action_and_value(obs_t)
+            with torch.inference_mode():
+                action, log_prob, _, value = self.model.get_action_and_value(self.obs_buf[t])
 
             # P2のアクション（推論）
             actions_p2 = None
@@ -89,12 +89,14 @@ class PPOTrainer:
             # 環境ステップ実行
             next_obs, rewards, dones, _, info = self.env.step(action.cpu().numpy(), actions_p2)
 
-            # 各種データをバッファに格納
-            self.actions_buf[t] = action
+            # GPU バッファに書き込み
+            self.actions_buf[t]  = action
             self.logprobs_buf[t] = log_prob
-            self.values_buf[t] = value.squeeze()
-            self.rewards_buf[t] = torch.as_tensor(rewards, device=DEVICE)
-            self.dones_buf[t] = torch.as_tensor(dones, device=DEVICE)
+            self.values_buf[t]   = value.squeeze()
+
+            # rewards / dones は CPU numpy に直接書き込み（一括転送のため）
+            self.rewards_np[t] = rewards
+            self.dones_np[t]   = dones
 
             # 最大連鎖数の追跡
             chains = info.get("chains")
@@ -106,20 +108,25 @@ class PPOTrainer:
         self.curr_obs = obs_cpu
 
         # 最後の状態の価値推定（GAE用）
-        with torch.no_grad():
-            last_obs_t = torch.from_numpy(obs_cpu).float().to(DEVICE)
+        with torch.inference_mode():
+            last_obs_t = torch.from_numpy(obs_cpu).to(DEVICE, non_blocking=True)
             _, _, _, next_value = self.model.get_action_and_value(last_obs_t)
-            next_value = next_value.squeeze()
+            next_value = next_value.squeeze().cpu().numpy()
 
-        # GAE計算 (事前確保済み advantages_buf / returns_buf を使用)
-        last_gae = 0.0
-        for t in reversed(range(self.num_steps)):
-            not_done = 1.0 - self.dones_buf[t]
-            next_val = next_value if t == self.num_steps - 1 else self.values_buf[t+1]
-            delta = self.rewards_buf[t] + GAMMA * next_val * not_done - self.values_buf[t]
-            last_gae = delta + GAMMA * LAMBDA * not_done * last_gae
-            self.advantages_buf[t] = last_gae
+        # GAE 計算 (PyTorchのカーネルディスパッチ遅延を避けるため、CPUのNumPyで一括計算)
+        values_cpu = self.values_buf.cpu().numpy()
+        advantages_cpu = np.zeros((self.num_steps, self.num_envs), dtype=np.float32)
         
+        last_gae = np.zeros(self.num_envs, dtype=np.float32)
+        for t in reversed(range(self.num_steps)):
+            not_done = 1.0 - self.dones_np[t]
+            next_val = next_value if t == self.num_steps - 1 else values_cpu[t + 1]
+            delta    = self.rewards_np[t] + GAMMA * next_val * not_done - values_cpu[t]
+            last_gae = delta + GAMMA * LAMBDA * not_done * last_gae
+            advantages_cpu[t] = last_gae
+
+        # 計算結果をGPUへ一括書き戻し
+        self.advantages_buf.copy_(torch.from_numpy(advantages_cpu), non_blocking=True)
         self.returns_buf.copy_(self.advantages_buf + self.values_buf)
         return max_chain
 
@@ -132,14 +139,14 @@ class PPOTrainer:
         for start in range(0, n, MINIBATCH_SIZE):
             idx = indices[start:start + MINIBATCH_SIZE]
             _, new_log_prob, entropy, new_value = self.model.get_action_and_value(b_obs[idx], b_actions[idx])
-            
+
             adv = b_advantages[idx]
-            
-            ratio = torch.exp(new_log_prob - b_log_probs[idx])
-            loss_pi = -torch.min(ratio * adv, torch.clamp(ratio, 1-CLIP_EPS, 1+CLIP_EPS) * adv).mean()
-            loss_v = 0.5 * ((new_value - b_returns[idx])**2).mean()
+
+            ratio    = torch.exp(new_log_prob - b_log_probs[idx])
+            loss_pi  = -torch.min(ratio * adv, torch.clamp(ratio, 1 - CLIP_EPS, 1 + CLIP_EPS) * adv).mean()
+            loss_v   = 0.5 * ((new_value - b_returns[idx]) ** 2).mean()
             loss_ent = -entropy.mean()
-            
+
             loss = loss_pi + VALUE_LOSS_COEF * loss_v + ENTROPY_COEF * loss_ent
             self.optimizer.zero_grad(set_to_none=True)
             loss.backward()
@@ -150,5 +157,6 @@ class PPOTrainer:
 
     def save(self, path):
         torch.save(self.model.state_dict(), path)
+
     def load(self, path):
         self.model.load_state_dict(torch.load(path, map_location=DEVICE))
