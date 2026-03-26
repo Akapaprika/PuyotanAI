@@ -7,30 +7,30 @@
 namespace puyotan {
 
 /**
- * ONNX Runtime を使用した AI 推論クラス（単一責務）
+ * AI inference class using ONNX Runtime (Single Responsibility).
  *
- * 使い方:
+ * Usage:
  *   OnnxPolicy policy("models/puyotan.onnx");
  *   auto actions = policy.infer(obs_uint8, num_envs);
  */
 class OnnxPolicy {
 public:
     /**
-     * @param model_path .onnx ファイルへのパス
-     * @param use_cpu    true: CPU推論, false: DirectML (GPU)推論
+     * @param model_path Path to the .onnx file.
+     * @param use_cpu    true: CPU inference, false: DirectML (GPU) inference.
      */
     explicit OnnxPolicy(const std::string& model_path, bool use_cpu = true);
 
     /**
-     * バッチ推論: uint8 の観測データから行動インデックスを返す
+     * Batch inference: Returns action indices from uint8 observation data.
      *
-     * @param obs_data  観測データ (num_envs * 2 * 5 * 6 * 13 bytes, uint8)
-     * @param num_envs  並列環境数
-     * @return          各環境の行動インデックス [0, 21]
+     * @param obs_data  Observation data (num_envs * 2 * 5 * 6 * 13 bytes, uint8).
+     * @param num_envs  Number of parallel environments.
+     * @return          Action indices for each environment [0, 21].
      */
-    std::vector<int64_t> infer(const uint8_t* obs_data, int64_t num_envs);
+    std::vector<int64_t> infer(const uint8_t* obs_data, int64_t num_envs) const;
 
-    /** モデルが有効に読み込まれているか */
+    /** Whether the model is successfully loaded. */
     bool is_loaded() const { return session_ != nullptr; }
 
 private:

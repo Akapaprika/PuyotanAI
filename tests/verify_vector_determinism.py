@@ -11,14 +11,14 @@ import puyotan_native as p
 def verify_vector(num_games=50000):
     vm = p.PuyotanVectorMatch(num_games, 0)
     for i in range(num_games):
-        vm.get_match(i).start()
+        vm.getMatch(i).start()
 
     total_frames = 0
     unfinished = set(range(num_games))
     moves_made = [[0, 0] for _ in range(num_games)]
     
     while unfinished:
-        masks = vm.step_until_decision()
+        masks = vm.stepUntilDecision()
         match_indices = []
         player_ids = []
         actions = []
@@ -27,13 +27,13 @@ def verify_vector(num_games=50000):
         for i in unfinished:
             mask = masks[i]
             if mask == 0:
-                total_frames += vm.get_match(i).frame
+                total_frames += vm.getMatch(i).frame
                 to_remove.append(i)
                 continue
             
             for pid in range(2):
                 if mask & (1 << pid):
-                    m = vm.get_match(i)
+                    m = vm.getMatch(i)
                     count = moves_made[i][pid]
                     if count < 6: col = 5
                     elif count < 12: col = 4
@@ -48,7 +48,7 @@ def verify_vector(num_games=50000):
         for i in to_remove:
             unfinished.remove(i)
         if match_indices:
-            vm.set_actions(match_indices, player_ids, actions)
+            vm.setActions(match_indices, player_ids, actions)
 
     return total_frames
 

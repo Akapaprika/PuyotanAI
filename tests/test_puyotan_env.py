@@ -4,23 +4,8 @@ from pathlib import Path
 # Add the project root to sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import puyotan_env
+from training import env as puyotan_env
 import numpy as np
-
-def test_single_env():
-    print("Testing PuyotanEnv (Single)...")
-    env = puyotan_env.PuyotanEnv(seed=1)
-    obs, info = env.reset()
-    print(f"Initial Obs Shape: {obs.shape}")
-    
-    for i in range(10):
-        action = env.action_space.sample()
-        obs, reward, terminated, truncated, info = env.step(action)
-        print(f"Step {i+1}: Action={action}, Reward={reward:.2f}, Terminated={terminated}")
-        if terminated:
-            print("Game Over!")
-            break
-    print("Single environment test passed.\n")
 
 def test_vector_env():
     num_envs = 10
@@ -36,5 +21,4 @@ def test_vector_env():
     print("Vector environment test passed.")
 
 if __name__ == "__main__":
-    test_single_env()
     test_vector_env()

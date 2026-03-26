@@ -1,6 +1,7 @@
 #pragma once
 
 #include <puyotan/core/board.hpp>
+#include <puyotan/core/chain.hpp>
 #include <puyotan/game/tsumo.hpp>
 #include <puyotan/common/types.hpp>
 #include <string>
@@ -18,16 +19,16 @@ struct PuyotanPlayer {
     ActionState next_action{};
 
     // Grouping for 16-byte alignment
+    int32_t active_next_pos = 0; // 4 bytes
     int score = 0;              // 4 bytes
     int used_score = 0;         // 4 bytes
-    uint16_t active_next_pos = 0; // 2 bytes (0-1000)
     uint16_t non_active_ojama = 0; // 2 bytes
     uint16_t active_ojama = 0;     // 2 bytes
     uint8_t chain_count = 0;       // 1 byte
     uint8_t padding = 0;           // 1 byte (explict for 16-byte block)
 
     PuyotanPlayer() = default;
-    void fallOjama(int num, int32_t& seed);
+    void fallOjama(int num, uint32_t& seed) noexcept;
 };
 
 /**
@@ -35,29 +36,28 @@ struct PuyotanPlayer {
  */
 class PuyotanMatch {
 public:
-    explicit PuyotanMatch(int32_t seed = 0);
+    explicit PuyotanMatch(uint32_t seed = 1u) noexcept;
     PuyotanMatch(const PuyotanMatch&) = default;
     PuyotanMatch& operator=(const PuyotanMatch&) = default;
 
-    void start();
-    bool setAction(int player_id, Action action);
-    bool canStepNextFrame() const;
-    void stepNextFrame();
+    void start() noexcept;
+    bool setAction(int player_id, Action action) noexcept;
+    bool canStepNextFrame() const noexcept;
+    void stepNextFrame() noexcept;
 
-    const PuyotanPlayer& getPlayer(int id) const { return players_[id]; }
-    PuyoPiece getPiece(int player_id, int index_offset) const {
-        return tsumo_.get(players_[player_id].active_next_pos + index_offset);
+    const PuyotanPlayer& getPlayer(int id) const noexcept { return players_[id]; }
+    PuyoPiece getPiece(int player_id, int index_offset) const noexcept {
+        return const_cast<Tsumo&>(tsumo_).get(players_[player_id].active_next_pos + index_offset);
     }
-    const Tsumo& getTsumo() const { return tsumo_; }
-    int getFrame() const { return frame_; }
-    MatchStatus getStatus() const { return status_; }
-    std::string getStatusText() const;
+    const Tsumo& getTsumo() const noexcept { return tsumo_; }
+    int32_t getFrame() const noexcept { return frame_; }
+    MatchStatus getStatus() const noexcept { return status_; }
 
      /**
      * Runs num_games full matches in pure C++ using the benchmark move pattern
      * for both players. Returns total frames executed.
      */
-    static int64_t runBatch(int num_games, int32_t seed);
+    static int64_t runBatch(int num_games, uint32_t seed) noexcept;
 
     /**
      * Steps the match until at least one player needs to make a decision
@@ -65,20 +65,24 @@ public:
      * Returns a bitmask of player IDs that need actions (1: P1, 2: P2, 3: Both),
      * or 0 if game over or error.
      */
-    int stepUntilDecision();
+    int stepUntilDecision() noexcept;
 
     // Helper to get random int for ojama fall positions
-    static int nextInt(int32_t& seed, int max);
+    static int nextInt(uint32_t& seed, int max) noexcept;
 
 private:
-    int32_t seed_;
+    uint32_t seed_;
     Tsumo tsumo_;
     PuyotanPlayer players_[config::Rule::kNumPlayers];
-    int frame_ = 1;
+    int32_t frame_ = 1;
     MatchStatus status_ = MatchStatus::READY;
 
-    void sendOjama(int sender_id, int ojama);
-    void activateOjama(int finishing_player_id);
+    void sendOjama(int sender_id, int ojama) noexcept;
+    void activateOjama(int finishing_player_id) noexcept;
+
+    // Pre-computed chain group data, cached between CHAIN_FALL/PUT → CHAIN turns.
+    // Stored here (not in PuyotanPlayer) to keep PuyotanPlayer compact and cache-friendly.
+    std::array<ErasureData, config::Rule::kNumPlayers> pending_erasure_;
 };
 
 } // namespace puyotan

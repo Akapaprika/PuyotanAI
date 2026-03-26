@@ -31,7 +31,7 @@ namespace Board {
     static constexpr uint64_t kColMask = (1ULL << kTotalRows) - 1;
 
     // Mask for only visible rows (0-12) in a single lane
-    static constexpr uint64_t kVisibleColMask = (1ULL << kHeight) - 1;
+    static constexpr uint32_t kVisibleColMask = (1U << kHeight) - 1;
 
     // lo covers cols 0-3: [lane0 | lane1 | lane2 | lane3]
     constexpr uint64_t kLoMask = kColMask | 
@@ -42,8 +42,23 @@ namespace Board {
     constexpr uint64_t kHiMask = kColMask | 
                                  (kColMask << (1 * kBitsPerCol));
 
-    // Mask isolating row 13 (spawn row) across all columns.
-    static constexpr uint64_t kFullLaneMask = (1ULL << kBitsPerCol) - 1;
+    // --------------------------------------------------------
+    // Chainable mask: Ghost row (13th row, index 12) doesn't pop.
+    // So only rows 0-11 (12 rows) are chainable.
+    // --------------------------------------------------------
+    constexpr int kChainableRows = 12; // Rows 0-11
+    static constexpr uint64_t kChainableColMask = (1ULL << kChainableRows) - 1;
+
+    constexpr uint64_t kChainableLoMask = kChainableColMask | 
+                                 (kChainableColMask << (1 * kBitsPerCol)) | 
+                                 (kChainableColMask << (2 * kBitsPerCol)) | 
+                                 (kChainableColMask << (3 * kBitsPerCol));
+
+    constexpr uint64_t kChainableHiMask = kChainableColMask | 
+                                 (kChainableColMask << (1 * kBitsPerCol));
+
+    // Mask for a full 16-bit lane (bits 0-15)
+    static constexpr uint32_t kFullLaneMask = (1U << kBitsPerCol) - 1;
 }
 
 // ============================================================
@@ -53,9 +68,10 @@ namespace Rule {
     constexpr int kNumPlayers   = 2;  // number of players in a standard match
     constexpr int kConnectCount = 4;  // minimum group size to fire
     constexpr int kColors       = 4;  // number of normal puyo colors
+    static_assert((kColors & (kColors - 1)) == 0, "kColors must be power of 2 for bitmask optimization in Tsumo");
     constexpr int kPuyosPerPiece = 2; // number of puyos in each falling piece (tsumo)
     constexpr int kTsumoPoolSize = 256; // Ring buffer size (2^8)
-    constexpr int kTsumoChunkSize = 128; // increment size (2^7)
+    constexpr int kTsumoChunkSize = 64; // increment size (2^6)
     constexpr int kDeathCol     = 2;  // column index for death check (1-indexed: 3)
     constexpr int kDeathRow     = 11; // row index for death check (1-indexed: 12)
     constexpr int kMaxOjamaPerFall = Board::kWidth * 5; // standard: 30

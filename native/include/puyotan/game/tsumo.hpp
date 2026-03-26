@@ -13,29 +13,27 @@ namespace puyotan {
  */
 class Tsumo {
 public:
-    explicit Tsumo(int32_t seed = 0);
+    explicit Tsumo(uint32_t seed = 1u) noexcept;
 
-    inline PuyoPiece get(int index) const {
+    inline PuyoPiece get(int32_t index) noexcept {
         if (index >= generated_count_) {
             generateMore();
         }
-        // Ring buffer access using bitmask (size 512 -> mask 0x1FF)
-        return pool_[index & (config::Rule::kTsumoPoolSize - 1)];
+        // Ring buffer access using bitmask
+        return pool_[static_cast<std::size_t>(index) & (config::Rule::kTsumoPoolSize - 1)];
     }
-    void setSeed(int32_t seed);
-    int32_t getSeed() const { return seed_; }
+    void setSeed(uint32_t seed) noexcept;
+    uint32_t getSeed() const noexcept { return seed_; }
 
 private:
-    mutable int32_t seed_;
-    mutable int generated_count_ = 0;
-    mutable std::array<PuyoPiece, config::Rule::kTsumoPoolSize> pool_;
+    uint32_t seed_;
+    int32_t generated_count_ = 0;
+    std::array<PuyoPiece, config::Rule::kTsumoPoolSize> pool_;
 
     static_assert((config::Rule::kTsumoPoolSize & (config::Rule::kTsumoPoolSize - 1)) == 0, 
                   "TsumoPoolSize must be a power of 2 for fast bitmask indexing");
 
-    int nextInt() const;
-    Cell nextKind() const;
-    void generateMore() const;
+    void generateMore() noexcept;
 };
 
 } // namespace puyotan
