@@ -16,9 +16,11 @@ from training.trainer import PPOTrainer
 from training.export import export_to_onnx
 
 # 設定
-NUM_ENVS = 128
+NUM_ENVS = 256
 STEPS_PER_ITER = 128
 TOTAL_ITERS = 1000
+LOG_INTERVAL = 10                     # ログ出力間隔（イテレーション数）
+SAVE_INTERVAL = 10                    # モデル保存間隔
 MODELS_DIR = BASE_DIR / "models"
 CHECKPOINT_PT = MODELS_DIR / "puyotan_latest.pt"
 CHECKPOINT_ONNX = MODELS_DIR / "puyotan_latest.onnx"
@@ -28,7 +30,6 @@ class RandomPolicy:
         self.is_loaded = lambda: True
         
     def infer(self, obs, num_envs):
-        # 22 actions
         return np.random.randint(0, 22, size=num_envs).astype(np.int32)
 
 def selfplay_loop():
@@ -36,45 +37,42 @@ def selfplay_loop():
     MODELS_DIR.mkdir(exist_ok=True)
     
     try:
-        # 1. 環境とトレーナーの初期化
         env = PuyotanVectorEnv(num_envs=NUM_ENVS)
         trainer = PPOTrainer(env, num_rollout_steps=STEPS_PER_ITER)
         
-        # 既存のチェックポイントがあればロード
         if CHECKPOINT_PT.exists():
             print(f"Loading existing checkpoint: {CHECKPOINT_PT}")
             trainer.load(str(CHECKPOINT_PT))
         
-        print(f"Training Config: envs={NUM_ENVS}, steps={STEPS_PER_ITER}")
+        print(f"Training Config: envs={NUM_ENVS}, steps={STEPS_PER_ITER}, "
+              f"log_interval={LOG_INTERVAL}")
         
-        # Policies
         random_policy = RandomPolicy()
         past_policy = None
         
-        # 2. メインループ
+        # 集計用（LOG_INTERVAL 毎にまとめて出力）
+        acc_loss = 0.0
+        acc_fps = 0.0
+        acc_max_chain = 0
+        
         for i in range(TOTAL_ITERS):
-            start_time = time.time()
+            start_time = time.perf_counter()  # time.time() より高精度
             iteration = i + 1
-            print(f"\n--- Iteration {iteration}/{TOTAL_ITERS} ---")
             
             # Curriculum: Stage 1 = PASS, Stage 2 = Random, Stage 3 = Self-Play
             p2_policy = None
-            stage_name = "Stage 1 (PASS)"
             
             if iteration > 50 and iteration <= 150:
                 p2_policy = random_policy
-                stage_name = "Stage 2 (Random)"
             elif iteration > 150:
-                # Update snapshot every 50 iterations
                 if iteration % 50 == 1 or past_policy is None:
-                    print(f"Exporting snapshot for Self-Play...")
                     trainer.save(str(CHECKPOINT_PT))
-                    export_to_onnx(trainer.model, str(CHECKPOINT_ONNX))
+                    model_for_export = trainer.model._orig_mod if hasattr(trainer.model, '_orig_mod') else trainer.model
+                    export_to_onnx(model_for_export, str(CHECKPOINT_ONNX))
                     
                     import shutil
                     import tempfile
                     try:
-                        # Workaround for ONNX Runtime Japanese path issues
                         temp_onnx = Path(tempfile.gettempdir()) / "puyotan_snapshot.onnx"
                         shutil.copy2(CHECKPOINT_ONNX, temp_onnx)
                         
@@ -84,26 +82,42 @@ def selfplay_loop():
                             
                         past_policy = p.OnnxPolicy(str(temp_onnx), use_cpu=True)
                         if not past_policy.is_loaded():
-                            print("Failed to load ONNX. Falling back to Random.")
                             past_policy = random_policy
                     except Exception as e:
-                        print(f"Load Error: {e}")
+                        print(f"[WARN] ONNX Load Error: {e}")
                         past_policy = random_policy
                         
                 p2_policy = past_policy
-                stage_name = "Stage 3 (Self-Play)"
-                
-            print(f"Opponent: {stage_name}")
             
             # 学習実行
             metrics = trainer.train(p2_policy=p2_policy)
             
-            elapsed = time.time() - start_time
+            elapsed = time.perf_counter() - start_time
             fps = (NUM_ENVS * STEPS_PER_ITER) / elapsed
-            print(f"Iteration {iteration} Finished. Loss={metrics['loss']:.4f}, MaxChain={metrics['max_chain']}, FPS={fps:.1f}")
+            
+            # 集計
+            acc_loss += metrics['loss']
+            acc_fps += fps
+            mc = metrics['max_chain']
+            if mc > acc_max_chain:
+                acc_max_chain = mc
+            
+            # LOG_INTERVAL ごとにまとめて出力（print のシステムコール削減）
+            if iteration % LOG_INTERVAL == 0 or iteration == 1:
+                stage = "PASS" if iteration <= 50 else ("Random" if iteration <= 150 else "Self-Play")
+                avg_loss = acc_loss / min(iteration, LOG_INTERVAL)
+                avg_fps = acc_fps / min(iteration, LOG_INTERVAL)
+                print(f"[Iter {iteration:4d}/{TOTAL_ITERS}] "
+                      f"Stage={stage:9s} | "
+                      f"AvgLoss={avg_loss:.4f} | "
+                      f"MaxChain={acc_max_chain} | "
+                      f"AvgFPS={avg_fps:.0f}")
+                acc_loss = 0.0
+                acc_fps = 0.0
+                acc_max_chain = 0
             
             # 定期的なモデル保存
-            if iteration % 10 == 0:
+            if iteration % SAVE_INTERVAL == 0:
                 trainer.save(str(CHECKPOINT_PT))
             
     except Exception:

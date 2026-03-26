@@ -52,7 +52,7 @@ class PuyotanPolicy(nn.Module):
 
         features = self.backbone(x)
         logits = self.actor(features)
-        value = self.critic(features).squeeze(-1)
+        value = self.critic(features).squeeze(-1)  # [batch] scalar per sample
 
         return logits, value
 
