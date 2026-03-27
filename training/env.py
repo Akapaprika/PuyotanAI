@@ -29,7 +29,7 @@ class PuyotanVectorEnv:
         self.num_envs = num_envs
         self.base_seed = base_seed
         self.vm = p.PuyotanVectorMatch(num_envs, base_seed)
-        self._obs_buffer = np.zeros((num_envs, 2, 5, 6, 13), dtype=np.uint8)
+        self._obs_buffer = np.zeros((num_envs, 2, 5, 6, 14), dtype=np.uint8)
         # 事前確保: step の戻り値で使い回す
         self._truncated = np.zeros(num_envs, dtype=bool)
         self._info = {"chains": None}

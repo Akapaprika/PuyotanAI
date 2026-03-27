@@ -45,7 +45,7 @@ class PPOTrainer:
             print(f"[torch.compile] Skipped (not supported on this platform): {e}")
 
         # Pre-allocate rollout buffers on GPU
-        self.obs_buf        = torch.zeros((self.num_steps, self.num_envs, 2, 5, 6, 13), dtype=torch.float32, device=DEVICE)
+        self.obs_buf        = torch.zeros((self.num_steps, self.num_envs, 2, 5, 6, 14), dtype=torch.float32, device=DEVICE)
         self.actions_buf    = torch.zeros((self.num_steps, self.num_envs), dtype=torch.long,    device=DEVICE)
         self.logprobs_buf   = torch.zeros((self.num_steps, self.num_envs), dtype=torch.float32, device=DEVICE)
         self.values_buf     = torch.zeros((self.num_steps, self.num_envs), dtype=torch.float32, device=DEVICE)
@@ -60,10 +60,13 @@ class PPOTrainer:
         self.values_np   = np.zeros((self.num_steps, self.num_envs), dtype=np.float32)
         # chains はロールアウト最後に一括 max を取る
         self.chains_max_buf = np.zeros(self.num_steps, dtype=np.int32)
+        self.chain_sums     = np.zeros(self.num_steps, dtype=np.int32)
+        self.chain_counts   = np.zeros(self.num_steps, dtype=np.int32)
+        self.max_per_env    = np.zeros(self.num_envs, dtype=np.int32)
 
         # ピン留め CPU テンソル（CUDA 環境のみ有効）
         self._pin = USE_CUDA
-        self.obs_pin = torch.zeros((self.num_envs, 2, 5, 6, 13), dtype=torch.float32,
+        self.obs_pin = torch.zeros((self.num_envs, 2, 5, 6, 14), dtype=torch.float32,
                                    pin_memory=self._pin)
 
         # Latest observation (CPU numpy)
@@ -71,9 +74,8 @@ class PPOTrainer:
 
     def train(self, p2_policy=None):
         """1イテレーション分の学習を実行。"""
-        max_chain = self.collect_rollouts(p2_policy)
-
-        b_obs        = self.obs_buf.view(-1, 2, 5, 6, 13)
+        max_chain, avg_max_chain, mean_chain = self.collect_rollouts(p2_policy)
+        b_obs        = self.obs_buf.view(-1, 2, 5, 6, 14)
         b_actions    = self.actions_buf.view(-1)
         b_log_probs  = self.logprobs_buf.view(-1)
         b_advantages = self.advantages_buf.view(-1)
@@ -85,7 +87,12 @@ class PPOTrainer:
             loss = self.ppo_update(b_obs, b_actions, b_log_probs, b_advantages, b_returns, b_values)
             total_loss += loss
 
-        return {"loss": total_loss / NUM_EPOCHS, "max_chain": max_chain}
+        return {
+            "loss": total_loss / NUM_EPOCHS,
+            "max_chain": max_chain,
+            "avg_max_chain": avg_max_chain,
+            "mean_chain": mean_chain
+        }
 
     def collect_rollouts(self, p2_policy=None):
         obs_cpu = self.curr_obs
@@ -105,6 +112,8 @@ class PPOTrainer:
         num_steps = self.num_steps
         from_numpy = torch.from_numpy
         to_np = _to_np
+
+        self.max_per_env.fill(0) # Initialize max_per_env for this rollout
 
         for t in range(num_steps):
             # ピン留めメモリ経由で非同期 GPU 転送
@@ -132,17 +141,39 @@ class PPOTrainer:
             rewards_np[t] = rewards
             dones_np[t]   = dones
 
-            # chains の max は毎ステップ計算せず、各ステップの max だけ記録
+            # chains の集計
             chains = info.get("chains")
-            chains_max_buf[t] = int(np.max(chains)) if chains is not None else 0
+            if chains is not None:
+                chains_max_buf[t] = int(np.max(chains))
+                
+                # Update max_per_env for each environment
+                for i in range(self.num_envs):
+                    if chains[i] > self.max_per_env[i]:
+                        self.max_per_env[i] = chains[i]
+
+                nonzero_chains = chains[chains > 0]
+                if len(nonzero_chains) > 0:
+                    self.chain_sums[t] = np.sum(nonzero_chains)
+                    self.chain_counts[t] = len(nonzero_chains)
+                else:
+                    self.chain_sums[t] = 0
+                    self.chain_counts[t] = 0
+            else:
+                chains_max_buf[t] = 0
+                self.chain_sums[t] = 0
+                self.chain_counts[t] = 0
 
             obs_cpu = next_obs
 
         self.curr_obs = obs_cpu
-
-        # chains の全体 max はロールアウト終了後に1回だけ計算
+ 
         max_chain = int(np.max(chains_max_buf))
-
+        avg_max_chain = float(np.mean(self.max_per_env))
+        
+        total_chain_sum = np.sum(self.chain_sums)
+        total_chain_count = np.sum(self.chain_counts)
+        mean_chain = float(total_chain_sum / total_chain_count) if total_chain_count > 0 else 0.0
+ 
         # ロールアウトデータを一括で GPU に転送
         self.actions_buf.copy_(from_numpy(actions_np), non_blocking=True)
         self.logprobs_buf.copy_(from_numpy(logprobs_np), non_blocking=True)
@@ -167,7 +198,7 @@ class PPOTrainer:
 
         self.advantages_buf.copy_(from_numpy(advantages_cpu), non_blocking=True)
         self.returns_buf.copy_(self.advantages_buf + self.values_buf)
-        return max_chain
+        return max_chain, avg_max_chain, mean_chain
 
     def ppo_update(self, b_obs, b_actions, b_log_probs, b_advantages, b_returns, b_values):
         n = b_obs.shape[0]
@@ -177,6 +208,7 @@ class PPOTrainer:
         total_loss = 0
         for start in range(0, n, MINIBATCH_SIZE):
             idx = indices[start:start + MINIBATCH_SIZE]
+            # Observation is [N, 2, 5, 6, 14] - float32 (mapped colors/ojama quantity)
             _, new_log_prob, entropy, new_value = self.model.get_action_and_value(b_obs[idx], b_actions[idx])
 
             adv = b_advantages[idx]

@@ -53,7 +53,9 @@ def selfplay_loop():
         # 集計用（LOG_INTERVAL 毎にまとめて出力）
         acc_loss = 0.0
         acc_fps = 0.0
-        acc_max_chain = 0
+        acc_mean_chain = 0.0
+        acc_avg_max_chain = 0.0
+        acc_max_chain = 0.0
         
         for i in range(TOTAL_ITERS):
             start_time = time.perf_counter()  # time.time() より高精度
@@ -98,6 +100,8 @@ def selfplay_loop():
             # 集計
             acc_loss += metrics['loss']
             acc_fps += fps
+            acc_mean_chain += metrics['mean_chain']
+            acc_avg_max_chain += metrics['avg_max_chain']
             mc = metrics['max_chain']
             if mc > acc_max_chain:
                 acc_max_chain = mc
@@ -107,18 +111,27 @@ def selfplay_loop():
                 stage = "PASS" if iteration <= 50 else ("Random" if iteration <= 150 else "Self-Play")
                 avg_loss = acc_loss / min(iteration, LOG_INTERVAL)
                 avg_fps = acc_fps / min(iteration, LOG_INTERVAL)
+                avg_chain = acc_mean_chain / min(iteration, LOG_INTERVAL)
+                avg_max = acc_avg_max_chain / min(iteration, LOG_INTERVAL)
                 print(f"[Iter {iteration:4d}/{TOTAL_ITERS}] "
                       f"Stage={stage:9s} | "
                       f"AvgLoss={avg_loss:.4f} | "
+                      f"AvgMax={avg_max:.2f} | "
+                      f"AvgChain={avg_chain:.2f} | "
                       f"MaxChain={acc_max_chain} | "
                       f"AvgFPS={avg_fps:.0f}")
                 acc_loss = 0.0
                 acc_fps = 0.0
                 acc_max_chain = 0
+                acc_mean_chain = 0.0
+                acc_avg_max_chain = 0.0
             
             # 定期的なモデル保存
             if iteration % SAVE_INTERVAL == 0:
                 trainer.save(str(CHECKPOINT_PT))
+                # Export ONNX as well for immediate GUI usage
+                model_for_export = trainer.model._orig_mod if hasattr(trainer.model, '_orig_mod') else trainer.model
+                export_to_onnx(model_for_export, str(CHECKPOINT_ONNX))
             
     except Exception:
         print("CRITICAL ERROR in selfplay_loop:")

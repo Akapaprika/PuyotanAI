@@ -78,6 +78,8 @@ void PuyotanMatch::stepNextFrame() noexcept {
                 case ActionType::PASS:
                     break;
                 case ActionType::PUT: {
+                    p.last_chain_count = 0;
+                    p.last_score = 0;
                     const PuyoPiece tumo = tsumo_.get(p.active_next_pos);
                     const int r = static_cast<int>(action.rotation);
                     const int x_axis = action.x;
@@ -109,7 +111,9 @@ void PuyotanMatch::stepNextFrame() noexcept {
                     Chain::applyErasure(p.field, pending_erasure_[id]);
                     const ErasureData& info = pending_erasure_[id];
                     ++p.chain_count;
-                    p.score += Scorer::calculateStepScore(info, p.chain_count);
+                    int step_score = Scorer::calculateStepScore(info, p.chain_count);
+                    p.score += step_score;
+                    p.last_score += step_score;
                     
                     int ojama = (p.score - p.used_score) / config::Score::kTargetScore;
                     p.used_score += ojama * config::Score::kTargetScore;
@@ -133,6 +137,7 @@ void PuyotanMatch::stepNextFrame() noexcept {
                     if (Gravity::canFall(p.field)) {
                         p.next_action = {Action{ActionType::CHAIN_FALL}, 0};
                     } else {
+                        p.last_chain_count = p.chain_count;
                         activateOjama(id);
                     }
                     break;
@@ -143,6 +148,7 @@ void PuyotanMatch::stepNextFrame() noexcept {
                     if (pending_erasure_[id].num_erased > 0) {
                         p.next_action = {Action{ActionType::CHAIN}, 1};
                     } else {
+                        p.last_chain_count = p.chain_count; // Store final result
                         activateOjama(id);
                     }
                     break;

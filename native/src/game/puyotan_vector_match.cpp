@@ -1,240 +1,245 @@
 #include <puyotan/game/puyotan_vector_match.hpp>
-#include <pybind11/numpy.h>
-#include <omp.h>
-#include <cstddef>
+#include <puyotan/common/config.hpp>
+#include <puyotan/core/board.hpp>
+#include <algorithm>
 #include <cstring>
-#include <bit>
-#include <array>
+#include <immintrin.h>
 
 namespace puyotan {
 
-PuyotanVectorMatch::PuyotanVectorMatch(int num_matches, uint32_t base_seed) 
-    : base_seed_(base_seed) {
-    matches_.reserve(num_matches);
-    prev_states_.resize(num_matches);
-    for (int i = 0; i < num_matches; ++i) {
-        matches_.emplace_back(base_seed + i);
-    }
+namespace {
+
+// SSE4.1 bit expansion table (0-255 -> 64-bit sparse)
+#include "expand_table_data.inc"
+
+/**
+ * Maps RL Action Index [0-21] to game Action [Column, Rotation].
+ * Layout:
+ *   [0-5]   -> Up, Col 0-5
+ *   [6-11]  -> Right, Col 0-5
+ *   [12-17] -> Down, Col 0-5
+ *   [18-21] -> Left, Col 0-3 (Columns 4,5 are restricted in Left rotation to prevent wall-clip errors)
+ */
+Action GET_ACTION(int idx) {
+    if (idx < 0 || idx >= 22) return Action{ActionType::PASS};
+    
+    int rot_idx = idx / 6;
+    int col = idx % 6;
+    Rotation rot = static_cast<Rotation>(rot_idx);
+    
+    // NOTE: Fixed bug: Use ActionType::PUT for actual moves.
+    return Action{ActionType::PUT, static_cast<int8_t>(col), rot};
 }
 
-void PuyotanVectorMatch::reset(int id) noexcept {
-    if (id >= 0) {
-        matches_[id] = PuyotanMatch(base_seed_ + id);
-    } else {
-        const int n = static_cast<int>(matches_.size());
-        #pragma omp parallel for
-        for (int i = 0; i < n; ++i) {
-            matches_[i] = PuyotanMatch(base_seed_ + i);
+/**
+ * Normalizes colors based on NEXT pieces (priority) and field presence.
+ */
+void compute_color_map(const PuyotanMatch& m, int p_idx, uint8_t color_map[5]) {
+    memset(color_map, 0, 5);
+    uint8_t next_id = 1;
+    auto map_one = [&](Cell c) {
+        int ci = static_cast<int>(c);
+        if (ci >= 4) return;
+        if (color_map[ci] == 0) color_map[ci] = next_id++;
+    };
+    for (int off = 0; off < 3; ++off) {
+        PuyoPiece next = m.getPiece(p_idx, off);
+        map_one(next.axis);
+        map_one(next.sub);
+    }
+    const auto& board = m.getPlayer(p_idx).field;
+    for (int c = 0; c < 4; ++c) {
+        if (color_map[c] == 0 && !board.getBitboard(static_cast<Cell>(c)).empty()) {
+            color_map[c] = next_id++;
         }
     }
 }
 
-std::vector<int> PuyotanVectorMatch::stepUntilDecision() {
-    const int n = static_cast<int>(matches_.size());
-    std::vector<int> masks(n);
+void render_field(const Board& field, const uint8_t color_map[5], uint8_t* dst_player_obs, bool mask_row12) {
+    static constexpr std::size_t kBytesPerCol = 14; 
+    static constexpr std::size_t kBytesPerColor = 6 * 14;
+    uint16_t row_mask = mask_row12 ? 0x0FFF : 0x1FFF;
 
+    auto write_col = [&](uint8_t* color_base, int x, uint16_t col_data) {
+        uint8_t* dst = color_base + x * kBytesPerCol;
+        uint64_t lo = kExpandTable[col_data & 0xFF];
+        uint64_t hi = kExpandTable[(col_data >> 8) & 0x3F];
+        std::memcpy(dst, &lo, 8);
+        std::memcpy(dst + 8, &hi, 6);
+    };
+
+    for (int c = 0; c < 4; ++c) {
+        uint8_t mapped_idx = color_map[c];
+        if (mapped_idx == 0) continue;
+        uint8_t* color_base = dst_player_obs + mapped_idx * kBytesPerColor;
+        const BitBoard& bb = field.getBitboard(static_cast<Cell>(c));
+        for (int x = 0; x < 6; ++x) {
+            uint64_t val = (&bb.lo)[x >> 2];
+            uint16_t col_data = static_cast<uint16_t>(val >> ((x & 3) << 4)) & row_mask;
+            write_col(color_base, x, col_data);
+        }
+    }
+    uint8_t* ojama_base = dst_player_obs + 0 * kBytesPerColor;
+    const BitBoard& oj_bb = field.getBitboard(Cell::Ojama);
+    for (int x = 0; x < 6; ++x) {
+        uint64_t val = (&oj_bb.lo)[x >> 2];
+        uint16_t col_data = static_cast<uint16_t>(val >> ((x & 3) << 4)) & row_mask;
+        write_col(ojama_base, x, col_data);
+    }
+}
+
+} // anonymous namespace
+
+PuyotanVectorMatch::PuyotanVectorMatch(int num_matches, uint32_t base_seed) 
+    : base_seed_(base_seed) {
+    matches_.reserve(num_matches);
+    for (int i = 0; i < num_matches; ++i) {
+        matches_.emplace_back(base_seed + i);
+        matches_.back().start();
+        matches_.back().stepUntilDecision();
+    }
+}
+
+void PuyotanVectorMatch::reset(int id) noexcept {
+    if (id == -1) {
+        #pragma omp parallel for
+        for (int i = 0; i < (int)matches_.size(); ++i) {
+            matches_[i] = PuyotanMatch(base_seed_ + i);
+            matches_[i].start(); // Fixed: Must call start()
+            matches_[i].stepUntilDecision(); // Fixed: Advance to decision state
+        }
+    } else {
+        matches_[id] = PuyotanMatch(base_seed_ + id);
+        matches_[id].start(); // Fixed: Must call start()
+        matches_[id].stepUntilDecision(); // Fixed: Advance to decision state
+    }
+}
+
+std::vector<int> PuyotanVectorMatch::stepUntilDecision() {
+    std::vector<int> masks(matches_.size());
     #pragma omp parallel for
-    for (int i = 0; i < n; ++i) {
+    for (int i = 0; i < (int)matches_.size(); ++i) {
         masks[i] = matches_[i].stepUntilDecision();
     }
     return masks;
 }
 
 void PuyotanVectorMatch::setActions(const std::vector<int>& match_indices, 
-                                    const std::vector<int>& player_ids,
-                                    const std::vector<Action>& actions) {
-    const int n = static_cast<int>(match_indices.size());
-    // This is typically called from Python and is not heavily parallelizable 
-    // unless we have a large number of actions to set.
-    for (int i = 0; i < n; ++i) {
+                                     const std::vector<int>& player_ids,
+                                     const std::vector<Action>& actions) {
+    for (size_t i = 0; i < match_indices.size(); ++i) {
         matches_[match_indices[i]].setAction(player_ids[i], actions[i]);
     }
 }
 
-namespace {
-    struct ActionCode {
-        int col;
-        Rotation rot;
-    };
-
-    constexpr std::array<uint64_t, 256> generateBitExpandTable() {
-        std::array<uint64_t, 256> table{};
-        for (int i = 0; i < 256; ++i) {
-            uint64_t val = 0;
-            for (int b = 0; b < 8; ++b) {
-                val |= (static_cast<uint64_t>((i >> b) & 1) << (b * 8));
-            }
-            table[i] = val;
-        }
-        return table;
-    }
-    static constexpr auto kExpandTable = generateBitExpandTable();
-
-#include <cassert>
-    inline ActionCode decodeAction(int code) noexcept {
-        assert(code >= 0 && code < 22);
-        static constexpr ActionCode kTable[22] = {
-            {0, Rotation::Up}, {1, Rotation::Up}, {2, Rotation::Up}, {3, Rotation::Up}, {4, Rotation::Up}, {5, Rotation::Up},
-            {0, Rotation::Right}, {1, Rotation::Right}, {2, Rotation::Right}, {3, Rotation::Right}, {4, Rotation::Right},
-            {0, Rotation::Down}, {1, Rotation::Down}, {2, Rotation::Down}, {3, Rotation::Down}, {4, Rotation::Down}, {5, Rotation::Down},
-            {1, Rotation::Left}, {2, Rotation::Left}, {3, Rotation::Left}, {4, Rotation::Left}, {5, Rotation::Left}
-        };
-        return kTable[code];
-    }
-}
-
-pybind11::tuple PuyotanVectorMatch::step(pybind11::array_t<int> p1_actions, std::optional<pybind11::array_t<int>> p2_actions, std::optional<pybind11::array_t<uint8_t>> out_obs) {
-    auto req1 = p1_actions.request();
-    int* p1_ptr = static_cast<int*>(req1.ptr);
-    
-    // Branchless optional p2: if nullopt, point to a dummy -1 with 0-stride.
-    static const int kNoAction = -1;
-    int* p2_ptr = const_cast<int*>(&kNoAction);
-    int p2_stride = 0;
-
-    if (p2_actions.has_value()) {
-        p2_ptr = static_cast<int*>(p2_actions->request().ptr);
-        p2_stride = 1;
-    }
-
+pybind11::tuple PuyotanVectorMatch::step(pybind11::array_t<int> p1_actions, 
+                                         std::optional<pybind11::array_t<int>> p2_actions,
+                                         std::optional<pybind11::array_t<uint8_t>> out_obs) {
     const int n = static_cast<int>(matches_.size());
+    auto p1_ptr = p1_actions.data();
+    auto p2_ptr = p2_actions.has_value() ? p2_actions->data() : nullptr;
+
     pybind11::array_t<float> rewards(n);
     pybind11::array_t<bool> terminated(n);
     pybind11::array_t<int> chains(n);
-
     float* rew_ptr = static_cast<float*>(rewards.mutable_data());
     bool* term_ptr = static_cast<bool*>(terminated.mutable_data());
     int* chain_ptr = static_cast<int*>(chains.mutable_data());
 
     {
         pybind11::gil_scoped_release release;
+        static constexpr bool kTermTable[] = {true, false, true, true};
 
         #pragma omp parallel for
         for (int i = 0; i < n; ++i) {
             auto& m = matches_[i];
-
-            int act1 = p1_ptr[i];
-            ActionCode c1 = decodeAction(act1);
-            m.setAction(0, Action(ActionType::PUT, c1.col, c1.rot));
-
-            // Branchless retrieval: i*1 if present, i*0 (always kNoAction) if not.
-            int act2 = p2_ptr[i * p2_stride];
             
-            // Extract sign bit: 0 if act2 >= 0 (PUT), 1 if act2 < 0 (PASS)
-            ActionType t2 = static_cast<ActionType>(static_cast<unsigned int>(act2) >> 31);
-            
-            // Compute max(act2, 0) arithmetically to safely index LUT
-            int safe_act2 = act2 & ~(act2 >> 31);
-            
-            ActionCode c2 = decodeAction(safe_act2);
-            m.setAction(1, Action(t2, c2.col, c2.rot));
+            // 重要: 意思決定フェーズの開始時に前ターンのスコアをリセット
+            // これにより、お邪魔が降るだけのターン（PUTが発生しないターン）での報酬重複を防止
+            const_cast<PuyotanPlayer&>(m.getPlayer(0)).last_score = 0;
+            const_cast<PuyotanPlayer&>(m.getPlayer(1)).last_score = 0;
 
-            m.stepNextFrame();
-            m.stepUntilDecision();
+            m.setAction(0, GET_ACTION(p1_ptr[i]));
+            if (p2_ptr) m.setAction(1, GET_ACTION(p2_ptr[i]));
+            else m.setAction(1, Action{ActionType::PASS});
+
+            while (m.getStatus() == MatchStatus::PLAYING) {
+                int mask = m.stepUntilDecision();
+                if (mask == 3 || mask == 0) break;
+                if ((mask & 1) != 0) m.setAction(0, Action{ActionType::PASS});
+                if ((mask & 2) != 0) m.setAction(1, Action{ActionType::PASS});
+            }
 
             const auto& p1 = m.getPlayer(0);
-            float r = 0.0f;
-            r += (p1.score - prev_states_[i].score) * 0.002f;
-            r -= (p1.active_ojama - prev_states_[i].ojama) * 0.001f;
+            // 1手ごとのペナルティ (-0.05) + お邪魔報酬 (120個 = 10pt)
+            float r = -0.05f + (float)p1.last_score / 840.0f;
 
-            // Branchless match result reward and termination check
-            static constexpr float kMatchRewards[] = { 0.0f, 0.0f, 10.0f, -10.0f, 0.0f };
-            static constexpr bool kTermTable[]     = { false, false, true, true, true };
-            
-            const MatchStatus status = m.getStatus();
-            r += kMatchRewards[static_cast<uint8_t>(status)];
+            MatchStatus status = m.getStatus();
+            if (status == MatchStatus::WIN_P1) r += 10.0f;
+            else if (status == MatchStatus::WIN_P2) r -= 10.0f;
+            else if (status == MatchStatus::DRAW) r -= 5.0f;
 
             rew_ptr[i] = r;
-            chain_ptr[i] = static_cast<int>(p1.chain_count);
-
+            chain_ptr[i] = p1.last_chain_count;
             bool is_term = kTermTable[static_cast<uint8_t>(status)];
             term_ptr[i] = is_term;
 
-            prev_states_[i].score = p1.score;
-            prev_states_[i].ojama = p1.active_ojama;
-
             if (is_term) {
                 m = PuyotanMatch(base_seed_ + i);
-                m.start();
-                m.stepUntilDecision();
-                prev_states_[i].score = m.getPlayer(0).score;
-                prev_states_[i].ojama = m.getPlayer(0).active_ojama;
+                m.start(); // Fixed: start() in auto-reset
+                m.stepUntilDecision(); // Fixed: stepUntilDecision in auto-reset
             }
         }
     }
-
     return pybind11::make_tuple(getObservationsAll(out_obs), std::move(rewards), std::move(terminated), std::move(chains));
 }
 
-#include <immintrin.h>
-
 pybind11::array_t<uint8_t> PuyotanVectorMatch::getObservationsAll(std::optional<pybind11::array_t<uint8_t>> out_obs) const {
     const int n = static_cast<int>(matches_.size());
-    const int colors = config::Board::kNumColors;
-    const int width  = config::Board::kWidth;
-    const int height = config::Board::kHeight;
+    static constexpr std::size_t kBytesPerCol = 14; 
+    static constexpr std::size_t kBytesPerColor = 6 * 14;
+    static constexpr std::size_t kBytesPerField = 5 * 6 * 14;
+    static constexpr std::size_t kBytesPerObservation = 2 * kBytesPerField;
 
-    // 1. Allocate or use existing array (Must hold GIL)
     pybind11::array_t<uint8_t> arr;
-    if (out_obs.has_value()) {
-        arr = *out_obs;
-    } else {
-        arr = pybind11::array_t<uint8_t>({(std::size_t)n, (std::size_t)config::Rule::kNumPlayers, (std::size_t)colors, (std::size_t)width, (std::size_t)height});
-    }
+    if (out_obs.has_value()) arr = *out_obs;
+    else arr = pybind11::array_t<uint8_t>({(std::size_t)n, (std::size_t)2, (std::size_t)5, (std::size_t)6, (std::size_t)14});
     uint8_t* out_base = static_cast<uint8_t*>(arr.mutable_data());
 
-    // 2. Parallel processing (Release GIL)
     {
         pybind11::gil_scoped_release release;
-        
-        static constexpr std::size_t kBytesPerCol = config::Board::kHeight;
-        static constexpr std::size_t kBytesPerColor = config::Board::kWidth * kBytesPerCol;
-        static constexpr std::size_t kBytesPerPlayer = config::Board::kNumColors * kBytesPerColor;
-        static constexpr std::size_t kBytesPerMatch = config::Rule::kNumPlayers * kBytesPerPlayer;
-
-        const std::size_t total_bytes = (std::size_t)n * kBytesPerMatch;
-
         #pragma omp parallel for
         for (int i = 0; i < n; ++i) {
-            uint8_t* match_ptr = out_base + i * kBytesPerMatch;
-            
-            // Zero initialize this thread's specific memory chunk (NUMA First-Touch & Parallelization)
-            memset(match_ptr, 0, kBytesPerMatch);
+            uint8_t* obs_ptr = out_base + i * kBytesPerObservation;
+            memset(obs_ptr, 0, kBytesPerObservation);
+            const auto& m = matches_[i];
+            const auto& p0 = m.getPlayer(0);
+            const auto& p1 = m.getPlayer(1);
 
-            for (int p_idx = 0; p_idx < config::Rule::kNumPlayers; ++p_idx) {
-                const auto& player = matches_[i].getPlayer(p_idx);
-                uint8_t* player_ptr = match_ptr + p_idx * kBytesPerPlayer;
-                for (int c = 0; c < colors; ++c) {
-                    uint8_t* color_ptr = player_ptr + c * kBytesPerColor;
-                    BitBoard bb = player.field.getBitboard(static_cast<Cell>(c));
+            uint8_t color_map[5];
+            compute_color_map(m, 0, color_map);
+            render_field(p0.field, color_map, obs_ptr + 0 * kBytesPerField, false);
+            render_field(p1.field, color_map, obs_ptr + 1 * kBytesPerField, true);
 
-                    bb.lo &= config::Board::kLoMask;
-                    bb.hi &= config::Board::kHiMask;
-                    
-                    // SWAR (SIMD Within A Register) array layout synthesis
-                    // Completely eliminates unpredictable branches of while(bb.lo) bit scans
-                    auto write_col = [&](int x, uint16_t col_data) {
-                        uint8_t* dst = color_ptr + x * kBytesPerCol;
-                        uint64_t lo = kExpandTable[col_data & 0xFF];
-                        uint64_t hi = kExpandTable[(col_data >> 8) & 0x1F]; // Read up to 5 bits (13-8=5)
-                        
-                        // 13-bytes contiguous unaligned writes
-                        std::memcpy(dst, &lo, 8);
-                        std::memcpy(dst + 8, &hi, 5);
-                    };
+            auto write_meta = [&](uint8_t* f_ptr, int x, uint8_t mapped_val, uint8_t value = 1) {
+                if (mapped_val == 0) return;
+                f_ptr[mapped_val * kBytesPerColor + x * kBytesPerCol + 13] = value;
+            };
 
-                    // Extract all 6 layout columns systematically
-                    write_col(0, static_cast<uint16_t>(bb.lo & 0xFFFF));
-                    write_col(1, static_cast<uint16_t>((bb.lo >> 16) & 0xFFFF));
-                    write_col(2, static_cast<uint16_t>((bb.lo >> 32) & 0xFFFF));
-                    write_col(3, static_cast<uint16_t>((bb.lo >> 48) & 0xFFFF));
-                    write_col(4, static_cast<uint16_t>(bb.hi & 0xFFFF));
-                    write_col(5, static_cast<uint16_t>((bb.hi >> 16) & 0xFFFF));
-                }
+            for (int off = 0; off < 3; ++off) {
+                PuyoPiece next = m.getPiece(0, off);
+                write_meta(obs_ptr, off * 2,     color_map[static_cast<int>(next.axis)]);
+                write_meta(obs_ptr, off * 2 + 1, color_map[static_cast<int>(next.sub)]);
             }
+
+            uint8_t* self_ojama_meta = obs_ptr + 0 * kBytesPerField + 0 * kBytesPerColor + 13;
+            self_ojama_meta[0 * kBytesPerCol] = (uint8_t)std::min((int)p0.active_ojama, 255);
+            self_ojama_meta[1 * kBytesPerCol] = (uint8_t)std::min((int)p0.non_active_ojama, 255);
+            uint8_t* opp_ojama_meta = obs_ptr + 1 * kBytesPerField + 0 * kBytesPerColor + 13;
+            opp_ojama_meta[0 * kBytesPerCol] = (uint8_t)std::min((int)p1.active_ojama, 255);
+            opp_ojama_meta[1 * kBytesPerCol] = (uint8_t)std::min((int)p1.non_active_ojama, 255);
         }
     }
-    
     return arr;
 }
 
