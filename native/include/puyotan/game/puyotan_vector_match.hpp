@@ -57,13 +57,6 @@ public:
 private:
     std::vector<PuyotanMatch> matches_;
     uint32_t base_seed_;
-    
-    // For reward calculation caching
-    struct PrevState {
-        int score = 0;
-        int ojama = 0;
-    };
-    std::vector<PrevState> prev_states_;
 };
 
 } // namespace puyotan

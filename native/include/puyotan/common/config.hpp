@@ -15,6 +15,7 @@ namespace Board {
     constexpr int kSpawnRow     = 13;  // 0-indexed invisible 14th row
     constexpr int kHeight       = 13;  // visible rows (0-12)
     constexpr int kTotalRows    = kHeight + 2;  // visible + spawn + sub-puyo (up rotation)
+    constexpr int kObsHeight    = 14;  // Observation tensor height (13 rows board + 1 row metadata)
     constexpr int kBitsPerCol   = 16;  // bits allocated per column in the BitBoard
     constexpr int kColsInLo     = 4;   // columns 0-3 packed into lo (uint64_t)
     constexpr int kColsInHi     = 2;   // columns 4-5 packed into hi (uint64_t)

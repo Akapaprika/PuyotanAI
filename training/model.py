@@ -25,9 +25,10 @@ class PuyotanPolicy(nn.Module):
     def __init__(self, hidden_dim: int = 256):
         super().__init__()
 
-        # 共有バックボーン
-        self.backbone = nn.Sequential(
-            nn.Linear(INPUT_DIM, hidden_dim),
+        # 共有バックボーン (High-Speed MLP for CPU)
+        self.network = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(2 * 5 * 6 * 14, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
@@ -42,15 +43,12 @@ class PuyotanPolicy(nn.Module):
     def forward(self, obs: torch.Tensor):
         """
         Args:
-            obs: [batch, 2, 5, 6, 13] の uint8 テンソル
+            obs: [batch, 2, 5, 6, 14] の uint8/float32 テンソル
         Returns:
             (行動logits, 状態価値)
         """
-        # uint8 → float32 + 正規化
         x = obs.float()
-        x = x.view(x.shape[0], -1)  # Flatten: [batch, 780]
-
-        features = self.backbone(x)
+        features = self.network(x)
         logits = self.actor(features)
         value = self.critic(features).squeeze(-1)  # [batch] scalar per sample
 
