@@ -174,10 +174,18 @@ public:
      */
     inline void dropNewPiece(int x, int y, Cell color) noexcept {
         assert(x >= 0 && x < config::Board::kWidth);
-        assert(y >= 0 && y < config::Board::kHeight + 1);
         assert(toIndex(color) >= 0 && toIndex(color) < config::Board::kNumColors);
-        boards_[toIndex(color)].set(x, y);
-        occupancy_.set(x, y);
+        
+        const int idx = x >> 2;
+        const int col_shift = (x & 3) << 4;
+        const int shift = col_shift | y;
+        
+        // Branchless visibility mask: y >= 13 is zeroed out by kVisibleColMask (0x1FFF)
+        const uint64_t keep_mask = static_cast<uint64_t>(config::Board::kVisibleColMask) << col_shift;
+        const uint64_t bit = (1ULL << shift) & keep_mask;
+        
+        (&boards_[toIndex(color)].lo)[idx] |= bit;
+        (&occupancy_.lo)[idx] |= bit;
     }
     [[nodiscard]] const BitBoard& getBitboard(Cell color) const noexcept;
     void setBitboard(Cell color, const BitBoard& bb) noexcept;

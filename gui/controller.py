@@ -1,13 +1,14 @@
 from PyQt6.QtCore import Qt
 import puyotan_native as p
+from .agents import HumanPlayerAgent
 
 
 class GameplayController:
     """
     Translates hardware events (Qt keys, button signals) into ViewModel commands.
+    Only routes input for players whose agent is HumanPlayerAgent.
     Has zero direct dependency on any widget; receives ViewModel by injection.
     """
-    # Keyboard bindings: {player_id: {action: Qt.Key}}
     KEY_BINDINGS = {
         0: {
             "left":  Qt.Key.Key_Left,
@@ -28,6 +29,10 @@ class GameplayController:
     def __init__(self, view_model):
         self.vm = view_model
 
+    def _is_human(self, pid: int) -> bool:
+        """Return True only if the given player slot is a HumanPlayerAgent."""
+        return isinstance(self.vm.agents[pid], HumanPlayerAgent)
+
     # ------------------------------------------------------------------
     # Qt keyboard integration
     # ------------------------------------------------------------------
@@ -35,8 +40,11 @@ class GameplayController:
         """
         Route a Qt key press to the correct ViewModel command.
         Returns True if the key was consumed.
+        Non-human players are silently skipped.
         """
         for pid, bindings in self.KEY_BINDINGS.items():
+            if not self._is_human(pid):
+                continue
             for action, bound_key in bindings.items():
                 if key == bound_key:
                     self._dispatch(pid, action)
@@ -47,11 +55,12 @@ class GameplayController:
     # Button / UI signal integration
     # ------------------------------------------------------------------
     def handle_action(self, player_id: int, action_name: str) -> None:
-        """Route a named action (from a button click) to the ViewModel."""
-        if action_name == "restart":
-            self.vm.restart()
-        else:
-            self._dispatch(player_id, action_name)
+        """Route a named action (from a button click) to the ViewModel.
+        Button presses are silently dropped for non-human players.
+        """
+        if not self._is_human(player_id):
+            return
+        self._dispatch(player_id, action_name)
 
     # ------------------------------------------------------------------
     # Private dispatch table

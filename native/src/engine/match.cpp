@@ -89,7 +89,6 @@ void PuyotanMatch::stepNextFrame() noexcept {
                 case ActionType::PASS:
                     break;
                 case ActionType::PUT: {
-                    p.last_chain_count = 0;
                     const PuyoPiece tumo = tsumo_.get(p.active_next_pos);
                     const int r = static_cast<int>(action.rotation);
                     const int x_axis = action.x;
@@ -100,19 +99,24 @@ void PuyotanMatch::stepNextFrame() noexcept {
                     const int h_sub  = p.field.getColumnHeight(x_sub);
 
                     // kSoftDropBonusPerGrid == 1: multiply eliminated (static_assert below)
-                    p.score += (config::Board::kSpawnRow - std::max(h_axis, h_sub));
+                    // Puyo rules: no points gained for putting pieces above spawn row.
+                    p.score += std::max(0, config::Board::kSpawnRow - std::max(h_axis, h_sub));
                     static_assert(config::Score::kSoftDropBonusPerGrid == 1, "Assumed 1 for multiply elision");
 
                     // Direct BitBoard bit set (1 clock each, bypasses Gravity)
-                    p.field.dropNewPiece(x_axis, h_axis + kAxisDy[r], tumo.axis);
-                    p.field.dropNewPiece(x_sub,  h_sub  + kSubDy_Simple[r], tumo.sub);
+                    // Puyo rules: pieces placed at the 14th row (y >= 13) or above simply vanish instantly.
+                    // The dropNewPiece method internally applies a branchless mask to discard pieces y >= 13 (kHeight).
+                    const int y_axis = h_axis + kAxisDy[r];
+                    const int y_sub  = h_sub  + kSubDy_Simple[r];
+                    
+                    p.field.dropNewPiece(x_axis, y_axis, tumo.axis);
+                    p.field.dropNewPiece(x_sub,  y_sub,  tumo.sub);
 
                     // Zero-overhead erasure check restricted to only the 2 deposited colors
                     const uint32_t dirty_colors = tumo.dirty_flag;
                     pending_erasure_[id] = Chain::findGroups(p.field, dirty_colors);
                     
                     if (pending_erasure_[id].num_erased > 0) {
-                        p.chain_count = 0;
                         p.next_action = {Action{ActionType::CHAIN}, 1}; 
                     }
                     break;
@@ -136,9 +140,8 @@ void PuyotanMatch::stepNextFrame() noexcept {
                     p.active_ojama -= static_cast<uint16_t>(used_active);
                     ojama -= used_active;
 
-                    if (ojama > 0) {
-                        sendOjama(id, ojama);
-                    }
+                    // Unconditional ojama send (branchless)
+                    sendOjama(id, ojama);
                     
                     // All Clear check (Pure mathematical branchless)
                     p.score += static_cast<int>(p.field.getOccupied().empty()) * config::Score::kAllClearBonus;
@@ -147,6 +150,7 @@ void PuyotanMatch::stepNextFrame() noexcept {
                         p.next_action = {Action{ActionType::CHAIN_FALL}, 0};
                     } else {
                         p.last_chain_count = p.chain_count;
+                        p.chain_count = 0; // Clear the active chain count now that it has finished
                         activateOjama(id);
                     }
                     break;
@@ -158,6 +162,7 @@ void PuyotanMatch::stepNextFrame() noexcept {
                         p.next_action = {Action{ActionType::CHAIN}, 1};
                     } else {
                         p.last_chain_count = p.chain_count; // Store final result
+                        p.chain_count = 0; // Clear the active chain count now that it has finished
                         activateOjama(id);
                     }
                     break;

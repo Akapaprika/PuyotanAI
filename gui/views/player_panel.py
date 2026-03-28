@@ -17,9 +17,9 @@ from .board_widget import BoardWidget, BoardSnapshot
 
 class PlayerPanel(QFrame):
     """
-    Visual card for one player. Layout simplified for Phase 3:
-    Frame counter is moved to the center of the window, and 
-    status indicators are moved inside the BoardWidget info area.
+    Visual card for one player.
+    Shows board + action buttons. Buttons are hidden when the player is non-human
+    to prevent accidental input reaching the ViewModel.
     """
     action_requested = pyqtSignal(int, str)
 
@@ -28,17 +28,15 @@ class PlayerPanel(QFrame):
         self.player_id = player_id
         self.setObjectName("PlayerCard")
 
-        # --- Root layout ---
         root = QVBoxLayout(self)
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(4)
 
-        # --- Board ---
         self._board = BoardWidget()
         root.addWidget(self._board, stretch=1)
 
-        # --- Controls ---
-        root.addLayout(self._build_controls())
+        self._controls_widget, self._controls_layout = self._build_controls()
+        root.addWidget(self._controls_widget)
 
     # ------------------------------------------------------------------
     # Public API
@@ -46,19 +44,23 @@ class PlayerPanel(QFrame):
     def update_snapshot(self, snapshot: BoardSnapshot) -> None:
         self._board.update_snapshot(snapshot)
 
+    def set_human_controlled(self, is_human: bool) -> None:
+        """Show/hide action buttons based on whether this player is human."""
+        self._controls_widget.setVisible(is_human)
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
-    def _build_controls(self) -> QGridLayout:
-        grid = QGridLayout()
+    def _build_controls(self):
+        container = QFrame()
+        grid = QGridLayout(container)
         grid.setSpacing(6)
+        grid.setContentsMargins(0, 0, 0, 0)
 
         buttons = [
-            # Row 0: Navigation
             ("←",  "left",  0, 0),
             ("↓",  "drop",  0, 1),
             ("→",  "right", 0, 2),
-            # Row 1: Rotation
             ("↺",  "rot_l", 1, 0),
             ("↻",  "rot_r", 1, 2),
         ]
@@ -67,7 +69,6 @@ class PlayerPanel(QFrame):
             row, col = spec[2], spec[3]
             btn = QPushButton(label)
             btn.setObjectName("ActionBtn")
-            # Width optimization: each button takes 1/3 of the panel area
             btn.setMinimumWidth(40)
             btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             btn.setStyleSheet("padding: 4px 0px; font-weight: bold; font-size: 14px;")
@@ -75,4 +76,5 @@ class PlayerPanel(QFrame):
             btn.clicked.connect(lambda _, a=action: self.action_requested.emit(self.player_id, a))
             grid.addWidget(btn, row, col)
 
-        return grid
+        return container, grid
+
