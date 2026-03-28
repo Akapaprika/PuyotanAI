@@ -17,7 +17,7 @@ from training.export import export_to_onnx
 
 # 設定
 NUM_ENVS = 256
-STEPS_PER_ITER = 128
+STEPS_PER_ITER = 192
 TOTAL_ITERS = 1000
 LOG_INTERVAL = 10                     # ログ出力間隔（イテレーション数）
 SAVE_INTERVAL = 10                    # モデル保存間隔

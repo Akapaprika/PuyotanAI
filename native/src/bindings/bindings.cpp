@@ -6,11 +6,11 @@
 #include <puyotan/core/board.hpp>
 #include <puyotan/core/gravity.hpp>
 #include <puyotan/core/chain.hpp>
-#include <puyotan/game/tsumo.hpp>
-#include <puyotan/game/scorer.hpp>
-#include <puyotan/game/puyotan_match.hpp>
-#include <puyotan/game/onnx_policy.hpp>
-#include <puyotan/game/puyotan_vector_match.hpp>
+#include <puyotan/engine/tsumo.hpp>
+#include <puyotan/engine/scorer.hpp>
+#include <puyotan/engine/match.hpp>
+#include <puyotan/policy/onnx_policy.hpp>
+#include <puyotan/env/vector_match.hpp>
 
 namespace puyotan {
 

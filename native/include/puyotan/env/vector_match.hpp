@@ -3,7 +3,7 @@
 #include <vector>
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
-#include <puyotan/game/puyotan_match.hpp>
+#include <puyotan/engine/match.hpp>
 
 namespace puyotan {
 

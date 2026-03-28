@@ -43,11 +43,11 @@ private:
     std::string input_name_{"obs"};
     std::string output_name_{"logits"};
 
-    // 観測テンソルの形状: [N, 2, 5, 6, 13]
+    // 観測テンソルの形状: [N, 2, 5, 6, 14]
     static constexpr int64_t kPlayers = 2;
     static constexpr int64_t kColors  = 5;
     static constexpr int64_t kWidth   = 6;
-    static constexpr int64_t kHeight  = 13;
+    static constexpr int64_t kHeight  = 14;
     static constexpr int64_t kObsPerEnv = kPlayers * kColors * kWidth * kHeight;
 };
 
