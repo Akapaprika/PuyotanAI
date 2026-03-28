@@ -11,6 +11,7 @@
 #include <puyotan/engine/match.hpp>
 #include <puyotan/policy/onnx_policy.hpp>
 #include <puyotan/env/vector_match.hpp>
+#include <puyotan/env/observation.hpp>
 
 namespace puyotan {
 
@@ -125,6 +126,7 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("non_active_ojama", &puyotan::PuyotanPlayer::non_active_ojama)
         .def_readwrite("active_ojama", &puyotan::PuyotanPlayer::active_ojama)
         .def_readwrite("chain_count", &puyotan::PuyotanPlayer::chain_count)
+        .def_readwrite("last_chain_count", &puyotan::PuyotanPlayer::last_chain_count)
         .def_readwrite("current_action", &puyotan::PuyotanPlayer::current_action)
         .def_readwrite("next_action", &puyotan::PuyotanPlayer::next_action);
 
@@ -156,6 +158,20 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_property_readonly("status", &puyotan::PuyotanMatch::getStatus)
         .def("getDecisionMask", &puyotan::PuyotanMatch::getDecisionMask,
              "Returns bitmask of players needing a PUT decision (0=auto, 1=P1, 2=P2, 3=both)");
+
+    // Free helper: build a single flat observation buffer from a live PuyotanMatch.
+    // Returns a new numpy array of shape (kBytesPerObservation,) dtype=uint8.
+    m.def("build_observation",
+        [](const puyotan::PuyotanMatch& match) {
+            constexpr std::size_t N = puyotan::ObservationBuilder::kBytesPerObservation;
+            auto arr = pybind11::array_t<uint8_t>(N);
+            puyotan::ObservationBuilder::build_observation(
+                match, static_cast<uint8_t*>(arr.mutable_data()));
+            return arr;
+        },
+        pybind11::arg("match"),
+        "Build a flat uint8 observation array (2-player) from a live match.");
+
     
     pybind11::class_<puyotan::PuyotanVectorMatch>(m, "PuyotanVectorMatch")
         .def(pybind11::init<int, int32_t>(), pybind11::arg("num_matches"), pybind11::arg("base_seed") = 0)

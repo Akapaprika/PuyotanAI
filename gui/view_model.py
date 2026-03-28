@@ -1,6 +1,7 @@
 import puyotan_native as p
 from PyQt6.QtCore import QObject, pyqtSignal, QElapsedTimer
 from . import config
+from .agents import BasePlayerAgent, HumanPlayerAgent
 
 class PlayerPresentationState:
     """State for a single player as seen by the UI."""
@@ -17,7 +18,7 @@ class PlayerPresentationState:
 class PuyotanViewModel(QObject):
     """
     The ViewModel for the Puyotan GUI.
-    Encapsulates Game logic, input-to-engine mapping, and timing.
+    Encapsulates game logic, agent dispatching, and timing.
     Emits signals when the view should be updated.
     """
     state_changed = pyqtSignal()
@@ -27,11 +28,12 @@ class PuyotanViewModel(QObject):
         super().__init__()
         self.model = model
         self.players = [PlayerPresentationState(), PlayerPresentationState()]
+        # Default: both players are human
+        self.agents: list[BasePlayerAgent] = [HumanPlayerAgent(), HumanPlayerAgent()]
         self.timer = QElapsedTimer()
         self.timer.start()
         self.last_step_time = self.timer.elapsed()
         
-        # ColorMap localized here without Pygame
         self.p_colors = {
             p.Cell.Red: config.COLORS["Red"],
             p.Cell.Green: config.COLORS["Green"],
@@ -42,6 +44,17 @@ class PuyotanViewModel(QObject):
         }
         self.update_presentation()
 
+    # ------------------------------------------------------------------
+    # Agent management
+    # ------------------------------------------------------------------
+    def set_agent(self, player_id: int, agent: BasePlayerAgent) -> None:
+        """Hot-swap the agent for a player (can be called at any time)."""
+        self.agents[player_id] = agent
+        self.reset_player_input(player_id)
+
+    # ------------------------------------------------------------------
+    # Main loop
+    # ------------------------------------------------------------------
     def update(self):
         """Main update loop for logic and timing (called by QTimer)."""
         if not self.model.is_playing():
@@ -53,21 +66,22 @@ class PuyotanViewModel(QObject):
         mask = self.model.get_decision_mask()
 
         if mask == 0:
-            # No human input needed — all players are in auto-frames (chain, ojama, etc.)
+            # All players are in auto-frames (chain, ojama, etc.) — just tick.
             if current_time - self.last_step_time >= config.VIRTUAL_FRAME_INTERVAL_MS:
                 if self.model.step():
                     self.last_step_time = current_time
                     state_was_changed = True
-                    # Check new mask: reset input for players who now need a PUT decision
                     new_mask = self.model.get_decision_mask()
                     for pid in [0, 1]:
                         if new_mask & (1 << pid):
                             self.reset_player_input(pid)
         else:
-            # Players with their bit set need to confirm a PUT
+            # Ask each agent if it has an action ready.
             for pid in [0, 1]:
-                if (mask & (1 << pid)) and self.players[pid].confirmed:
-                    action = p.Action(p.ActionType.PUT, self.players[pid].x, self.players[pid].rotation)
+                if not (mask & (1 << pid)):
+                    continue
+                action = self.agents[pid].get_action(self.model, pid, self.players[pid])
+                if action is not None:
                     if self.model.set_action(pid, action):
                         state_was_changed = True
 
@@ -86,21 +100,25 @@ class PuyotanViewModel(QObject):
             pres.rigid_frames = player_state.current_action.remaining_frame
             pres.has_decision = bool(mask & (1 << pid))
 
-            # If they just became rigid, force confirmed off
             if not pres.has_decision:
                 pres.confirmed = False
 
-            # Calculate ghost colors
             piece = self.model.get_piece(pid, 0)
             pres.ghost_color_axis = self._blend_ghost(self.p_colors.get(piece.axis, (255,255,255)))
             pres.ghost_color_sub = self._blend_ghost(self.p_colors.get(piece.sub, (255,255,255)))
             
         self.state_changed.emit()
 
+    # ------------------------------------------------------------------
+    # Human input helpers (called by controller — ignored for AI/Empty)
+    # ------------------------------------------------------------------
     def move_player(self, pid, dx):
         if not self.model.is_playing():
             return
-        if not self.players[pid].confirmed and self.players[pid].has_decision:
+        # Guard against stale has_decision — always verify from engine
+        if not (self.model.get_decision_mask() & (1 << pid)):
+            return
+        if not self.players[pid].confirmed:
             rot = self.players[pid].rotation
             min_x = 0
             max_x = 5
@@ -114,26 +132,28 @@ class PuyotanViewModel(QObject):
     def rotate_player(self, pid, direction):
         if not self.model.is_playing():
             return
-        if not self.players[pid].confirmed and self.players[pid].has_decision:
+        # Guard against stale has_decision — always verify from engine
+        if not (self.model.get_decision_mask() & (1 << pid)):
+            return
+        if not self.players[pid].confirmed:
             rot_order = [p.Rotation.Up, p.Rotation.Right, p.Rotation.Down, p.Rotation.Left]
             idx = rot_order.index(self.players[pid].rotation)
             new_rot = rot_order[(idx + direction) % 4]
             self.players[pid].rotation = new_rot
-            
-            # Apply wall kicks
             if new_rot == p.Rotation.Left and self.players[pid].x == 0:
                 self.players[pid].x = 1
             elif new_rot == p.Rotation.Right and self.players[pid].x == 5:
                 self.players[pid].x = 4
-                
             self.state_changed.emit()
 
     def confirm_player(self, pid):
         if not self.model.is_playing():
             return
-        if self.players[pid].has_decision and not self.players[pid].confirmed:
+        # Guard against stale has_decision — always verify from engine
+        if not (self.model.get_decision_mask() & (1 << pid)):
+            return
+        if not self.players[pid].confirmed:
             self.players[pid].confirmed = True
-            # Try to push to model immediately
             action = p.Action(p.ActionType.PUT, self.players[pid].x, self.players[pid].rotation)
             self.model.set_action(pid, action)
             self.update_presentation()
@@ -142,7 +162,7 @@ class PuyotanViewModel(QObject):
         self.players[pid].x = 2
         self.players[pid].rotation = p.Rotation.Up
         self.players[pid].confirmed = False
-        self.players[pid].has_decision = True  # Explicitly allow input
+        self.players[pid].has_decision = True
 
     def restart(self):
         self.model.restart()
@@ -160,7 +180,6 @@ class PuyotanViewModel(QObject):
             int(color[2]*alpha + bg[2]*(1-alpha))
         )
 
-    # Simple getters for the view
     @property
     def frame(self): return self.model.get_frame()
     @property
@@ -171,5 +190,11 @@ class PuyotanViewModel(QObject):
     def get_player_ojama(self, pid): 
         s = self.model.get_player_state(pid)
         return s.non_active_ojama, s.active_ojama
+    def get_chain_count(self, pid):
+        """Returns (current_chain, last_chain). current_chain > 0 during chain pop.
+        last_chain is the result of the last completed chain (0 if no chain yet).
+        """
+        s = self.model.get_player_state(pid)
+        return s.chain_count, s.last_chain_count
     
     def get_next_piece(self, pid, offset): return self.model.get_piece(pid, offset)

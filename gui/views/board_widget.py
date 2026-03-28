@@ -55,6 +55,8 @@ class BoardSnapshot:
     score:          int        = 0
     non_active_ojama: int      = 0
     active_ojama:   int        = 0
+    chain_count:    int        = 0
+    last_chain:     int        = 0
     state:          str        = "WAITING"
 
 
@@ -175,6 +177,20 @@ class BoardWidget(QWidget):
             for col in range(_BOARD_COLS):
                 r = self._cell_rect(col, row, ox, oy, cell)
                 painter.drawRect(r)
+                
+                # Darken 13th row (index 12)
+                if row == 12:
+                    painter.fillRect(r, QColor(0, 0, 0, 80))
+                
+                # Highlight Death Point: Col 3, Row 12 (0-indexed: col 2, row 11)
+                if col == 2 and row == 11:
+                    center_x, center_y = r.center().x(), r.center().y()
+                    sz = cell * 0.3
+                    painter.setPen(QPen(QColor(255, 50, 50, 150), 2))
+                    painter.drawLine(int(center_x - sz), int(center_y - sz), int(center_x + sz), int(center_y + sz))
+                    painter.drawLine(int(center_x + sz), int(center_y - sz), int(center_x - sz), int(center_y + sz))
+                    # Reset pen for next cell
+                    painter.setPen(pen)
 
     def _draw_cells(self, painter: QPainter, field, ox: int, oy: int, cell: int):
         for row in range(_BOARD_ROWS):
@@ -264,12 +280,24 @@ class BoardWidget(QWidget):
 
     def _draw_info(self, painter: QPainter, snap: BoardSnapshot,
                    bx: int, by: int, board_w: int):
-        """Draw score, ojama count, and a small thinking badge below the board."""
+        """Draw score, ojama count, chain count, and a thinking badge below the board."""
         font = QFont("Segoe UI", max(8, 11))
         painter.setFont(font)
         painter.setPen(QPen(_TEXT_COLOR))
         painter.drawText(bx, by + 14, f"Score: {snap.score}")
         painter.drawText(bx, by + 28, f"Ojama: {snap.non_active_ojama} / {snap.active_ojama}")
+        
+        # Determine chain display
+        is_chaining = (snap.chain_count > 0 and snap.state == "WAITING")
+        if is_chaining:
+            chain_text = f"{snap.chain_count} Chain!"
+            chain_color = QColor(255, 215, 0)
+        else:
+            chain_text = f"Last: {snap.last_chain}"
+            chain_color = _TEXT_COLOR
+        
+        painter.setPen(QPen(chain_color))
+        painter.drawText(bx, by + 42, f"Chain: {chain_text}")
 
         # Small status badge - Shifted further right for 4-digit score/ojama safety
         st = snap.state

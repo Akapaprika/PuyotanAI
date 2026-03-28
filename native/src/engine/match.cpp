@@ -100,12 +100,18 @@ void PuyotanMatch::stepNextFrame() noexcept {
                     const int h_sub  = p.field.getColumnHeight(x_sub);
 
                     // kSoftDropBonusPerGrid == 1: multiply eliminated (static_assert below)
-                    p.score += (config::Board::kSpawnRow - std::max(h_axis, h_sub));
+                    // Puyo rules: no points gained for putting pieces above spawn row.
+                    p.score += std::max(0, config::Board::kSpawnRow - std::max(h_axis, h_sub));
                     static_assert(config::Score::kSoftDropBonusPerGrid == 1, "Assumed 1 for multiply elision");
 
                     // Direct BitBoard bit set (1 clock each, bypasses Gravity)
-                    p.field.dropNewPiece(x_axis, h_axis + kAxisDy[r], tumo.axis);
-                    p.field.dropNewPiece(x_sub,  h_sub  + kSubDy_Simple[r], tumo.sub);
+                    // Puyo rules: pieces placed at the 14th row (y >= 13) or above simply vanish instantly.
+                    // The dropNewPiece method internally applies a branchless mask to discard pieces y >= 13 (kHeight).
+                    const int y_axis = h_axis + kAxisDy[r];
+                    const int y_sub  = h_sub  + kSubDy_Simple[r];
+                    
+                    p.field.dropNewPiece(x_axis, y_axis, tumo.axis);
+                    p.field.dropNewPiece(x_sub,  y_sub,  tumo.sub);
 
                     // Zero-overhead erasure check restricted to only the 2 deposited colors
                     const uint32_t dirty_colors = tumo.dirty_flag;
@@ -136,9 +142,8 @@ void PuyotanMatch::stepNextFrame() noexcept {
                     p.active_ojama -= static_cast<uint16_t>(used_active);
                     ojama -= used_active;
 
-                    if (ojama > 0) {
-                        sendOjama(id, ojama);
-                    }
+                    // Unconditional ojama send (branchless)
+                    sendOjama(id, ojama);
                     
                     // All Clear check (Pure mathematical branchless)
                     p.score += static_cast<int>(p.field.getOccupied().empty()) * config::Score::kAllClearBonus;
