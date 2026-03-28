@@ -139,7 +139,7 @@ class MainWindow(QMainWindow):
         self.vm.game_over.connect(self._on_game_over)
 
         # ── Wire StatusBar signals ──────────────────────────────────────
-        self._status_bar.restart_requested.connect(self.vm.restart)
+        self._status_bar.restart_requested.connect(self._on_restart)
         self._status_bar.interval_changed.connect(self._on_interval_changed)
         self._status_bar.seed_changed.connect(self._on_seed_changed)
 
@@ -174,6 +174,10 @@ class MainWindow(QMainWindow):
     def _on_game_over(self, status_text: str) -> None:
         self._timer.stop()
         QMessageBox.information(self, "Game Over", f"Match ended!\n\n{status_text}")
+
+    def _on_restart(self) -> None:
+        self.vm.restart()
+        self._timer.start()
 
     def _refresh(self) -> None:
         """Push fresh data to every sub-widget."""

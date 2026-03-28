@@ -16,6 +16,7 @@ class GameModel:
     def restart(self):
         self.match = p.PuyotanMatch(self.seed)
         self.match.start()
+        self.match.stepUntilDecision()  # Advance to first PUT decision point
 
     def get_player_state(self, player_id: int):
         return self.match.getPlayer(player_id)
@@ -27,7 +28,14 @@ class GameModel:
         return self.match.status
 
     def get_status_text(self) -> str:
-        return self.match.status_text
+        status_map = {
+            p.MatchStatus.READY:   "Ready",
+            p.MatchStatus.PLAYING: "Playing",
+            p.MatchStatus.WIN_P1:  "Player 1 Wins!",
+            p.MatchStatus.WIN_P2:  "Player 2 Wins!",
+            p.MatchStatus.DRAW:    "Draw!",
+        }
+        return status_map.get(self.match.status, "Unknown")
 
     def set_action(self, player_id: int, action: p.Action) -> bool:
         """
@@ -52,9 +60,12 @@ class GameModel:
     def is_playing(self) -> bool:
         return self.match.status == p.MatchStatus.PLAYING
 
-    def has_pending_action(self, player_id: int) -> bool:
+    def get_decision_mask(self) -> int:
         """
-        Check if the player has an action submitted for the *current* frame.
+        Returns a bitmask of players that need to submit a PUT action.
+        0 = no input needed (auto-frames running)
+        1 = P1 needs PUT
+        2 = P2 needs PUT
+        3 = both need PUT
         """
-        player = self.get_player_state(player_id)
-        return player.action_histories[self.match.frame & 255].action.type != p.ActionType.NONE
+        return self.match.getDecisionMask()

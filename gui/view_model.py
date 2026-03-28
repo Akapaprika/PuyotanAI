@@ -50,21 +50,23 @@ class PuyotanViewModel(QObject):
         current_time = self.timer.elapsed()
         state_was_changed = False
 
-        # 1. Check if we can step (all ready or rigid)
-        if self.model.can_step():
+        mask = self.model.get_decision_mask()
+
+        if mask == 0:
+            # No human input needed — all players are in auto-frames (chain, ojama, etc.)
             if current_time - self.last_step_time >= config.VIRTUAL_FRAME_INTERVAL_MS:
                 if self.model.step():
                     self.last_step_time = current_time
                     state_was_changed = True
-                    # Reset positions for players who just got a new decision point
+                    # Check new mask: reset input for players who now need a PUT decision
+                    new_mask = self.model.get_decision_mask()
                     for pid in [0, 1]:
-                        if not self.model.has_pending_action(pid):
+                        if new_mask & (1 << pid):
                             self.reset_player_input(pid)
         else:
-            # At least one player needs to confirm
+            # Players with their bit set need to confirm a PUT
             for pid in [0, 1]:
-                if not self.model.has_pending_action(pid) and self.players[pid].confirmed:
-                    # Actually push action to model
+                if (mask & (1 << pid)) and self.players[pid].confirmed:
                     action = p.Action(p.ActionType.PUT, self.players[pid].x, self.players[pid].rotation)
                     if self.model.set_action(pid, action):
                         state_was_changed = True
@@ -76,13 +78,14 @@ class PuyotanViewModel(QObject):
 
     def update_presentation(self):
         """Refresh presentation-only state from the model."""
+        mask = self.model.get_decision_mask()
         for pid in [0, 1]:
             player_state = self.model.get_player_state(pid)
             pres = self.players[pid]
-            
-            pres.rigid_frames = sum(ah.remaining_frame for ah in player_state.action_histories)
-            pres.has_decision = not self.model.has_pending_action(pid)
-            
+
+            pres.rigid_frames = player_state.current_action.remaining_frame
+            pres.has_decision = bool(mask & (1 << pid))
+
             # If they just became rigid, force confirmed off
             if not pres.has_decision:
                 pres.confirmed = False
@@ -139,6 +142,7 @@ class PuyotanViewModel(QObject):
         self.players[pid].x = 2
         self.players[pid].rotation = p.Rotation.Up
         self.players[pid].confirmed = False
+        self.players[pid].has_decision = True  # Explicitly allow input
 
     def restart(self):
         self.model.restart()

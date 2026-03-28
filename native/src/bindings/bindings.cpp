@@ -153,7 +153,9 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("getTsumo", &puyotan::PuyotanMatch::getTsumo, pybind11::return_value_policy::reference_internal)
         .def("getPiece", &puyotan::PuyotanMatch::getPiece)
         .def_property_readonly("frame", &puyotan::PuyotanMatch::getFrame)
-        .def_property_readonly("status", &puyotan::PuyotanMatch::getStatus);
+        .def_property_readonly("status", &puyotan::PuyotanMatch::getStatus)
+        .def("getDecisionMask", &puyotan::PuyotanMatch::getDecisionMask,
+             "Returns bitmask of players needing a PUT decision (0=auto, 1=P1, 2=P2, 3=both)");
     
     pybind11::class_<puyotan::PuyotanVectorMatch>(m, "PuyotanVectorMatch")
         .def(pybind11::init<int, int32_t>(), pybind11::arg("num_matches"), pybind11::arg("base_seed") = 0)
