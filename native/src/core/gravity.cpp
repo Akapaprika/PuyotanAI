@@ -12,6 +12,18 @@ static constexpr uint32_t kColLaneMask = (1u << config::Board::kTotalRows) - 1;
 // and takes >250 cycles. This fallback uses BLSI/BLSR equivalents to extract 
 // bits in ~10 cycles per column, completely bypassing the hardware latency.
 // ---------------------------------------------------------------------------
+/**
+ * @brief High-Speed Software PEXT (SWAR fallback).
+ * 
+ * Efficiently extracts bits from 'val' based on 'mask'.
+ * On AMD Zen 1/2 CPUs (e.g. 3020e), the hardware _pext_u32 is microcoded 
+ * and takes >250 cycles. This fallback uses BLSI/BLSR equivalents to extract 
+ * bits in ~10 cycles per column.
+ * 
+ * @param val Value to extract from.
+ * @param mask Mask defining which bits to extract.
+ * @return Compacted bits.
+ */
 static __forceinline uint32_t pext_u16_swar(uint32_t val, uint32_t mask) noexcept {
     uint32_t res = 0;
     int shift = 0;
@@ -35,6 +47,15 @@ static __forceinline uint32_t pext_u16_swar(uint32_t val, uint32_t mask) noexcep
 //        This replaces the reinterpret_cast+stride pointer arithmetic,
 //        giving the compiler full aliasing information at zero runtime cost.
 // ---------------------------------------------------------------------------
+/**
+ * @brief Helper to compact puyos in columns and update all color planes.
+ * 
+ * @tparam NUM_COLS Number of columns to process (4 for Lo, 2 for Hi).
+ * @tparam UseHi Boolean selecting whether to access .hi or .lo segments.
+ * @param occ_word Pointer to the occupancy segment.
+ * @param boards Pointer to the array of per-color BitBoards.
+ * @return Bitmask of colors that fell during compaction.
+ */
 template<int NUM_COLS, bool UseHi>
 static __forceinline uint32_t compactCols(
     uint64_t* __restrict occ_word,

@@ -8,15 +8,19 @@
 namespace puyotan {
 
 /**
- * Scorer
- *   Handles calculation of scores based on ErasureData.
+ * @class Scorer
+ * @brief Implements the standard Puyo Puyo scoring algorithm.
+ * 
+ * Score = (Num Erased * 10) * (Chain Bonus + Color Bonus + Group Bonus)
  */
 class Scorer {
 public:
     /**
-     * Calculates the score for a single chain step.
+     * @brief Calculates the score for a single chain step.
+     * @param data Erasure information (number of colors, groups, etc.).
+     * @param chain_number Current chain index (1-indexed).
+     * @return Total score points for this step.
      */
-    // Called only after Chain::execute confirms num_erased > 0.
     static int calculateStepScore(const ErasureData& data, int chain_number) noexcept {
         const int chain_bonus = getChainBonus(chain_number);
         const int color_bonus = getColorBonus(data.num_colors);

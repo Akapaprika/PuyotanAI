@@ -9,7 +9,9 @@ Cell Board::get(int x, int y) const noexcept {
         return Cell::Empty;
     }
     
-    // SNEAKY OPTIMIZATION: This branchless implementation relies on the specific order of Cell enum (0, 1, 2, 3, 4).
+    // SNEAKY OPTIMIZATION: This branchless implementation relies on the specific order 
+    // of Cell enum (0, 1, 2, 3, 4). Each color's bit contribution is multiplied by its index.
+    // This avoids a 5-way conditional branch or map lookup.
     static_assert(static_cast<int>(Cell::Red)    == 0);
     static_assert(static_cast<int>(Cell::Green)  == 1);
     static_assert(static_cast<int>(Cell::Blue)   == 2);
@@ -46,6 +48,8 @@ void Board::placePiece(int col, Cell color) noexcept {
 int Board::getDropDistance(int x, int y) const noexcept {
     assert(x >= 0 && x < config::Board::kWidth);
     assert(y > 0 && y <= static_cast<int>(config::Board::kHeight));
+    // Implementation note: This assumes 13th row (spawn) and visible field are contiguous.
+    // Distance = current Y - top of existing stack.
     return y - getColumnHeight(x);
 }
 

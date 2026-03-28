@@ -6,14 +6,18 @@
 namespace puyotan {
 
 /**
- * Computes Generalized Advantage Estimation (GAE) entirely in C++ 
- * to eliminate Python loop overhead. Returns the advantage tensor.
+ * @brief Computes Generalized Advantage Estimation (GAE) with high performance.
  * 
- * Expected shapes:
- *   rewards: [num_steps, num_envs]
- *   values: [num_steps, num_envs]
- *   dones: [num_steps, num_envs]
- *   next_value: [num_envs]
+ * Migrated from Python to C++ to eliminate loop overhead in RL training.
+ * Uses OpenMP for parallelizing across environment dimensions.
+ * 
+ * @param rewards tensor of shape [num_steps, num_envs].
+ * @param values tensor of shape [num_steps, num_envs].
+ * @param dones tensor of shape [num_steps, num_envs].
+ * @param next_value tensor of shape [num_envs].
+ * @param gamma Discount factor.
+ * @param lam GAE smoothing parameter.
+ * @return Advantage tensor of shape [num_steps, num_envs].
  */
 pybind11::array_t<float> computeGae(
     pybind11::array_t<float> rewards,

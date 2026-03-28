@@ -26,14 +26,19 @@ static constexpr uint64_t kPdepLut[16] = {
 };
 
 /**
- * BitBoard
- *   128-bit SIMD-optimized bitfield representing the positions of one piece
- *   color on the 6×14 Puyotan β playing field.
+ * @struct BitBoard
+ * @brief Represents a single color's puyo positions on a 6x14 field.
+ * 
+ * Uses 128-bit SIMD (__m128i) to store 6 columns of 16-bit lanes. 
+ * Bits 0-12: Visible rows, Bit 13: Spawn row, Bits 14-15: Unused/Padding.
  */
 struct alignas(16) BitBoard {
     union {
-        __m128i m128;
-        struct { uint64_t lo, hi; };
+        __m128i m128;   ///< SIMD 128-bit register
+        struct { 
+            uint64_t lo; ///< Columns 0, 1, 2, 3 (16 bits each)
+            uint64_t hi; ///< Columns 4, 5 (16 bits each) + 32-bit padding
+        };
     };
 
     BitBoard() noexcept : m128(_mm_setzero_si128()) {}
@@ -130,17 +135,45 @@ struct alignas(16) BitBoard {
 };
 
 /**
- * Board
- *   Puyotan β 6×14 playing field using BitBoard planes.
+ * @class Board
+ * @brief Manages the 6x14 Puyo Puyo playing field using bit-plane representation.
+ * 
+ * This class provides high-performance, branchless operations for querying puyo types,
+ * checking column heights, and performing piece placements.
  */
 class Board {
 public:
     Board() noexcept = default;
 
+    /**
+     * @brief Gets the cell type at the specified grid coordinate.
+     * @param x Column index (0-5).
+     * @param y Row index (0-13).
+     * @return The Cell type at (x, y).
+     */
     Cell get(int x, int y) const noexcept;
+
+    /**
+     * @brief Sets a specific cell to a color.
+     * @param x Column index (0-5).
+     * @param y Row index (0-13).
+     * @param color The Puyo color to place.
+     */
     void set(int x, int y, Cell color) noexcept;
+
+    /**
+     * @brief Clears a specific grid cell.
+     * @param x Column index (0-5).
+     * @param y Row index (0-13).
+     */
     void clear(int x, int y) noexcept;
 
+    /**
+     * @brief Efficiently sets multiple columns in a single row using a bitmask.
+     * @param y Row index (0-13).
+     * @param cell The puyo type to set.
+     * @param cols_mask 6-bit mask of columns to update.
+     */
     void setRowMask(int y, Cell cell, uint32_t cols_mask) noexcept {
         const uint64_t target_lo = kPdepLut[cols_mask & 0x0Fu] << y;
         const uint64_t target_hi = kPdepLut[(cols_mask >> 4) & 0x03u] << y;
@@ -151,13 +184,26 @@ public:
         occupancy_.hi |= target_hi;
     }
 
+    /**
+     * @brief Places a single puyo into the spawn row (Row 13).
+     * @param col Target column index (0-5).
+     * @param color Color of the puyo.
+     */
     void placePiece(int col, Cell color) noexcept;
 
+    /**
+     * @brief Calculates the vertical distance a puyo would fall at (x, y).
+     * @param x Column index (0-5).
+     * @param y Starting row index.
+     * @return Number of rows to the nearest obstacle/bottom.
+     */
     int getDropDistance(int x, int y) const noexcept;
 
     /**
-     * O(1) branchless column height query.
-     * Uses SIMD popcount under the guarantee that there are no floating puyos.
+     * @brief Returns the height of the puyo stack in a column.
+     * @param x Column index (0-5).
+     * @return Number of puyos in the column (0-13).
+     * @note Performance: O(1) using popcount.
      */
     inline int getColumnHeight(int x) const noexcept {
         assert(x >= 0 && x < config::Board::kWidth);
@@ -169,8 +215,11 @@ public:
         return static_cast<int>(_mm_popcnt_u32(lane));
     }
     /**
-     * O(1) branchless drop of a single puyo directly to its final destination.
-     * Assumes gravity execution will be bypassed.
+     * @brief Instantly drops a puyo to its final destination, bypassing gravity physics.
+     * @param x Target column (0-5).
+     * @param y Target row (0-13).
+     * @param color Puyo color.
+     * @note Primarily used for optimized batch simulation steps.
      */
     inline void dropNewPiece(int x, int y, Cell color) noexcept {
         assert(x >= 0 && x < config::Board::kWidth);
@@ -187,22 +236,31 @@ public:
         (&boards_[toIndex(color)].lo)[idx] |= bit;
         (&occupancy_.lo)[idx] |= bit;
     }
+    /** @brief Retrieves the BitBoard mask for the specified color. */
     [[nodiscard]] const BitBoard& getBitboard(Cell color) const noexcept;
+
+    /** @brief Manually overwrites the BitBoard for a specific color. */
     void setBitboard(Cell color, const BitBoard& bb) noexcept;
 
-    // Full recalculation of occupancy_ from all color boards (O(N))
+    /** @brief Fully recalculates the occupancy bitmask from all color planes. */
     void updateOccupancyFromBoards() noexcept;
 
+    /** @brief Sets the combined occupancy mask. */
     void updateOccupancy(const BitBoard& bb) noexcept { occupancy_ = bb; }
+
+    /** @brief Returns the combined occupancy mask of all non-empty puyos. */
     const BitBoard& getOccupied() const noexcept { return occupancy_; }
 
 private:
     friend class Gravity; // Allow direct lane access for O(1) per-column gravity
 
-    std::array<BitBoard, config::Board::kNumColors> boards_{};
-    BitBoard occupancy_{};
+    /**
+     * @brief Internal helper to map Cell enum to array index (Red=0...Ojama=4).
+     */
+    static constexpr int toIndex(Cell c) noexcept { return static_cast<int>(c); }
 
-    static constexpr int toIndex(Cell c) { return static_cast<int>(c); }
+    std::array<BitBoard, config::Board::kNumColors> boards_{}; ///< Per-color bitmasks
+    BitBoard occupancy_{};                                     ///< Combined occupancy mask
 };
 
 } // namespace puyotan

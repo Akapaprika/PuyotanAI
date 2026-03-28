@@ -26,7 +26,8 @@ pybind11::array_t<float> computeGae(
     std::vector<float> last_gae(num_envs, 0.0f);
     float gamma_lam = gamma * lam;
 
-    // Time loop must be sequential
+    // Time loop must be sequential because each advantage 'adv[t]' depends on 'last_gae' 
+    // calculated from 'adv[t+1]'. This is the standard backward pass for GAE.
     for (int t = num_steps - 1; t >= 0; --t) {
         const float* curr_r = r_ptr + t * num_envs;
         const float* curr_v = v_ptr + t * num_envs;

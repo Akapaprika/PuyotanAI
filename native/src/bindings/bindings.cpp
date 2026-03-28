@@ -172,7 +172,7 @@ PYBIND11_MODULE(puyotan_native, m) {
         [](const puyotan::PuyotanMatch& match) {
             constexpr std::size_t N = puyotan::ObservationBuilder::kBytesPerObservation;
             auto arr = pybind11::array_t<uint8_t>(N);
-            puyotan::ObservationBuilder::build_observation(
+            puyotan::ObservationBuilder::buildObservation(
                 match, static_cast<uint8_t*>(arr.mutable_data()));
             return arr;
         },
@@ -208,7 +208,7 @@ PYBIND11_MODULE(puyotan_native, m) {
              },
              pybind11::arg("obs"),
              "Run inference on a batch of uint8 observations. Returns list of action indices.")
-        .def("is_loaded", &puyotan::OnnxPolicy::is_loaded);
+        .def("is_loaded", &puyotan::OnnxPolicy::isLoaded);
 }
 
 } // namespace puyotan

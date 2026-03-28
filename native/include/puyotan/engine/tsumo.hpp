@@ -8,13 +8,20 @@
 namespace puyotan {
 
 /**
- * Tsumo
- *   Generates and maintains a pool of puyo pairs.
+ * @class Tsumo
+ * @brief Thread-safe (read-only) ring-buffered puyo piece generator.
+ * 
+ * Generates a deterministic sequence of puyo pairs based on a 32-bit seed.
+ * Pieces are cached in a fixed-size pool to minimize RNG overhead during simulation.
  */
 class Tsumo {
 public:
-    explicit Tsumo(uint32_t seed = 1u) noexcept;
-
+    /**
+     * @brief Retrieves a PuyoPiece at the specified absolute sequence index.
+     * @param index sequence index (starts at 0).
+     * @return The axis and sub puyo colors.
+     * @note Performance: O(1) ring-buffer access.
+     */
     inline PuyoPiece get(int32_t index) noexcept {
         if (index >= generated_count_) {
             generateMore();
