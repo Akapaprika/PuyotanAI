@@ -61,35 +61,30 @@ def selfplay_loop():
             start_time = time.perf_counter()  # time.time() より高精度
             iteration = i + 1
             
-            # Curriculum: Stage 1 = PASS, Stage 2 = Random, Stage 3 = Self-Play
-            p2_policy = None
-            
-            if iteration > 50 and iteration <= 150:
-                p2_policy = random_policy
-            elif iteration > 150:
-                if iteration % 50 == 1 or past_policy is None:
-                    trainer.save(str(CHECKPOINT_PT))
-                    model_for_export = trainer.model._orig_mod if hasattr(trainer.model, '_orig_mod') else trainer.model
-                    export_to_onnx(model_for_export, str(CHECKPOINT_ONNX))
+            # Self-Play: Always play against a previous version of itself
+            if iteration % 50 == 1 or past_policy is None:
+                trainer.save(str(CHECKPOINT_PT))
+                model_for_export = trainer.model._orig_mod if hasattr(trainer.model, '_orig_mod') else trainer.model
+                export_to_onnx(model_for_export, str(CHECKPOINT_ONNX))
+                
+                import shutil
+                import tempfile
+                try:
+                    temp_onnx = Path(tempfile.gettempdir()) / "puyotan_snapshot.onnx"
+                    shutil.copy2(CHECKPOINT_ONNX, temp_onnx)
                     
-                    import shutil
-                    import tempfile
-                    try:
-                        temp_onnx = Path(tempfile.gettempdir()) / "puyotan_snapshot.onnx"
-                        shutil.copy2(CHECKPOINT_ONNX, temp_onnx)
+                    data_path = Path(CHECKPOINT_ONNX).with_suffix(".onnx.data")
+                    if data_path.exists():
+                        shutil.copy2(data_path, temp_onnx.with_suffix(".onnx.data"))
                         
-                        data_path = Path(CHECKPOINT_ONNX).with_suffix(".onnx.data")
-                        if data_path.exists():
-                            shutil.copy2(data_path, temp_onnx.with_suffix(".onnx.data"))
-                            
-                        past_policy = p.OnnxPolicy(str(temp_onnx), use_cpu=True)
-                        if not past_policy.is_loaded():
-                            past_policy = random_policy
-                    except Exception as e:
-                        print(f"[WARN] ONNX Load Error: {e}")
+                    past_policy = p.OnnxPolicy(str(temp_onnx), use_cpu=True)
+                    if not past_policy.is_loaded():
                         past_policy = random_policy
-                        
-                p2_policy = past_policy
+                except Exception as e:
+                    print(f"[WARN] ONNX Load Error: {e}")
+                    past_policy = random_policy
+                    
+            p2_policy = past_policy
             
             # 学習実行
             metrics = trainer.train(p2_policy=p2_policy)
@@ -106,15 +101,13 @@ def selfplay_loop():
             if mc > acc_max_chain:
                 acc_max_chain = mc
             
-            # LOG_INTERVAL ごとにまとめて出力（print のシステムコール削減）
+            # LOG_INTERVAL ごとにまとめて出力
             if iteration % LOG_INTERVAL == 0 or iteration == 1:
-                stage = "PASS" if iteration <= 50 else ("Random" if iteration <= 150 else "Self-Play")
                 avg_loss = acc_loss / min(iteration, LOG_INTERVAL)
                 avg_fps = acc_fps / min(iteration, LOG_INTERVAL)
                 avg_chain = acc_mean_chain / min(iteration, LOG_INTERVAL)
                 avg_max = acc_avg_max_chain / min(iteration, LOG_INTERVAL)
                 print(f"[Iter {iteration:4d}/{TOTAL_ITERS}] "
-                      f"Stage={stage:9s} | "
                       f"AvgLoss={avg_loss:.4f} | "
                       f"AvgMax={avg_max:.2f} | "
                       f"AvgChain={avg_chain:.2f} | "

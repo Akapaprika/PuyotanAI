@@ -11,6 +11,7 @@ sys.path.append(str(BASE_DIR))
 
 from training.env import PuyotanVectorEnv
 from training.trainer import PPOTrainer
+from training.export import export_to_onnx
 
 # 設定
 NUM_ENVS = 256
@@ -73,6 +74,9 @@ def solo_training_loop():
         if iteration % SAVE_INTERVAL == 0:
             trainer.save(str(CHECKPOINT_PT))
             print(f"Saved checkpoint: {CHECKPOINT_PT}")
+            # Export ONNX as well for immediate GUI usage
+            model_for_export = trainer.model._orig_mod if hasattr(trainer.model, '_orig_mod') else trainer.model
+            export_to_onnx(model_for_export, str(CHECKPOINT_PT.with_suffix(".onnx")))
 
 if __name__ == "__main__":
     solo_training_loop()
