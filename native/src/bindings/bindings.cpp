@@ -12,6 +12,7 @@
 #include <puyotan/policy/onnx_policy.hpp>
 #include <puyotan/env/vector_match.hpp>
 #include <puyotan/env/observation.hpp>
+#include <puyotan/env/rl_utils.hpp>
 
 namespace puyotan {
 
@@ -97,17 +98,17 @@ PYBIND11_MODULE(puyotan_native, m) {
      * @brief Bind Puyotan Match (frame-based)
      */
     pybind11::enum_<ActionType>(m, "ActionType")
-        .value("NONE", ActionType::NONE)
-        .value("PASS", ActionType::PASS)
-        .value("PUT", ActionType::PUT)
-        .value("CHAIN", ActionType::CHAIN)
-        .value("CHAIN_FALL", ActionType::CHAIN_FALL)
-        .value("OJAMA", ActionType::OJAMA)
+        .value("NONE", ActionType::None)
+        .value("PASS", ActionType::Pass)
+        .value("PUT", ActionType::Put)
+        .value("CHAIN", ActionType::Chain)
+        .value("CHAIN_FALL", ActionType::ChainFall)
+        .value("OJAMA", ActionType::Ojama)
         .export_values();
 
     pybind11::class_<Action>(m, "Action")
         .def(pybind11::init<ActionType, int, Rotation>(),
-             pybind11::arg("type") = ActionType::PASS,
+             pybind11::arg("type") = ActionType::Pass,
              pybind11::arg("x") = 0,
              pybind11::arg("rotation") = Rotation::Up)
         .def_readwrite("type", &Action::type)
@@ -131,11 +132,11 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("next_action", &puyotan::PuyotanPlayer::next_action);
 
     pybind11::enum_<puyotan::MatchStatus>(m, "MatchStatus")
-        .value("READY", puyotan::MatchStatus::READY)
-        .value("PLAYING", puyotan::MatchStatus::PLAYING)
-        .value("WIN_P1", puyotan::MatchStatus::WIN_P1)
-        .value("WIN_P2", puyotan::MatchStatus::WIN_P2)
-        .value("DRAW", puyotan::MatchStatus::DRAW)
+        .value("READY", puyotan::MatchStatus::Ready)
+        .value("PLAYING", puyotan::MatchStatus::Playing)
+        .value("WIN_P1", puyotan::MatchStatus::WinP1)
+        .value("WIN_P2", puyotan::MatchStatus::WinP2)
+        .value("DRAW", puyotan::MatchStatus::Draw)
         .export_values();
 
     pybind11::class_<puyotan::PuyotanMatch>(m, "PuyotanMatch")
@@ -159,13 +160,19 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("getDecisionMask", &puyotan::PuyotanMatch::getDecisionMask,
              "Returns bitmask of players needing a PUT decision (0=auto, 1=P1, 2=P2, 3=both)");
 
+    m.def("compute_gae", &puyotan::computeGae,
+          pybind11::arg("rewards"), pybind11::arg("values"),
+          pybind11::arg("dones"), pybind11::arg("next_value"),
+          pybind11::arg("gamma"), pybind11::arg("lam"),
+          "Computes GAE entirely in C++ (OpenMP+SIMD)");
+
     // Free helper: build a single flat observation buffer from a live PuyotanMatch.
     // Returns a new numpy array of shape (kBytesPerObservation,) dtype=uint8.
     m.def("build_observation",
         [](const puyotan::PuyotanMatch& match) {
             constexpr std::size_t N = puyotan::ObservationBuilder::kBytesPerObservation;
             auto arr = pybind11::array_t<uint8_t>(N);
-            puyotan::ObservationBuilder::build_observation(
+            puyotan::ObservationBuilder::buildObservation(
                 match, static_cast<uint8_t*>(arr.mutable_data()));
             return arr;
         },
@@ -201,7 +208,7 @@ PYBIND11_MODULE(puyotan_native, m) {
              },
              pybind11::arg("obs"),
              "Run inference on a batch of uint8 observations. Returns list of action indices.")
-        .def("is_loaded", &puyotan::OnnxPolicy::is_loaded);
+        .def("is_loaded", &puyotan::OnnxPolicy::isLoaded);
 }
 
 } // namespace puyotan

@@ -7,11 +7,11 @@
 namespace puyotan {
 
 /**
- * AI inference class using ONNX Runtime (Single Responsibility).
- *
- * Usage:
- *   OnnxPolicy policy("models/puyotan.onnx");
- *   auto actions = policy.infer(obs_uint8, num_envs);
+ * @class OnnxPolicy
+ * @brief High-performance AI inference engine using ONNX Runtime.
+ * 
+ * Manages an ONNX session and provides thread-safe batch inference for 
+ * Puyo Puyo observation tensors.
  */
 class OnnxPolicy {
 public:
@@ -22,16 +22,16 @@ public:
     explicit OnnxPolicy(const std::string& model_path, bool use_cpu = true);
 
     /**
-     * Batch inference: Returns action indices from uint8 observation data.
-     *
-     * @param obs_data  Observation data (num_envs * 2 * 5 * 6 * 13 bytes, uint8).
-     * @param num_envs  Number of parallel environments.
-     * @return          Action indices for each environment [0, 21].
+     * @brief Performs batch inference on a set of observations.
+     * @param obs_data Pointer to raw uint8 observation data (shape [N, 2, 5, 6, 14]).
+     * @param num_envs Number of parallel environment instances (N).
+     * @return Vector of action indices [0-21] for each environment.
+     * @note Performance: Uses DirectML or CPU optimizations via ONNX Runtime.
      */
     std::vector<int64_t> infer(const uint8_t* obs_data, int64_t num_envs) const;
 
     /** Whether the model is successfully loaded. */
-    bool is_loaded() const { return session_ != nullptr; }
+    bool isLoaded() const { return session_ != nullptr; }
 
 private:
     Ort::Env env_;

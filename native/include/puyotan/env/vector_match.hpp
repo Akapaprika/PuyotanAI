@@ -8,23 +8,25 @@
 namespace puyotan {
 
 /**
- * PuyotanVectorMatch
- *   Manages a collection of PuyotanMatch instances for high-throughput batch simulation.
- *   Optimized for RL training loops where multiple agents act in parallel.
+ * @class PuyotanVectorMatch
+ * @brief Synchronous parallel orchestrator for batch Puyo Puyo matches.
+ * 
+ * Optimized for Reinforcement Learning (RL) training loops. Manages multiple 
+ * PuyotanMatch instances and provides high-throughput vectorized step/reset APIs.
  */
 class PuyotanVectorMatch {
 public:
     explicit PuyotanVectorMatch(int num_matches, uint32_t base_seed = 1u);
 
     /**
-     * Resets a specific match (0-indexed).
-     * If id is -1 (default), resets all matches in parallel.
+     * @brief Resets specific matches to their initial state.
+     * @param id The match index (0 to N-1). If -1, all matches are reset in parallel.
      */
     void reset(int id = -1) noexcept;
 
     /**
-     * Runs all matches until they require decision (Step until decision).
-     * @return Array of masks [N] where mask & (1 << player_id) means decision needed.
+     * @brief Steps all active matches until they reach a decision point (PUT).
+     * @return A vector of bitmasks indicating which players need actions.
      */
     std::vector<int> stepUntilDecision();
 
@@ -36,17 +38,24 @@ public:
                      const std::vector<Action>& actions);
 
     /**
-     * Bulk step function incorporating action decoding, stepping, auto-reset, and reward calculation (OpenMP accelerated).
-     * @param p1_actions Action indices [0-21] for Player 1.
-     * @param p2_actions Action indices [0-21] for Player 2. If empty, P2 passes.
-     * @param out_obs Optional allocated buffer for observations to avoid allocation overhead.
-     * @return A tuple of (observations, rewards, terminated).
+     * @brief High-performance batched simulation step for RL environments.
+     * 
+     * Incorporates action decoding, frame advancement, automatic resets, and 
+     * reward calculation in a single OpenMP-accelerated call.
+     * 
+     * @param p1_actions Action indices for Player 1 (batch_size).
+     * @param p2_actions Optional action indices for Player 2.
+     * @param out_obs Optional pre-allocated buffer for observation tensors.
+     * @return py::tuple (observations, rewards, terminated, info).
      */
-    pybind11::tuple step(pybind11::array_t<int> p1_actions, std::optional<pybind11::array_t<int>> p2_actions = std::nullopt, std::optional<pybind11::array_t<uint8_t>> out_obs = std::nullopt);
+    pybind11::tuple step(pybind11::array_t<int> p1_actions, 
+                         std::optional<pybind11::array_t<int>> p2_actions = std::nullopt, 
+                         std::optional<pybind11::array_t<uint8_t>> out_obs = std::nullopt);
 
     /**
-     * Bulk observation generation.
-     * @return Flat array of [N, 2, 5, 6, 13] representing all fields.
+     * @brief Generates observations for all active matches.
+     * @param out_obs Optional pre-allocated buffer.
+     * @return numpy array of shape [N, OBS_SIZE] uint8.
      */
     pybind11::array_t<uint8_t> getObservationsAll(std::optional<pybind11::array_t<uint8_t>> out_obs = std::nullopt) const;
 

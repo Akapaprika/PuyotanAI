@@ -19,6 +19,9 @@ static void scanGroups(const Board& board, uint32_t color_mask, ErasureData& dat
         if (color_board.empty()) continue;
 
         // --- Bitwise Connectivity Pruning ('has_2' filter) ---
+        // Optimization: A puyo can only be part of a 4+ group if it has at least 2 neighbors
+        // of the same color (or it's the middle of a line). This filter significantly 
+        // reduces the number of BFS internal loops by skipping isolated puyos.
         const BitBoard U = color_board.shiftUpRaw();
         const BitBoard D = color_board.shiftDownRaw();
         const BitBoard L = color_board.shiftLeftRaw();
@@ -39,9 +42,11 @@ static void scanGroups(const Board& board, uint32_t color_mask, ErasureData& dat
             do {
                 prev = group;
                 __m128i v = group.m128;
-                // Horizontal neighbors (left/right)
+                // SIMD BFS: Expand seed 'group' by 1 step in all 4 directions, 
+                // then mask by 'color_board' (the potential group area).
+                // Horizontal neighbors (left/right: 1 bit = 1 byte in BitBoard column)
                 __m128i lr = _mm_or_si128(_mm_slli_epi64(v, 1), _mm_srli_epi64(v, 1));
-                // Vertical neighbors (up/down: 16 bits = 2 bytes)
+                // Vertical neighbors (up/down: 16 bits = 2 bytes = 1 column shift)
                 __m128i ud = _mm_or_si128(_mm_slli_si128(v, 2), _mm_srli_si128(v, 2));
                 group.m128 = _mm_and_si128(_mm_or_si128(v, _mm_or_si128(lr, ud)), cb_mask);
             } while (group != prev);

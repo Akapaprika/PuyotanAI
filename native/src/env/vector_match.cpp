@@ -20,11 +20,11 @@ namespace {
  *   [18-21] -> Left, Col 0-3 (Columns 4,5 are restricted in Left rotation to prevent wall-clip errors)
  */
 Action GET_ACTION(int idx) {
-    if (idx < 0 || idx >= 22) return Action{ActionType::PASS};
-    if (idx < 6) return Action{ActionType::PUT, static_cast<int8_t>(idx), Rotation::Up};
-    if (idx < 11) return Action{ActionType::PUT, static_cast<int8_t>(idx - 6), Rotation::Right}; // Col 0-4
-    if (idx < 17) return Action{ActionType::PUT, static_cast<int8_t>(idx - 11), Rotation::Down}; // Col 0-5
-    return Action{ActionType::PUT, static_cast<int8_t>(idx - 16), Rotation::Left}; // Col 1-5
+    if (idx < 0 || idx >= 22) return Action{ActionType::Pass};
+    if (idx < 6) return Action{ActionType::Put, static_cast<int8_t>(idx), Rotation::Up};
+    if (idx < 11) return Action{ActionType::Put, static_cast<int8_t>(idx - 6), Rotation::Right}; // Col 0-4
+    if (idx < 17) return Action{ActionType::Put, static_cast<int8_t>(idx - 11), Rotation::Down}; // Col 0-5
+    return Action{ActionType::Put, static_cast<int8_t>(idx - 16), Rotation::Left}; // Col 1-5
 }
 } // anonymous namespace
 
@@ -85,6 +85,9 @@ pybind11::tuple PuyotanVectorMatch::step(pybind11::array_t<int> p1_actions,
     int* chain_ptr = static_cast<int*>(chains.mutable_data());
 
     {
+        // RELEASE GIL: This is critical for performance. 
+        // All game engine logic is thread-safe and purely C++, so we can run 
+        // the OpenMP loop while other Python threads continue.
         pybind11::gil_scoped_release release;
         static constexpr bool kTermTable[] = {true, false, true, true, true};
         RewardCalculator reward_calc;
@@ -97,13 +100,13 @@ pybind11::tuple PuyotanVectorMatch::step(pybind11::array_t<int> p1_actions,
 
             m.setAction(0, GET_ACTION(p1_ptr[i]));
             if (p2_ptr) m.setAction(1, GET_ACTION(p2_ptr[i]));
-            else m.setAction(1, Action{ActionType::PASS});
+            else m.setAction(1, Action{ActionType::Pass});
 
-            while (m.getStatus() == MatchStatus::PLAYING) {
+            while (m.getStatus() == MatchStatus::Playing) {
                 int mask = m.stepUntilDecision();
                 if (mask == 3 || mask == 0) break;
-                if ((mask & 1) != 0) m.setAction(0, Action{ActionType::PASS});
-                if ((mask & 2) != 0) m.setAction(1, Action{ActionType::PASS});
+                if ((mask & 1) != 0) m.setAction(0, Action{ActionType::Pass});
+                if ((mask & 2) != 0) m.setAction(1, Action{ActionType::Pass});
             }
 
             const auto& p1 = m.getPlayer(0);
@@ -139,11 +142,12 @@ pybind11::array_t<uint8_t> PuyotanVectorMatch::getObservationsAll(std::optional<
     uint8_t* out_base = static_cast<uint8_t*>(arr.mutable_data());
 
     {
+        // RELEASE GIL: Batch observation construction is also parallelized via OpenMP.
         pybind11::gil_scoped_release release;
         #pragma omp parallel for
         for (int i = 0; i < n; ++i) {
             uint8_t* obs_ptr = out_base + i * ObservationBuilder::kBytesPerObservation;
-            ObservationBuilder::build_observation(matches_[i], obs_ptr);
+            ObservationBuilder::buildObservation(matches_[i], obs_ptr);
         }
     }
     return arr;

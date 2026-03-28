@@ -186,15 +186,12 @@ class PPOTrainer:
             _, _, _, next_value = model.get_action_and_value(last_obs_t)
             next_value = to_np(next_value)
 
-        # GAE 計算（CPU NumPy で一括計算）
-        advantages_cpu = np.zeros((num_steps, num_envs), dtype=np.float32)
-        last_gae = np.zeros(num_envs, dtype=np.float32)
-        for t in reversed(range(num_steps)):
-            not_done = 1.0 - dones_np[t]
-            next_val = next_value if t == num_steps - 1 else values_np[t + 1]
-            delta    = rewards_np[t] + GAMMA * next_val * not_done - values_np[t]
-            last_gae = delta + GAMMA * LAMBDA * not_done * last_gae
-            advantages_cpu[t] = last_gae
+        # C++ ネイティブによる高速 GAE 計算（Pythonの全ループを排除）
+        from training.env import p
+        advantages_cpu = p.compute_gae(
+            rewards_np, values_np, dones_np, next_value,
+            float(GAMMA), float(LAMBDA)
+        )
 
         self.advantages_buf.copy_(from_numpy(advantages_cpu), non_blocking=True)
         self.returns_buf.copy_(self.advantages_buf + self.values_buf)

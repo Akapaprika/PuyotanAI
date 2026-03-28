@@ -10,7 +10,7 @@ namespace {
 #include "expand_table_data.inc"
 }
 
-void ObservationBuilder::compute_color_map(const PuyotanMatch& m, int p_idx, uint8_t color_map[5]) {
+void ObservationBuilder::computeColorMap(const PuyotanMatch& m, int p_idx, uint8_t color_map[5]) {
     memset(color_map, 0, 5);
     uint8_t next_id = 1;
     const Tsumo& tsumo = m.getTsumo();
@@ -29,7 +29,7 @@ void ObservationBuilder::compute_color_map(const PuyotanMatch& m, int p_idx, uin
     }
 }
 
-void ObservationBuilder::render_field(const Board& field, const uint8_t color_map[5], uint8_t* dst_player_obs, bool mask_row12) {
+void ObservationBuilder::renderField(const Board& field, const uint8_t color_map[5], uint8_t* dst_player_obs, bool mask_row12) {
     uint16_t row_mask = mask_row12 ? 0x0FFF : 0x1FFF;
 
     auto write_col = [&](uint8_t* color_base, int x, uint16_t col_data) {
@@ -60,15 +60,15 @@ void ObservationBuilder::render_field(const Board& field, const uint8_t color_ma
     }
 }
 
-void ObservationBuilder::build_observation(const PuyotanMatch& m, uint8_t* obs_ptr) {
+void ObservationBuilder::buildObservation(const PuyotanMatch& m, uint8_t* obs_ptr) {
     memset(obs_ptr, 0, kBytesPerObservation);
     const auto& p0 = m.getPlayer(0);
     const auto& p1 = m.getPlayer(1);
 
     uint8_t color_map[5];
-    compute_color_map(m, 0, color_map);
-    render_field(p0.field, color_map, obs_ptr + 0 * kBytesPerField, false);
-    render_field(p1.field, color_map, obs_ptr + 1 * kBytesPerField, true);
+    computeColorMap(m, 0, color_map);
+    renderField(p0.field, color_map, obs_ptr + 0 * kBytesPerField, false);
+    renderField(p1.field, color_map, obs_ptr + 1 * kBytesPerField, true);
 
     auto write_meta = [&](uint8_t* f_ptr, int x, uint8_t mapped_val, uint8_t value = 1) {
         if (mapped_val == 0) return;
