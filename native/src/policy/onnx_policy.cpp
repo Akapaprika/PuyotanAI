@@ -1,4 +1,4 @@
-#include "puyotan/game/onnx_policy.hpp"
+#include <puyotan/policy/onnx_policy.hpp>
 #include <stdexcept>
 #include <algorithm>
 
@@ -32,7 +32,7 @@ OnnxPolicy::OnnxPolicy(const std::string& model_path, bool use_cpu)
 }
 
 std::vector<int64_t> OnnxPolicy::infer(const uint8_t* obs_data, int64_t num_envs) const {
-    // Build input tensor: [num_envs, 2, 5, 6, 13] (uint8)
+    // Build input tensor: [num_envs, 2, 5, 6, 14] (uint8)
     std::array<int64_t, 5> input_shape{num_envs, kPlayers, kColors, kWidth, kHeight};
     const int64_t total_elems = num_envs * kObsPerEnv;
 

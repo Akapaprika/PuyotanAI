@@ -2,7 +2,7 @@
 
 #include <puyotan/core/board.hpp>
 #include <puyotan/core/chain.hpp>
-#include <puyotan/game/tsumo.hpp>
+#include <puyotan/engine/tsumo.hpp>
 #include <puyotan/common/types.hpp>
 #include <string>
 #include <optional>
@@ -26,7 +26,6 @@ struct PuyotanPlayer {
     uint16_t active_ojama = 0;     // 2 bytes
     uint8_t chain_count = 0;       // 1 byte
     uint8_t last_chain_count = 0;  // 1 byte: Stores the result of the last completed chain
-    int last_score = 0;           // 4 bytes: Stores the score of the last completed turn
     PuyotanPlayer() = default;
     void fallOjama(int num, uint32_t& seed) noexcept;
 };

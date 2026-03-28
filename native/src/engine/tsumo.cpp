@@ -1,4 +1,4 @@
-#include <puyotan/game/tsumo.hpp>
+#include <puyotan/engine/tsumo.hpp>
 #include <puyotan/common/config.hpp>
 #include <cstdlib>
 

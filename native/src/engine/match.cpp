@@ -1,7 +1,7 @@
-#include <puyotan/game/puyotan_match.hpp>
+#include <puyotan/engine/match.hpp>
 #include <puyotan/core/gravity.hpp>
 #include <puyotan/core/chain.hpp>
-#include <puyotan/game/scorer.hpp>
+#include <puyotan/engine/scorer.hpp>
 #include <algorithm>
 
 namespace puyotan {
@@ -79,7 +79,6 @@ void PuyotanMatch::stepNextFrame() noexcept {
                     break;
                 case ActionType::PUT: {
                     p.last_chain_count = 0;
-                    p.last_score = 0;
                     const PuyoPiece tumo = tsumo_.get(p.active_next_pos);
                     const int r = static_cast<int>(action.rotation);
                     const int x_axis = action.x;
@@ -113,7 +112,6 @@ void PuyotanMatch::stepNextFrame() noexcept {
                     ++p.chain_count;
                     int step_score = Scorer::calculateStepScore(info, p.chain_count);
                     p.score += step_score;
-                    p.last_score += step_score;
                     
                     int ojama = (p.score - p.used_score) / config::Score::kTargetScore;
                     p.used_score += ojama * config::Score::kTargetScore;
