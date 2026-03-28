@@ -63,6 +63,8 @@ public:
     PuyotanMatch& getMatch(int i) { return matches_[i]; }
     const PuyotanMatch& getMatch(int i) const { return matches_[i]; }
 
+    RewardCalculator reward_calc; ///< Configurable reward parameters
+
 private:
     std::vector<PuyotanMatch> matches_;
     uint32_t base_seed_;

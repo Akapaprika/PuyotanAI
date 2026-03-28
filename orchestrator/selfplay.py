@@ -38,6 +38,11 @@ def selfplay_loop():
     
     try:
         env = PuyotanVectorEnv(num_envs=NUM_ENVS)
+        
+        # 中央管理された報酬設定をロード (C++ ネイティブ)
+        reward_config_path = BASE_DIR / "native" / "resources" / "reward_default.json"
+        env.reward_calc.load_from_json(str(reward_config_path))
+        
         trainer = PPOTrainer(env, num_rollout_steps=STEPS_PER_ITER)
         
         if CHECKPOINT_PT.exists():
@@ -56,6 +61,8 @@ def selfplay_loop():
         acc_mean_chain = 0.0
         acc_avg_max_chain = 0.0
         acc_max_chain = 0.0
+        acc_reward = 0.0
+        acc_score = 0.0
         
         for i in range(TOTAL_ITERS):
             start_time = time.perf_counter()  # time.time() より高精度
@@ -97,6 +104,8 @@ def selfplay_loop():
             acc_fps += fps
             acc_mean_chain += metrics['mean_chain']
             acc_avg_max_chain += metrics['avg_max_chain']
+            acc_reward += metrics['avg_reward']
+            acc_score += metrics['avg_score']
             mc = metrics['max_chain']
             if mc > acc_max_chain:
                 acc_max_chain = mc
@@ -107,17 +116,24 @@ def selfplay_loop():
                 avg_fps = acc_fps / min(iteration, LOG_INTERVAL)
                 avg_chain = acc_mean_chain / min(iteration, LOG_INTERVAL)
                 avg_max = acc_avg_max_chain / min(iteration, LOG_INTERVAL)
+                avg_reward = acc_reward / min(iteration, LOG_INTERVAL)
+                avg_score = acc_score / min(iteration, LOG_INTERVAL)
+                
                 print(f"[Iter {iteration:4d}/{TOTAL_ITERS}] "
-                      f"AvgLoss={avg_loss:.4f} | "
-                      f"AvgMax={avg_max:.2f} | "
-                      f"AvgChain={avg_chain:.2f} | "
-                      f"MaxChain={acc_max_chain} | "
-                      f"AvgFPS={avg_fps:.0f}")
+                      f"AvgRew={avg_reward:6.3f} | "
+                      f"AvgScore={avg_score:6.1f} | "
+                      f"AvgChain={avg_chain:4.2f} | "
+                      f"AvgMax={avg_max:4.2f} | "
+                      f"Max={acc_max_chain:2d} | "
+                      f"FPS={avg_fps:.0f}")
+                
                 acc_loss = 0.0
                 acc_fps = 0.0
                 acc_max_chain = 0
                 acc_mean_chain = 0.0
                 acc_avg_max_chain = 0.0
+                acc_reward = 0.0
+                acc_score = 0.0
             
             # 定期的なモデル保存
             if iteration % SAVE_INTERVAL == 0:

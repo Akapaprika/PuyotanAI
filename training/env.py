@@ -44,10 +44,11 @@ class PuyotanVectorEnv:
         Returns (obs, rewards, terminated, truncated, info).
         """
         # C++ ネイティブでの一括実行（報酬計算とリセットも内包）
-        obs, rewards, terminated, chains = self.vm.step(
+        obs, rewards, terminated, chains, scores = self.vm.step(
             actions_p1, actions_p2, self._obs_buffer
         )
         self._info["chains"] = chains
+        self._info["scores"] = scores
         return obs, rewards, terminated, self._truncated, self._info
 
     def _get_obs_all(self):

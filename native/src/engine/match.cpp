@@ -27,6 +27,7 @@ void PuyotanPlayer::fallOjama(int num, uint32_t& seed) noexcept {
             }
             field.setRowMask(config::Board::kSpawnRow, Cell::Ojama, mask);
             Gravity::execute(field);
+            total_ojama_dropped += static_cast<uint16_t>(num);
             break;
         }
     }

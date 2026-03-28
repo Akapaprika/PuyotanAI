@@ -1,53 +1,191 @@
-#pragma once
-
 #include <puyotan/common/types.hpp>
+#include <external/nlohmann/json.hpp>
+#include <fstream>
+#include <string>
 
 namespace puyotan {
 
+using json = nlohmann::json;
+
 /**
- * @struct TurnStats
- * @brief Captures essential metrics from a single frame to compute RL rewards.
+ * @struct RewardContext
+ * @brief Comprehensive snapshots of both players' states to compute complex rewards.
  */
-struct TurnStats {
-    int delta_score = 0; ///< Points gained in this specific step
-    int chain_count = 0; ///< Current chain length (if any)
+struct RewardContext {
+    // Player 1 (subject)
+    int p1_delta_score = 0;
+    int p1_chain_count = 0;
+    int p1_puyo_count = 0;
+    int p1_connectivity_score = 0;
+    int p1_isolated_puyo_count = 0;
+    int p1_death_col_height = 0;
+    int p1_color_diversity = 0;
+    int p1_buried_puyo_count = 0;
+    int p1_ojama_dropped = 0;
+    int p1_pending_ojama = 0;
+    int p1_potential_chain = 0;   // Max chain by adding 1 puyo
+    
+    // Player 2 (opponent)
+    int p2_delta_score = 0;
+    int p2_chain_count = 0;
+    int p2_puyo_count = 0;
+    int p2_connectivity_score = 0;
+    int p2_isolated_puyo_count = 0;
+    int p2_death_col_height = 0;
+    int p2_color_diversity = 0;
+    int p2_buried_puyo_count = 0;
+    int p2_ojama_dropped = 0;
+    int p2_pending_ojama = 0;
+    int p2_potential_chain = 0;
+
+    MatchStatus status = MatchStatus::Playing;
 };
 
-/**
- * @class RewardCalculator
- * @brief Logic for calculating float-valued rewards for RL agents.
- */
+struct RewardWeights {
+    struct Match {
+        float win = 25.0f;
+        float loss = -25.0f;
+        float draw = -12.5f;
+    } match;
+
+    struct Turn {
+        float step_penalty = -0.01f;
+    } turn;
+
+    struct Performance {
+        float score_scale = 0.002f;
+        float chain_bonus_scale = 0.0f;
+    } performance;
+
+    struct Board {
+        float puyo_count_penalty = 0.0f;
+        float connectivity_bonus = 0.0f;
+        float isolated_puyo_penalty = 0.0f;
+        float death_col_height_penalty = 0.0f;
+        float color_diversity_reward = 0.0f;
+        float buried_puyo_penalty = 0.0f;
+        float ojama_drop_penalty = 0.0f;
+        float potential_chain_bonus_scale = 0.0f; // Reward for held chain potential
+    } board;
+
+    struct Opponent {
+        float field_pressure_reward = 0.0f;
+        float connectivity_penalty = 0.0f;
+        float ojama_diff_scale = 0.0f;
+        float initiative_bonus = 0.0f; // Bonus when S can fire in 1 and O cannot
+    } opponent;
+
+    void from_json(const json& j) {
+        if (j.contains("match")) {
+            auto m = j["match"];
+            if (m.contains("win")) match.win = m["win"];
+            if (m.contains("loss")) match.loss = m["loss"];
+            if (m.contains("draw")) match.draw = m["draw"];
+        }
+        if (j.contains("turn")) {
+            auto t = j["turn"];
+            if (t.contains("step_penalty")) turn.step_penalty = t["step_penalty"];
+        }
+        if (j.contains("performance")) {
+            auto p = j["performance"];
+            if (p.contains("score_scale")) performance.score_scale = p["score_scale"];
+            if (p.contains("chain_bonus_scale")) performance.chain_bonus_scale = p["chain_bonus_scale"];
+        }
+        if (j.contains("board")) {
+            auto b = j["board"];
+            if (b.contains("puyo_count_penalty")) board.puyo_count_penalty = b["puyo_count_penalty"];
+            if (b.contains("connectivity_bonus")) board.connectivity_bonus = b["connectivity_bonus"];
+            if (b.contains("isolated_puyo_penalty")) board.isolated_puyo_penalty = b["isolated_puyo_penalty"];
+            if (b.contains("death_col_height_penalty")) board.death_col_height_penalty = b["death_col_height_penalty"];
+            if (b.contains("color_diversity_reward")) board.color_diversity_reward = b["color_diversity_reward"];
+            if (b.contains("buried_puyo_penalty")) board.buried_puyo_penalty = b["buried_puyo_penalty"];
+            if (b.contains("ojama_drop_penalty")) board.ojama_drop_penalty = b["ojama_drop_penalty"];
+            if (b.contains("potential_chain_bonus_scale")) board.potential_chain_bonus_scale = b["potential_chain_bonus_scale"];
+        }
+        if (j.contains("opponent")) {
+            auto o = j["opponent"];
+            if (o.contains("field_pressure_reward")) opponent.field_pressure_reward = o["field_pressure_reward"];
+            if (o.contains("connectivity_penalty")) opponent.connectivity_penalty = o["connectivity_penalty"];
+            if (o.contains("ojama_diff_scale")) opponent.ojama_diff_scale = o["ojama_diff_scale"];
+            if (o.contains("initiative_bonus")) opponent.initiative_bonus = o["initiative_bonus"];
+        }
+    }
+};
+
 class RewardCalculator {
 public:
-    RewardCalculator() = default;
+    RewardWeights weights;
 
-    // Configurable parameters
-    float turn_penalty = -0.01f; ///< Penalty per frame to encourage faster wins
-    float ojama_scale = 500.0f;  ///< Scale factor for score-to-reward conversion
-    float win_reward = 25.0f;    ///< Flat bonus for winning
-    float loss_reward = -25.0f;  ///< Flat penalty for losing
-    float draw_reward = -12.5f;  ///< Flat penalty for a draw
+    void load_from_json(const std::string& path) {
+        std::ifstream f(path);
+        if (!f.is_open()) return;
+        try {
+            json j = json::parse(f);
+            weights.from_json(j);
+        } catch (...) {}
+    }
 
-    /**
-     * @brief Computes the reward for a specific player based on turn stats and game status.
-     * @param stats Metrics from the current step.
-     * @param cur_status Final result of the match.
-     * @param player_id The player index (0 or 1).
-     * @return Calculated float reward.
-     */
-    float calculate(const TurnStats& stats, MatchStatus cur_status, int player_id) const {
-        float r = turn_penalty + static_cast<float>(stats.delta_score) / ojama_scale;
-        
-        if (player_id == 0) {
-            if (cur_status == MatchStatus::WinP1) r += win_reward;
-            else if (cur_status == MatchStatus::WinP2) r += loss_reward;
-            else if (cur_status == MatchStatus::Draw) r += draw_reward;
-        } else {
-            if (cur_status == MatchStatus::WinP2) r += win_reward;
-            else if (cur_status == MatchStatus::WinP1) r += loss_reward;
-            else if (cur_status == MatchStatus::Draw) r += draw_reward;
+    void load_from_json_string(const std::string& json_str) {
+        try {
+            json j = json::parse(json_str);
+            weights.from_json(j);
+        } catch (...) {}
+    }
+
+    float calculate(const RewardContext& ctx, int player_id) const {
+        bool is_p1 = (player_id == 0);
+        const int s_score  = is_p1 ? ctx.p1_delta_score : ctx.p2_delta_score;
+        const int s_chain  = is_p1 ? ctx.p1_chain_count : ctx.p2_chain_count;
+        const int s_puyo   = is_p1 ? ctx.p1_puyo_count  : ctx.p2_puyo_count;
+        const int s_conn   = is_p1 ? ctx.p1_connectivity_score : ctx.p2_connectivity_score;
+        const int s_iso    = is_p1 ? ctx.p1_isolated_puyo_count : ctx.p2_isolated_puyo_count;
+        const int s_death  = is_p1 ? ctx.p1_death_col_height : ctx.p2_death_col_height;
+        const int s_div    = is_p1 ? ctx.p1_color_diversity : ctx.p2_color_diversity;
+        const int s_buried = is_p1 ? ctx.p1_buried_puyo_count : ctx.p2_buried_puyo_count;
+        const int s_oj_drop = is_p1 ? ctx.p1_ojama_dropped : ctx.p2_ojama_dropped;
+        const int s_potential = is_p1 ? ctx.p1_potential_chain : ctx.p2_potential_chain;
+
+        const int o_score  = is_p1 ? ctx.p2_delta_score : ctx.p1_delta_score;
+        const int o_puyo   = is_p1 ? ctx.p2_puyo_count  : ctx.p1_puyo_count;
+        const int o_conn   = is_p1 ? ctx.p2_connectivity_score : ctx.p1_connectivity_score;
+        const int o_potential = is_p1 ? ctx.p2_potential_chain : ctx.p1_potential_chain;
+
+        float r = 0.0f;
+
+        r += weights.turn.step_penalty;
+        if (ctx.status != MatchStatus::Playing) {
+            bool win = (is_p1 && ctx.status == MatchStatus::WinP1) || (!is_p1 && ctx.status == MatchStatus::WinP2);
+            bool loss = (is_p1 && ctx.status == MatchStatus::WinP2) || (!is_p1 && ctx.status == MatchStatus::WinP1);
+            if (win) r += weights.match.win;
+            else if (loss) r += weights.match.loss;
+            else r += weights.match.draw;
         }
+
+        r += static_cast<float>(s_score) * weights.performance.score_scale;
+        if (s_chain > 0) {
+            r += static_cast<float>(s_chain * s_chain) * weights.performance.chain_bonus_scale;
+        }
+
+        r += static_cast<float>(s_puyo)  * weights.board.puyo_count_penalty;
+        r += static_cast<float>(s_conn)  * weights.board.connectivity_bonus;
+        r += static_cast<float>(s_iso)   * weights.board.isolated_puyo_penalty;
+        r += static_cast<float>(s_death) * weights.board.death_col_height_penalty;
+        r += static_cast<float>(s_div)   * weights.board.color_diversity_reward;
+        r += static_cast<float>(s_buried) * weights.board.buried_puyo_penalty;
+        r += static_cast<float>(s_oj_drop) * weights.board.ojama_drop_penalty;
         
+        if (s_potential > 0) {
+            r += static_cast<float>(s_potential * s_potential) * weights.board.potential_chain_bonus_scale;
+        }
+
+        r += static_cast<float>(o_puyo) * weights.opponent.field_pressure_reward;
+        r += static_cast<float>(o_conn) * weights.opponent.connectivity_penalty;
+        r += static_cast<float>(s_score - o_score) * weights.opponent.ojama_diff_scale; 
+
+        if (s_potential > 0 && o_potential == 0) {
+            r += weights.opponent.initiative_bonus;
+        }
+
         return r;
     }
 };

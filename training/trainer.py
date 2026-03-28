@@ -62,6 +62,7 @@ class PPOTrainer:
         self.chains_max_buf = np.zeros(self.num_steps, dtype=np.int32)
         self.chain_sums     = np.zeros(self.num_steps, dtype=np.int32)
         self.chain_counts   = np.zeros(self.num_steps, dtype=np.int32)
+        self.score_sums     = np.zeros(self.num_steps, dtype=np.int32) # New: track raw scores
         self.max_per_env    = np.zeros(self.num_envs, dtype=np.int32)
 
         # ピン留め CPU テンソル（CUDA 環境のみ有効）
@@ -74,7 +75,7 @@ class PPOTrainer:
 
     def train(self, p2_policy=None):
         """1イテレーション分の学習を実行。"""
-        max_chain, avg_max_chain, mean_chain = self.collect_rollouts(p2_policy)
+        max_chain, avg_max_chain, mean_chain, avg_rew, avg_score = self.collect_rollouts(p2_policy)
         b_obs        = self.obs_buf.view(-1, 2, 5, 6, 14)
         b_actions    = self.actions_buf.view(-1)
         b_log_probs  = self.logprobs_buf.view(-1)
@@ -91,7 +92,9 @@ class PPOTrainer:
             "loss": total_loss / NUM_EPOCHS,
             "max_chain": max_chain,
             "avg_max_chain": avg_max_chain,
-            "mean_chain": mean_chain
+            "mean_chain": mean_chain,
+            "avg_reward": avg_rew,
+            "avg_score": avg_score
         }
 
     def collect_rollouts(self, p2_policy=None):
@@ -164,6 +167,13 @@ class PPOTrainer:
                 self.chain_counts[t] = 0
 
             obs_cpu = next_obs
+            
+            # scores (delta) の集計
+            scores = info.get("scores")
+            if scores is not None:
+                self.score_sums[t] = np.sum(scores)
+            else:
+                self.score_sums[t] = 0
 
         self.curr_obs = obs_cpu
  
@@ -173,6 +183,9 @@ class PPOTrainer:
         total_chain_sum = np.sum(self.chain_sums)
         total_chain_count = np.sum(self.chain_counts)
         mean_chain = float(total_chain_sum / total_chain_count) if total_chain_count > 0 else 0.0
+ 
+        avg_reward = float(np.mean(rewards_np))
+        avg_score = float(np.sum(self.score_sums)) / (num_steps * num_envs)
  
         # ロールアウトデータを一括で GPU に転送
         self.actions_buf.copy_(from_numpy(actions_np), non_blocking=True)
@@ -195,7 +208,7 @@ class PPOTrainer:
 
         self.advantages_buf.copy_(from_numpy(advantages_cpu), non_blocking=True)
         self.returns_buf.copy_(self.advantages_buf + self.values_buf)
-        return max_chain, avg_max_chain, mean_chain
+        return max_chain, avg_max_chain, mean_chain, avg_reward, avg_score
 
     def ppo_update(self, b_obs, b_actions, b_log_probs, b_advantages, b_returns, b_values):
         n = b_obs.shape[0]
