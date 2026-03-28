@@ -52,6 +52,18 @@ public:
     int32_t getFrame() const noexcept { return frame_; }
     MatchStatus getStatus() const noexcept { return status_; }
 
+    /**
+     * Returns a bitmask of player IDs that need a human PUT decision.
+     * Bit 0 = Player 0, Bit 1 = Player 1.
+     *   0  -> No decisions needed; all players are processing auto-frames (chain, ojama, etc.)
+     *   1  -> Player 0 needs to confirm their PUT
+     *   2  -> Player 1 needs to confirm their PUT
+     *   3  -> Both players need to confirm their PUT
+     * The engine differentiates genuine decision points (ActionType::NONE) from 
+     * automatic internal frames (CHAIN, CHAIN_FALL, OJAMA), which the engine drives itself.
+     */
+    int getDecisionMask() const noexcept;
+
      /**
      * Runs num_games full matches in pure C++ using the benchmark move pattern
      * for both players. Returns total frames executed.
