@@ -89,7 +89,6 @@ void PuyotanMatch::stepNextFrame() noexcept {
                 case ActionType::PASS:
                     break;
                 case ActionType::PUT: {
-                    p.last_chain_count = 0;
                     const PuyoPiece tumo = tsumo_.get(p.active_next_pos);
                     const int r = static_cast<int>(action.rotation);
                     const int x_axis = action.x;
@@ -118,7 +117,6 @@ void PuyotanMatch::stepNextFrame() noexcept {
                     pending_erasure_[id] = Chain::findGroups(p.field, dirty_colors);
                     
                     if (pending_erasure_[id].num_erased > 0) {
-                        p.chain_count = 0;
                         p.next_action = {Action{ActionType::CHAIN}, 1}; 
                     }
                     break;
@@ -152,6 +150,7 @@ void PuyotanMatch::stepNextFrame() noexcept {
                         p.next_action = {Action{ActionType::CHAIN_FALL}, 0};
                     } else {
                         p.last_chain_count = p.chain_count;
+                        p.chain_count = 0; // Clear the active chain count now that it has finished
                         activateOjama(id);
                     }
                     break;
@@ -163,6 +162,7 @@ void PuyotanMatch::stepNextFrame() noexcept {
                         p.next_action = {Action{ActionType::CHAIN}, 1};
                     } else {
                         p.last_chain_count = p.chain_count; // Store final result
+                        p.chain_count = 0; // Clear the active chain count now that it has finished
                         activateOjama(id);
                     }
                     break;
