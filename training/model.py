@@ -1,61 +1,146 @@
 """
-Actor-Critic ネットワーク定義モジュール（単一責務）
+Actor-Critic network definitions for PuyotanAI.
 
-設計方針:
-  - 入力: 観測 [batch, 2, 5, 6, 13] の uint8 → float32 に変換してから使用
-  - 出力: Policy (行動確率) + Value (状態価値)
-  - アーキテクチャ: 畳み込み + 全結合 (Actor-Critic 共有バックボーン)
+Architecture:
+  - Input : observation [batch, 2, 5, 6, 14] uint8, cast to float32 internally
+  - Output: policy logits + state value (Actor-Critic shared backbone)
+  - Backbone is selected via ModelArch enum; callers never depend on internals.
 """
 import torch
 import torch.nn as nn
+from enum import Enum
 
-# 行動数: 22 種（0-5: Up, 6-10: Right, 11-16: Down, 17-21: Left）
-NUM_ACTIONS = 22
+# ---------------------------------------------------------------------------
+# Constants - observation shape
+# ---------------------------------------------------------------------------
+NUM_ACTIONS  = 22   # 0-5: Up, 6-10: Right, 11-16: Down, 17-21: Left
 
-# 入力次元: 2プレイヤー × 5色 × 6列 × 13行 = 780
-INPUT_DIM = 2 * 5 * 6 * 13
+OBS_PLAYERS  = 2    # self + opponent
+OBS_COLORS   = 5    # channels: ojama(0) + color1-4
+OBS_COLS     = 6    # board width
+OBS_ROWS     = 14   # board height (12 visible + 2 meta rows)
+
+# CNN treats the observation as a multi-channel image: (players * colors) channels
+CNN_IN_CHANNELS = OBS_PLAYERS * OBS_COLORS  # 10
 
 
-class PuyotanPolicy(nn.Module):
+# ---------------------------------------------------------------------------
+# ModelArch - selects which backbone is instantiated
+# ---------------------------------------------------------------------------
+class ModelArch(Enum):
     """
-    Puyo Puyo 用 Actor-Critic ネットワーク。
-    観測（盤面状態）から行動確率と状態価値を出力する。
+    Backbone architecture selector.
+    Pass this to PuyotanPolicy; callers (Trainer, Orchestrator) remain unaware
+    of internal implementation details.
     """
+    MLP = "mlp"
+    CNN = "cnn"
 
-    def __init__(self, hidden_dim: int = 256):
+
+# ---------------------------------------------------------------------------
+# Backbones (private - not part of the public API)
+# ---------------------------------------------------------------------------
+class _MLPBackbone(nn.Module):
+    """
+    Flatten -> fully connected backbone.
+    Highest SPS on CPU due to simple operations.
+    Spatial relationships between cells are NOT explicitly encoded.
+    """
+    def __init__(self, hidden_dim: int):
         super().__init__()
-
-        # 共有バックボーン (High-Speed MLP for CPU)
-        self.network = nn.Sequential(
+        in_features = OBS_PLAYERS * OBS_COLORS * OBS_COLS * OBS_ROWS  # 840
+        self.net = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(2 * 5 * 6 * 14, hidden_dim),
+            nn.Linear(in_features, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
         )
+        self.out_dim = hidden_dim
 
-        # Actor ヘッド（行動確率）
-        self.actor = nn.Linear(hidden_dim, NUM_ACTIONS)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: [batch, OBS_PLAYERS, OBS_COLORS, OBS_COLS, OBS_ROWS]
+        return self.net(x)
 
-        # Critic ヘッド（状態価値）
-        self.critic = nn.Linear(hidden_dim, 1)
+
+class _CNNBackbone(nn.Module):
+    """
+    Convolutional backbone.
+    Treats the observation as (CNN_IN_CHANNELS, OBS_ROWS, OBS_COLS) image so
+    that the same spatial pattern (e.g., a chain shape) is recognized regardless
+    of its position on the board.
+    """
+    def __init__(self, hidden_dim: int):
+        super().__init__()
+        self.conv = nn.Sequential(
+            # Layer 1: detect local adjacency patterns (3x3 receptive field)
+            nn.Conv2d(CNN_IN_CHANNELS, 32, kernel_size=3, padding=1),
+            nn.ReLU(),
+            # Layer 2: detect larger chain shapes
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.ReLU(),
+        )
+        # Feature map size after conv: 64 * OBS_ROWS * OBS_COLS
+        conv_out_dim = 64 * OBS_ROWS * OBS_COLS  # 64 * 14 * 6 = 5376
+        self.fc = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(conv_out_dim, hidden_dim),
+            nn.ReLU(),
+        )
+        self.out_dim = hidden_dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Reshape [batch, 2, 5, 6, 14] -> [batch, 10, 14, 6] for Conv2d
+        b = x.shape[0]
+        x = x.reshape(b, CNN_IN_CHANNELS, OBS_ROWS, OBS_COLS)
+        return self.fc(self.conv(x))
+
+
+# ---------------------------------------------------------------------------
+# PuyotanPolicy - public interface (the only class callers should reference)
+# ---------------------------------------------------------------------------
+class PuyotanPolicy(nn.Module):
+    """
+    Actor-Critic policy network.
+
+    Acts as a facade: Trainer and Orchestrator call only get_action_and_value()
+    and are fully decoupled from the chosen backbone implementation.
+
+    Args:
+        arch:       ModelArch.MLP (default) or ModelArch.CNN
+        hidden_dim: feature dimension for the backbone output and heads
+    """
+    def __init__(self, arch: ModelArch = ModelArch.MLP, hidden_dim: int = 256):
+        super().__init__()
+        self.arch = arch
+
+        if arch == ModelArch.MLP:
+            self.backbone = _MLPBackbone(hidden_dim)
+        elif arch == ModelArch.CNN:
+            self.backbone = _CNNBackbone(hidden_dim)
+        else:
+            raise ValueError(f"Unknown ModelArch: {arch}")
+
+        # Actor and Critic heads are identical regardless of backbone
+        self.actor  = nn.Linear(self.backbone.out_dim, NUM_ACTIONS)
+        self.critic = nn.Linear(self.backbone.out_dim, 1)
 
     def forward(self, obs: torch.Tensor):
         """
         Args:
-            obs: [batch, 2, 5, 6, 14] の uint8/float32 テンソル
+            obs: [batch, 2, 5, 6, 14] float32 tensor
         Returns:
-            (行動logits, 状態価値)
+            logits: [batch, NUM_ACTIONS]
+            value:  [batch]
         """
-        x = obs.float()
-        features = self.network(x)
-        logits = self.actor(features)
-        value = self.critic(features).squeeze(-1)  # [batch] scalar per sample
-
-        return logits, value
+        features = self.backbone(obs.float())
+        return self.actor(features), self.critic(features).squeeze(-1)
 
     def get_action_and_value(self, obs: torch.Tensor, action=None):
-        """PPO 学習ループで使用する。行動サンプリングとログ確率を返す。"""
+        """
+        Used by PPOTrainer during rollout and PPO update.
+        Returns sampled (or provided) action, log-prob, entropy, and value.
+        """
         logits, value = self(obs)
         dist = torch.distributions.Categorical(logits=logits)
         if action is None:
