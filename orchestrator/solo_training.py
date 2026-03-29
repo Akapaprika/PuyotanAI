@@ -35,8 +35,6 @@ SAVE_INTERVAL  = 50
 
 MODELS_DIR  = BASE_DIR / "models"
 TIMESTAMP   = time.strftime("%Y%m%d_%H%M%S")
-LATEST_PT   = MODELS_DIR / "puyotan_solo_latest.pt"
-SESSION_PT  = MODELS_DIR / f"puyotan_solo_{TIMESTAMP}.pt"
 
 
 def solo_training_loop(
@@ -47,7 +45,12 @@ def solo_training_loop(
     print(f"  reward config : {config_name}")
     print(f"  backbone      : {arch.value.upper()}")
 
-    MODELS_DIR.mkdir(exist_ok=True)
+    # Define architecture-specific directories and paths
+    arch_dir   = MODELS_DIR / arch.value
+    latest_pt  = arch_dir / "puyotan_solo_latest.pt"
+    session_pt = arch_dir / f"puyotan_solo_{TIMESTAMP}.pt"
+
+    arch_dir.mkdir(parents=True, exist_ok=True)
 
     env = PuyotanVectorEnv(num_envs=NUM_ENVS)
 
@@ -58,9 +61,9 @@ def solo_training_loop(
     trainer = PPOTrainer(env, num_rollout_steps=STEPS_PER_ITER, arch=arch)
 
     # Resume from latest checkpoint if available
-    if LATEST_PT.exists():
-        print(f"Resuming from checkpoint: {LATEST_PT}")
-        trainer.load(str(LATEST_PT))
+    if latest_pt.exists():
+        print(f"Resuming from checkpoint: {latest_pt}")
+        trainer.load(str(latest_pt))
 
     # ---------------------------------------------------------------------------
     # Training loop
@@ -98,13 +101,13 @@ def solo_training_loop(
             acc_reward = acc_score = 0.0
 
         if iteration % SAVE_INTERVAL == 0:
-            trainer.save(str(SESSION_PT))
-            trainer.save(str(LATEST_PT))
-            print(f"Saved: {SESSION_PT.name}  (and {LATEST_PT.name})")
+            trainer.save(str(session_pt))
+            trainer.save(str(latest_pt))
+            print(f"Saved: {session_pt.name}  (and {latest_pt.name})")
 
             model_raw    = trainer.model._orig_mod if hasattr(trainer.model, "_orig_mod") else trainer.model
-            onnx_session = SESSION_PT.with_suffix(".onnx")
-            onnx_latest  = LATEST_PT.with_suffix(".onnx")
+            onnx_session = session_pt.with_suffix(".onnx")
+            onnx_latest  = latest_pt.with_suffix(".onnx")
             export_to_onnx(model_raw, str(onnx_session))
             shutil.copy2(onnx_session, onnx_latest)
             print(f"Exported ONNX: {onnx_session.name}  (and {onnx_latest.name})")

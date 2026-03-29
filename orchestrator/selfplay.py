@@ -41,10 +41,6 @@ SNAPSHOT_INTERVAL = 50   # How often the frozen opponent policy is refreshed
 
 MODELS_DIR   = BASE_DIR / "models"
 TIMESTAMP    = time.strftime("%Y%m%d_%H%M%S")
-LATEST_PT    = MODELS_DIR / "puyotan_latest.pt"
-LATEST_ONNX  = MODELS_DIR / "puyotan_latest.onnx"
-SESSION_PT   = MODELS_DIR / f"puyotan_selfplay_{TIMESTAMP}.pt"
-SESSION_ONNX = MODELS_DIR / f"puyotan_selfplay_{TIMESTAMP}.onnx"
 
 
 class _RandomPolicy:
@@ -56,12 +52,12 @@ class _RandomPolicy:
         return np.random.randint(0, 22, size=num_envs).astype(np.int32)
 
 
-def _export_snapshot(trainer: PPOTrainer, pt_path: Path, onnx_path: Path) -> None:
+def _export_snapshot(trainer: PPOTrainer, pt_path: Path, onnx_path: Path, latest_pt: Path, latest_onnx: Path) -> None:
     trainer.save(str(pt_path))
     model_raw = trainer.model._orig_mod if hasattr(trainer.model, "_orig_mod") else trainer.model
     export_to_onnx(model_raw, str(onnx_path))
-    shutil.copy2(onnx_path, LATEST_ONNX)
-    shutil.copy2(pt_path,   LATEST_PT)
+    shutil.copy2(onnx_path, latest_onnx)
+    shutil.copy2(pt_path,   latest_pt)
 
 
 def _load_opponent_policy(onnx_path: Path, fallback) -> object:
@@ -87,7 +83,14 @@ def selfplay_loop(
     print(f"  reward config : {config_name}")
     print(f"  backbone      : {arch.value.upper()}")
 
-    MODELS_DIR.mkdir(exist_ok=True)
+    # Define architecture-specific directories and paths
+    arch_dir     = MODELS_DIR / arch.value
+    latest_pt    = arch_dir / "puyotan_latest.pt"
+    latest_onnx  = arch_dir / "puyotan_latest.onnx"
+    session_pt   = arch_dir / f"puyotan_selfplay_{TIMESTAMP}.pt"
+    session_onnx = arch_dir / f"puyotan_selfplay_{TIMESTAMP}.onnx"
+
+    arch_dir.mkdir(parents=True, exist_ok=True)
 
     try:
         env = PuyotanVectorEnv(num_envs=NUM_ENVS)
@@ -98,9 +101,9 @@ def selfplay_loop(
 
         trainer = PPOTrainer(env, num_rollout_steps=STEPS_PER_ITER, arch=arch)
 
-        if LATEST_PT.exists():
-            print(f"Resuming from checkpoint: {LATEST_PT}")
-            trainer.load(str(LATEST_PT))
+        if latest_pt.exists():
+            print(f"Resuming from checkpoint: {latest_pt}")
+            trainer.load(str(latest_pt))
 
         print(f"Config: envs={NUM_ENVS}  steps={STEPS_PER_ITER}  log_every={LOG_INTERVAL}")
 
@@ -119,8 +122,8 @@ def selfplay_loop(
 
             # Refresh frozen opponent snapshot periodically
             if iteration % SNAPSHOT_INTERVAL == 1 or past_policy is None:
-                _export_snapshot(trainer, SESSION_PT, SESSION_ONNX)
-                past_policy = _load_opponent_policy(LATEST_ONNX, random_policy)
+                _export_snapshot(trainer, session_pt, session_onnx, latest_pt, latest_onnx)
+                past_policy = _load_opponent_policy(latest_onnx, random_policy)
 
             t0      = time.perf_counter()
             metrics = trainer.train(p2_policy=past_policy)
@@ -148,8 +151,8 @@ def selfplay_loop(
                 acc_max_chain = 0
 
             if iteration % SAVE_INTERVAL == 0:
-                _export_snapshot(trainer, SESSION_PT, SESSION_ONNX)
-                print(f"Saved: {SESSION_PT.name}  ONNX: {SESSION_ONNX.name}")
+                _export_snapshot(trainer, session_pt, session_onnx, latest_pt, latest_onnx)
+                print(f"Saved: {session_pt.name}  ONNX: {session_onnx.name}")
 
     except Exception:
         print("CRITICAL ERROR in selfplay_loop:")
