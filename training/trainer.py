@@ -16,7 +16,7 @@ from training.model import PuyotanPolicy
 GAMMA           = 0.99
 LAMBDA          = 0.95
 CLIP_EPS        = 0.2
-ENTROPY_COEF    = 0.01
+ENTROPY_COEF    = 0.05
 VALUE_LOSS_COEF = 0.5
 MAX_GRAD_NORM   = 0.5
 NUM_EPOCHS      = 2
@@ -149,10 +149,8 @@ class PPOTrainer:
             if chains is not None:
                 chains_max_buf[t] = int(np.max(chains))
                 
-                # Update max_per_env for each environment
-                for i in range(self.num_envs):
-                    if chains[i] > self.max_per_env[i]:
-                        self.max_per_env[i] = chains[i]
+                # Update max_per_env for each environment (vectorized)
+                self.max_per_env = np.maximum(self.max_per_env, chains)
 
                 nonzero_chains = chains[chains > 0]
                 if len(nonzero_chains) > 0:

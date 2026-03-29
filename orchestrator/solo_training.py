@@ -4,6 +4,7 @@ import torch
 import numpy as np
 from pathlib import Path
 import sys
+import shutil
 
 # プロジェクトルートをパスに追加
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,10 +21,14 @@ TOTAL_ITERS = 500  # ソロ用にとりあえず短めに設定
 LOG_INTERVAL = 10
 SAVE_INTERVAL = 50
 MODELS_DIR = BASE_DIR / "models"
-CHECKPOINT_PT = MODELS_DIR / "puyotan_solo.pt"
+TIMESTAMP = time.strftime("%Y%m%d_%H%M%S")
+# 固定名 (レジューム用)
+LATEST_PT = MODELS_DIR / "puyotan_solo_latest.pt"
+# セッション固有名 (記録用)
+SESSION_PT = MODELS_DIR / f"puyotan_solo_{TIMESTAMP}.pt"
 
 def solo_training_loop():
-    print("=== PuyotanAI Solo Training Starting (Score Attack Mode) ===")
+    print(f"=== PuyotanAI Solo Training Starting (Session: {TIMESTAMP}) ===")
     MODELS_DIR.mkdir(exist_ok=True)
     
     env = PuyotanVectorEnv(num_envs=NUM_ENVS)
@@ -34,9 +39,13 @@ def solo_training_loop():
     
     trainer = PPOTrainer(env, num_rollout_steps=STEPS_PER_ITER)
     
-    if CHECKPOINT_PT.exists():
-        print(f"Loading existing solo checkpoint: {CHECKPOINT_PT}")
-        trainer.load(str(CHECKPOINT_PT))
+    if LATEST_PT.exists():
+        print(f"Loading existing solo checkpoint: {LATEST_PT}")
+        trainer.load(str(LATEST_PT))
+    elif (MODELS_DIR / "puyotan_solo.pt").exists():
+        # 移行用：古い名前があればロード
+        print(f"Loading legacy checkpoint: puyotan_solo.pt")
+        trainer.load(str(MODELS_DIR / "puyotan_solo.pt"))
     
     # 集計用
     acc_loss = 0.0
@@ -87,11 +96,21 @@ def solo_training_loop():
             acc_reward, acc_score = 0, 0
         
         if iteration % SAVE_INTERVAL == 0:
-            trainer.save(str(CHECKPOINT_PT))
-            print(f"Saved checkpoint: {CHECKPOINT_PT}")
+            trainer.save(str(SESSION_PT))
+            trainer.save(str(LATEST_PT))
+            print(f"Saved checkpoint: {SESSION_PT} (and {LATEST_PT.name})")
+            
             # Export ONNX as well for immediate GUI usage
             model_for_export = trainer.model._orig_mod if hasattr(trainer.model, '_orig_mod') else trainer.model
-            export_to_onnx(model_for_export, str(CHECKPOINT_PT.with_suffix(".onnx")))
+            
+            onnx_session = SESSION_PT.with_suffix(".onnx")
+            onnx_latest = LATEST_PT.with_suffix(".onnx")
+            
+            export_to_onnx(model_for_export, str(onnx_session))
+            
+            # Copy to latest for GUI reference
+            shutil.copy2(onnx_session, onnx_latest)
+            print(f"Exported ONNX: {onnx_session} (and {onnx_latest.name})")
 
 if __name__ == "__main__":
     solo_training_loop()

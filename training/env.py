@@ -53,3 +53,8 @@ class PuyotanVectorEnv:
 
     def _get_obs_all(self):
         return self.vm.getObservationsAll(self._obs_buffer)
+
+    @property
+    def reward_calc(self):
+        """報酬計算オブジェクトへのショートカット。"""
+        return self.vm.reward_calc

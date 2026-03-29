@@ -1,11 +1,3 @@
-"""
-gui/views/player_panel.py
-
-A self-contained card widget representing one player's field + controls.
-Emits the action_requested(player_id, action_name) signal when a button
-is clicked, allowing the MainWindow to route it to the controller without
-any direct coupling between the panel and the rest of the system.
-"""
 from PyQt6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QSizePolicy
@@ -18,8 +10,8 @@ from .board_widget import BoardWidget, BoardSnapshot
 class PlayerPanel(QFrame):
     """
     Visual card for one player.
-    Shows board + action buttons. Buttons are hidden when the player is non-human
-    to prevent accidental input reaching the ViewModel.
+    Shows board + action buttons. Buttons are invisible (but space-occupying)
+    when the player is non-human to keep the layout symmetrical.
     """
     action_requested = pyqtSignal(int, str)
 
@@ -35,7 +27,7 @@ class PlayerPanel(QFrame):
         self._board = BoardWidget()
         root.addWidget(self._board, stretch=1)
 
-        self._controls_widget, self._controls_layout = self._build_controls()
+        self._buttons, self._controls_widget, self._controls_layout = self._build_controls()
         root.addWidget(self._controls_widget)
 
     # ------------------------------------------------------------------
@@ -45,8 +37,11 @@ class PlayerPanel(QFrame):
         self._board.update_snapshot(snapshot)
 
     def set_human_controlled(self, is_human: bool) -> None:
-        """Show/hide action buttons based on whether this player is human."""
-        self._controls_widget.setVisible(is_human)
+        """Show or hide each button individually while keeping the container
+        always present (and thus the layout height/width stable)."""
+        for btn in self._buttons:
+            btn.setVisible(is_human)
+            btn.setEnabled(is_human)
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -57,16 +52,20 @@ class PlayerPanel(QFrame):
         grid.setSpacing(6)
         grid.setContentsMargins(0, 0, 0, 0)
 
-        buttons = [
+        # Fix the container height so it never collapses even when buttons
+        # are hidden — measured against 2 rows of 32px buttons + spacing.
+        container.setMinimumHeight(80)
+        container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+        specs = [
             ("←",  "left",  0, 0),
             ("↓",  "drop",  0, 1),
             ("→",  "right", 0, 2),
             ("↺",  "rot_l", 1, 0),
             ("↻",  "rot_r", 1, 2),
         ]
-        for spec in buttons:
-            label, action = spec[0], spec[1]
-            row, col = spec[2], spec[3]
+        buttons = []
+        for label, action, row, col in specs:
             btn = QPushButton(label)
             btn.setObjectName("ActionBtn")
             btn.setMinimumWidth(40)
@@ -75,6 +74,7 @@ class PlayerPanel(QFrame):
             btn.setToolTip(action)
             btn.clicked.connect(lambda _, a=action: self.action_requested.emit(self.player_id, a))
             grid.addWidget(btn, row, col)
+            buttons.append(btn)
 
-        return container, grid
+        return buttons, container, grid
 

@@ -4,6 +4,7 @@ import torch
 import numpy as np
 from pathlib import Path
 import sys
+import shutil
 import traceback
 
 # プロジェクトルートをパスに追加
@@ -22,8 +23,13 @@ TOTAL_ITERS = 1000
 LOG_INTERVAL = 10                     # ログ出力間隔（イテレーション数）
 SAVE_INTERVAL = 10                    # モデル保存間隔
 MODELS_DIR = BASE_DIR / "models"
-CHECKPOINT_PT = MODELS_DIR / "puyotan_latest.pt"
-CHECKPOINT_ONNX = MODELS_DIR / "puyotan_latest.onnx"
+TIMESTAMP = time.strftime("%Y%m%d_%H%M%S")
+# 最新版 (学習継続用)
+LATEST_PT = MODELS_DIR / "puyotan_latest.pt"
+LATEST_ONNX = MODELS_DIR / "puyotan_latest.onnx"
+# セッション固有名 (記録用)
+SESSION_PT = MODELS_DIR / f"puyotan_selfplay_{TIMESTAMP}.pt"
+SESSION_ONNX = MODELS_DIR / f"puyotan_selfplay_{TIMESTAMP}.onnx"
 
 class RandomPolicy:
     def __init__(self):
@@ -45,9 +51,13 @@ def selfplay_loop():
         
         trainer = PPOTrainer(env, num_rollout_steps=STEPS_PER_ITER)
         
-        if CHECKPOINT_PT.exists():
-            print(f"Loading existing checkpoint: {CHECKPOINT_PT}")
-            trainer.load(str(CHECKPOINT_PT))
+        if LATEST_PT.exists():
+            print(f"Loading existing checkpoint: {LATEST_PT}")
+            trainer.load(str(LATEST_PT))
+        elif (MODELS_DIR / "puyotan_latest.pt").exists():
+            # 移行用
+            print(f"Loading legacy checkpoint: puyotan_latest.pt")
+            trainer.load(str(MODELS_DIR / "puyotan_latest.pt"))
         
         print(f"Training Config: envs={NUM_ENVS}, steps={STEPS_PER_ITER}, "
               f"log_interval={LOG_INTERVAL}")
@@ -70,17 +80,18 @@ def selfplay_loop():
             
             # Self-Play: Always play against a previous version of itself
             if iteration % 50 == 1 or past_policy is None:
-                trainer.save(str(CHECKPOINT_PT))
+                trainer.save(str(SESSION_PT))
+                trainer.save(str(LATEST_PT))
                 model_for_export = trainer.model._orig_mod if hasattr(trainer.model, '_orig_mod') else trainer.model
-                export_to_onnx(model_for_export, str(CHECKPOINT_ONNX))
+                export_to_onnx(model_for_export, str(SESSION_ONNX))
+                shutil.copy2(SESSION_ONNX, LATEST_ONNX)
                 
-                import shutil
                 import tempfile
                 try:
                     temp_onnx = Path(tempfile.gettempdir()) / "puyotan_snapshot.onnx"
-                    shutil.copy2(CHECKPOINT_ONNX, temp_onnx)
+                    shutil.copy2(LATEST_ONNX, temp_onnx)
                     
-                    data_path = Path(CHECKPOINT_ONNX).with_suffix(".onnx.data")
+                    data_path = Path(LATEST_ONNX).with_suffix(".onnx.data")
                     if data_path.exists():
                         shutil.copy2(data_path, temp_onnx.with_suffix(".onnx.data"))
                         
@@ -137,10 +148,12 @@ def selfplay_loop():
             
             # 定期的なモデル保存
             if iteration % SAVE_INTERVAL == 0:
-                trainer.save(str(CHECKPOINT_PT))
+                trainer.save(str(SESSION_PT))
+                trainer.save(str(LATEST_PT))
                 # Export ONNX as well for immediate GUI usage
                 model_for_export = trainer.model._orig_mod if hasattr(trainer.model, '_orig_mod') else trainer.model
-                export_to_onnx(model_for_export, str(CHECKPOINT_ONNX))
+                export_to_onnx(model_for_export, str(SESSION_ONNX))
+                shutil.copy2(SESSION_ONNX, LATEST_ONNX)
             
     except Exception:
         print("CRITICAL ERROR in selfplay_loop:")

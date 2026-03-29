@@ -37,9 +37,7 @@ int PuyotanMatch::getDecisionMask() const noexcept {
     if (status_ != MatchStatus::Playing) return 0;
     int mask = 0;
     for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
-        if (players_[id].current_action.action.type == ActionType::None) {
-            mask |= (1 << id);
-        }
+        mask |= (static_cast<int>(players_[id].current_action.action.type == ActionType::None) << id);
     }
     return mask;
 }
