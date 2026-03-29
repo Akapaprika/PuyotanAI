@@ -46,13 +46,9 @@ def selfplay_loop(config_name="reward_match.json"):
     try:
         env = PuyotanVectorEnv(num_envs=NUM_ENVS)
         
-        # 中央管理された報酬設定をロード (Python側で読み込んで文字列として渡すことで日本語パス問題を回避)
+        # 中央管理された報酬設定をロード (C++ 側でファイル読み込み完結)
         reward_config_path = BASE_DIR / "native" / "resources" / config_name
-        if reward_config_path.exists():
-            with open(reward_config_path, "r", encoding="utf-8") as f:
-                env.reward_calc.load_from_json_string(f.read())
-        else:
-            print(f"[WARNING] Reward config not found: {reward_config_path}")
+        env.reward_calc.load_from_json(str(reward_config_path))
         
         trainer = PPOTrainer(env, num_rollout_steps=STEPS_PER_ITER)
         

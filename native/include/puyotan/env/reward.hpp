@@ -4,6 +4,8 @@
 #include <external/nlohmann/json.hpp>
 #include <fstream>
 #include <string>
+#include <filesystem>
+#include <iostream>
 
 namespace puyotan {
 
@@ -120,18 +122,21 @@ class RewardCalculator {
 public:
     RewardWeights weights;
 
-    void load_from_json(const std::string& path) {
-        std::ifstream f(path);
-        if (!f.is_open()) {
-            printf("[WARNING] Failed to open reward config file: %s\n", path.c_str());
-            return;
-        }
+    void load_from_json(const std::string& path_str) {
         try {
+            // std::filesystem::path は Windows 上で UTF-8 文字列から適切な Wide String パスを生成する
+            std::filesystem::path p = std::filesystem::u8path(path_str);
+            std::ifstream f(p);
+            
+            if (!f.is_open()) {
+                std::cerr << "[WARNING] Failed to open reward config file: " << path_str << std::endl;
+                return;
+            }
             json j = json::parse(f);
             weights.from_json(j);
-            printf("[RewardCalculator] Loaded reward config from: %s\n", path.c_str());
+            std::cout << "[RewardCalculator] Loaded reward config from: " << path_str << std::endl;
         } catch (const std::exception& e) {
-            printf("[ERROR] Failed to parse reward JSON: %s\n", e.what());
+            std::cerr << "[ERROR] Failed to load/parse reward JSON: " << e.what() << " (Path: " << path_str << ")" << std::endl;
         }
     }
 
