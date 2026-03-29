@@ -38,17 +38,23 @@ class PuyotanVectorEnv:
         self.vm.reset(-1)
         return self._get_obs_all(), {}
 
-    def step(self, actions_p1, actions_p2=None):
+    def step(self, actions_p1, actions_p2):
         """
-        Takes P1 actions (np.int32 ndarray) and optionally P2 actions.
+        Takes P1 and P2 actions (np.int32 ndarray).
         Returns (obs, rewards, terminated, truncated, info).
         """
         # C++ ネイティブでの一括実行（報酬計算とリセットも内包）
-        obs, rewards, terminated, chains = self.vm.step(
+        obs, rewards, terminated, chains, scores = self.vm.step(
             actions_p1, actions_p2, self._obs_buffer
         )
         self._info["chains"] = chains
+        self._info["scores"] = scores
         return obs, rewards, terminated, self._truncated, self._info
 
     def _get_obs_all(self):
         return self.vm.getObservationsAll(self._obs_buffer)
+
+    @property
+    def reward_calc(self):
+        """報酬計算オブジェクトへのショートカット。"""
+        return self.vm.reward_calc

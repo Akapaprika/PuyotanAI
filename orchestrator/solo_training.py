@@ -4,6 +4,7 @@ import torch
 import numpy as np
 from pathlib import Path
 import sys
+import shutil
 
 # プロジェクトルートをパスに追加
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -11,33 +12,49 @@ sys.path.append(str(BASE_DIR))
 
 from training.env import PuyotanVectorEnv
 from training.trainer import PPOTrainer
+from training.export import export_to_onnx
 
 # 設定
 NUM_ENVS = 256
-STEPS_PER_ITER = 192
+STEPS_PER_ITER = 128
 TOTAL_ITERS = 500  # ソロ用にとりあえず短めに設定
 LOG_INTERVAL = 10
 SAVE_INTERVAL = 50
 MODELS_DIR = BASE_DIR / "models"
-CHECKPOINT_PT = MODELS_DIR / "puyotan_solo.pt"
+TIMESTAMP = time.strftime("%Y%m%d_%H%M%S")
+# 固定名 (レジューム用)
+LATEST_PT = MODELS_DIR / "puyotan_solo_latest.pt"
+# セッション固有名 (記録用)
+SESSION_PT = MODELS_DIR / f"puyotan_solo_{TIMESTAMP}.pt"
 
-def solo_training_loop():
-    print("=== PuyotanAI Solo Training Starting (Score Attack Mode) ===")
+def solo_training_loop(config_name="reward_solo.json"):
+    print(f"=== PuyotanAI Solo Training Starting (Session: {TIMESTAMP}) ===")
+    print(f"Using reward config: {config_name}")
     MODELS_DIR.mkdir(exist_ok=True)
     
     env = PuyotanVectorEnv(num_envs=NUM_ENVS)
+    
+    # 中央管理された報酬設定をロード (C++ 側でファイル読み込み完結)
+    reward_config_path = BASE_DIR / "native" / "resources" / config_name
+    env.reward_calc.load_from_json(str(reward_config_path))
+    
     trainer = PPOTrainer(env, num_rollout_steps=STEPS_PER_ITER)
     
-    if CHECKPOINT_PT.exists():
-        print(f"Loading existing solo checkpoint: {CHECKPOINT_PT}")
-        trainer.load(str(CHECKPOINT_PT))
+    if LATEST_PT.exists():
+        print(f"Loading existing solo checkpoint: {LATEST_PT}")
+        trainer.load(str(LATEST_PT))
+    elif (MODELS_DIR / "puyotan_solo.pt").exists():
+        # 移行用：古い名前があればロード
+        print(f"Loading legacy checkpoint: puyotan_solo.pt")
+        trainer.load(str(MODELS_DIR / "puyotan_solo.pt"))
     
     # 集計用
     acc_loss = 0.0
-    acc_fps = 0.0
-    acc_mean_chain = 0.0
+    acc_sps = 0.0
     acc_avg_max_chain = 0.0
     acc_max_chain = 0.0
+    acc_reward = 0.0
+    acc_score = 0.0
     
     for i in range(TOTAL_ITERS):
         start_time = time.perf_counter()
@@ -47,32 +64,50 @@ def solo_training_loop():
         metrics = trainer.train(p2_policy=None)
         
         elapsed = time.perf_counter() - start_time
-        fps = (NUM_ENVS * STEPS_PER_ITER) / elapsed
+        sps = (NUM_ENVS * STEPS_PER_ITER) / elapsed
         
         # 集計
         acc_loss += metrics['loss']
-        acc_fps += fps
-        acc_mean_chain += metrics['mean_chain']
+        acc_sps += sps
         acc_avg_max_chain += metrics['avg_max_chain']
+        acc_reward += metrics['avg_reward']
+        acc_score += metrics['avg_score']
         if metrics['max_chain'] > acc_max_chain:
             acc_max_chain = metrics['max_chain']
         
         if iteration % LOG_INTERVAL == 0 or iteration == 1:
-            avg_loss = acc_loss / min(iteration, LOG_INTERVAL)
-            avg_fps = acc_fps / min(iteration, LOG_INTERVAL)
-            avg_chain = acc_mean_chain / min(iteration, LOG_INTERVAL)
-            avg_max = acc_avg_max_chain / min(iteration, LOG_INTERVAL)
+            div = min(iteration, LOG_INTERVAL)
+            avg_loss   = acc_loss / div
+            avg_sps    = acc_sps / div
+            avg_max    = acc_avg_max_chain / div
+            avg_reward = acc_reward / div
+            avg_score  = acc_score / div
+            
             print(f"[Iter {iteration:4d}/{TOTAL_ITERS}] "
-                  f"AvgLoss={avg_loss:.4f} | "
-                  f"AvgMax={avg_max:.2f} | "
-                  f"AvgChain={avg_chain:.2f} | "
-                  f"MaxChain={acc_max_chain} | "
-                  f"AvgFPS={avg_fps:.0f}")
-            acc_loss, acc_fps, acc_max_chain, acc_mean_chain, acc_avg_max_chain = 0, 0, 0, 0, 0
+                  f"AvgRew={avg_reward:6.3f} | "
+                  f"AvgScore={avg_score:6.1f} | "
+                  f"AvgMax={avg_max:4.2f} | "
+                  f"SPS={avg_sps:.0f}")
+            
+            acc_loss, acc_sps, acc_max_chain, acc_avg_max_chain = 0, 0, 0, 0
+            acc_reward, acc_score = 0, 0
         
         if iteration % SAVE_INTERVAL == 0:
-            trainer.save(str(CHECKPOINT_PT))
-            print(f"Saved checkpoint: {CHECKPOINT_PT}")
+            trainer.save(str(SESSION_PT))
+            trainer.save(str(LATEST_PT))
+            print(f"Saved checkpoint: {SESSION_PT} (and {LATEST_PT.name})")
+            
+            # Export ONNX as well for immediate GUI usage
+            model_for_export = trainer.model._orig_mod if hasattr(trainer.model, '_orig_mod') else trainer.model
+            
+            onnx_session = SESSION_PT.with_suffix(".onnx")
+            onnx_latest = LATEST_PT.with_suffix(".onnx")
+            
+            export_to_onnx(model_for_export, str(onnx_session))
+            
+            # Copy to latest for GUI reference
+            shutil.copy2(onnx_session, onnx_latest)
+            print(f"Exported ONNX: {onnx_session} (and {onnx_latest.name})")
 
 if __name__ == "__main__":
     solo_training_loop()

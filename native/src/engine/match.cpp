@@ -27,6 +27,7 @@ void PuyotanPlayer::fallOjama(int num, uint32_t& seed) noexcept {
             }
             field.setRowMask(config::Board::kSpawnRow, Cell::Ojama, mask);
             Gravity::execute(field);
+            total_ojama_dropped += static_cast<uint16_t>(num);
             break;
         }
     }
@@ -36,9 +37,7 @@ int PuyotanMatch::getDecisionMask() const noexcept {
     if (status_ != MatchStatus::Playing) return 0;
     int mask = 0;
     for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
-        if (players_[id].current_action.action.type == ActionType::None) {
-            mask |= (1 << id);
-        }
+        mask |= (static_cast<int>(players_[id].current_action.action.type == ActionType::None) << id);
     }
     return mask;
 }
@@ -91,6 +90,7 @@ void PuyotanMatch::stepNextFrame() noexcept {
                 case ActionType::Pass:
                     break;
                 case ActionType::Put: {
+                    p.last_chain_count = 0; // Reset for the new turn
                     const PuyoPiece tumo = tsumo_.get(p.active_next_pos);
                     const int r = static_cast<int>(action.rotation);
                     const int x_axis = action.x;

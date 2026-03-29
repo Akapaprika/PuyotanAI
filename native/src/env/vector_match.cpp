@@ -5,6 +5,7 @@
 #include <cstring>
 #include <puyotan/env/observation.hpp>
 #include <puyotan/env/reward.hpp>
+#include <puyotan/core/gravity.hpp>
 #include <immintrin.h>
 
 namespace puyotan {
@@ -20,12 +21,25 @@ namespace {
  *   [18-21] -> Left, Col 0-3 (Columns 4,5 are restricted in Left rotation to prevent wall-clip errors)
  */
 Action GET_ACTION(int idx) {
-    if (idx < 0 || idx >= 22) return Action{ActionType::Pass};
-    if (idx < 6) return Action{ActionType::Put, static_cast<int8_t>(idx), Rotation::Up};
-    if (idx < 11) return Action{ActionType::Put, static_cast<int8_t>(idx - 6), Rotation::Right}; // Col 0-4
-    if (idx < 17) return Action{ActionType::Put, static_cast<int8_t>(idx - 11), Rotation::Down}; // Col 0-5
-    return Action{ActionType::Put, static_cast<int8_t>(idx - 16), Rotation::Left}; // Col 1-5
+    constexpr int w = config::Board::kWidth;
+    constexpr int max_actions = w + (w - 1) + w + (w - 1); // 22 actions
+    
+    if (idx < 0 || idx >= max_actions) return Action{ActionType::Pass};
+    if (idx < w) return Action{ActionType::Put, static_cast<int8_t>(idx), Rotation::Up};
+    if (idx < w + (w - 1)) return Action{ActionType::Put, static_cast<int8_t>(idx - w), Rotation::Right}; // Col 0-4
+    if (idx < w + (w - 1) + w) return Action{ActionType::Put, static_cast<int8_t>(idx - (w + w - 1)), Rotation::Down}; // Col 0-5
+    return Action{ActionType::Put, static_cast<int8_t>(idx - (w + w - 1 + w)), Rotation::Left}; // Col 1-5
 }
+
+// Terminated mapping: Any status other than Playing (1) is considered terminal.
+static constexpr bool kTermTable[] = {
+    true,  // Ready (0)
+    false, // Playing (1)
+    true,  // WinP1 (2)
+    true,  // WinP2 (3)
+    true   // Draw (4)
+};
+
 } // anonymous namespace
 
 PuyotanVectorMatch::PuyotanVectorMatch(int num_matches, uint32_t base_seed) 
@@ -71,52 +85,48 @@ void PuyotanVectorMatch::setActions(const std::vector<int>& match_indices,
 }
 
 pybind11::tuple PuyotanVectorMatch::step(pybind11::array_t<int> p1_actions, 
-                                         std::optional<pybind11::array_t<int>> p2_actions,
+                                         pybind11::array_t<int> p2_actions,
                                          std::optional<pybind11::array_t<uint8_t>> out_obs) {
     const int n = static_cast<int>(matches_.size());
     auto p1_ptr = p1_actions.data();
-    auto p2_ptr = p2_actions.has_value() ? p2_actions->data() : nullptr;
+    auto p2_ptr = p2_actions.data();
 
     pybind11::array_t<float> rewards(n);
     pybind11::array_t<bool> terminated(n);
     pybind11::array_t<int> chains(n);
+    pybind11::array_t<int> scores(n);
     float* rew_ptr = static_cast<float*>(rewards.mutable_data());
     bool* term_ptr = static_cast<bool*>(terminated.mutable_data());
     int* chain_ptr = static_cast<int*>(chains.mutable_data());
+    int* score_ptr = static_cast<int*>(scores.mutable_data());
 
     {
-        // RELEASE GIL: This is critical for performance. 
-        // All game engine logic is thread-safe and purely C++, so we can run 
-        // the OpenMP loop while other Python threads continue.
         pybind11::gil_scoped_release release;
-        static constexpr bool kTermTable[] = {true, false, true, true, true};
-        RewardCalculator reward_calc;
 
         #pragma omp parallel for
         for (int i = 0; i < n; ++i) {
             auto& m = matches_[i];
             
-            int start_score_p1 = m.getPlayer(0).score;
+            const auto& p1_pre = m.getPlayer(0);
+            const auto& p2_pre = m.getPlayer(1);
+            int start_score_p1 = p1_pre.score;
+            int start_score_p2 = p2_pre.score;
+            int pre_ojama_p1 = p1_pre.total_ojama_dropped;
+            int pre_ojama_p2 = p2_pre.total_ojama_dropped;
 
             m.setAction(0, GET_ACTION(p1_ptr[i]));
-            if (p2_ptr) m.setAction(1, GET_ACTION(p2_ptr[i]));
-            else m.setAction(1, Action{ActionType::Pass});
+            m.setAction(1, GET_ACTION(p2_ptr[i]));
 
-            while (m.getStatus() == MatchStatus::Playing) {
-                int mask = m.stepUntilDecision();
-                if (mask == 3 || mask == 0) break;
-                if ((mask & 1) != 0) m.setAction(0, Action{ActionType::Pass});
-                if ((mask & 2) != 0) m.setAction(1, Action{ActionType::Pass});
-            }
+            // Advance engine
+            m.stepUntilDecision();
 
-            const auto& p1 = m.getPlayer(0);
-            MatchStatus status = m.getStatus();
-            
-            TurnStats stats { p1.score - start_score_p1, p1.last_chain_count };
-            rew_ptr[i] = reward_calc.calculate(stats, status, 0);
-            chain_ptr[i] = p1.last_chain_count;
+            RewardContext ctx = reward_calc.extractContext(m, start_score_p1, start_score_p2, pre_ojama_p1, pre_ojama_p2);
 
-            bool is_term = kTermTable[static_cast<uint8_t>(status)];
+            rew_ptr[i] = reward_calc.calculate(ctx, 0);
+            chain_ptr[i] = ctx.p1_chain_count;
+            score_ptr[i] = ctx.p1_delta_score;
+
+            bool is_term = kTermTable[static_cast<uint8_t>(ctx.status)];
             term_ptr[i] = is_term;
 
             if (is_term) {
@@ -126,19 +136,25 @@ pybind11::tuple PuyotanVectorMatch::step(pybind11::array_t<int> p1_actions,
             }
         }
     }
-    return pybind11::make_tuple(getObservationsAll(out_obs), std::move(rewards), std::move(terminated), std::move(chains));
+    return pybind11::make_tuple(getObservationsAll(out_obs), std::move(rewards), std::move(terminated), std::move(chains), std::move(scores));
 }
 
 pybind11::array_t<uint8_t> PuyotanVectorMatch::getObservationsAll(std::optional<pybind11::array_t<uint8_t>> out_obs) const {
     const int n = static_cast<int>(matches_.size());
-    static constexpr std::size_t kBytesPerCol = 14; 
-    static constexpr std::size_t kBytesPerColor = 6 * 14;
-    static constexpr std::size_t kBytesPerField = 5 * 6 * 14;
-    static constexpr std::size_t kBytesPerObservation = 2 * kBytesPerField;
+    static constexpr std::size_t kBytesPerCol = config::Board::kObsHeight; 
+    static constexpr std::size_t kBytesPerColor = config::Board::kWidth * kBytesPerCol;
+    static constexpr std::size_t kBytesPerField = config::Board::kNumColors * kBytesPerColor;
+    static constexpr std::size_t kBytesPerObservation = config::Rule::kNumPlayers * kBytesPerField;
 
     pybind11::array_t<uint8_t> arr;
     if (out_obs.has_value()) arr = *out_obs;
-    else arr = pybind11::array_t<uint8_t>({(std::size_t)n, (std::size_t)2, (std::size_t)5, (std::size_t)6, (std::size_t)14});
+    else arr = pybind11::array_t<uint8_t>({
+        (std::size_t)n, 
+        (std::size_t)config::Rule::kNumPlayers, 
+        (std::size_t)config::Board::kNumColors, 
+        (std::size_t)config::Board::kWidth, 
+        (std::size_t)config::Board::kObsHeight
+    });
     uint8_t* out_base = static_cast<uint8_t*>(arr.mutable_data());
 
     {

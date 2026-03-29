@@ -16,6 +16,7 @@ namespace puyotan {
  */
 class Tsumo {
 public:
+    explicit Tsumo(uint32_t seed = 1u) noexcept;
     /**
      * @brief Retrieves a PuyoPiece at the specified absolute sequence index.
      * @param index sequence index (starts at 0).

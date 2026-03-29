@@ -189,11 +189,54 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("setActions", &puyotan::PuyotanVectorMatch::setActions,
              pybind11::arg("match_indices"), pybind11::arg("player_ids"), pybind11::arg("actions"))
         .def("step", &puyotan::PuyotanVectorMatch::step,
-             pybind11::arg("p1_actions"), pybind11::arg("p2_actions") = pybind11::none(), pybind11::arg("out_obs") = pybind11::none(),
+             pybind11::arg("p1_actions"), pybind11::arg("p2_actions"), pybind11::arg("out_obs") = pybind11::none(),
              "Fast OpenMP bulk step, returning (obs, rewards, terminated)")
         .def("getObservationsAll", &puyotan::PuyotanVectorMatch::getObservationsAll, pybind11::arg("out_obs") = pybind11::none())
         .def("getMatch", static_cast<puyotan::PuyotanMatch& (puyotan::PuyotanVectorMatch::*)(int)>(&puyotan::PuyotanVectorMatch::getMatch), pybind11::return_value_policy::reference_internal)
-        .def_property_readonly("size", &puyotan::PuyotanVectorMatch::size);
+        .def_property_readonly("size", &puyotan::PuyotanVectorMatch::size)
+        .def_readwrite("reward_calc", &puyotan::PuyotanVectorMatch::reward_calc);
+
+    // ===== Reward System =====
+    pybind11::class_<puyotan::RewardWeights::Match>(m, "MatchWeights")
+        .def_readwrite("win",  &puyotan::RewardWeights::Match::win)
+        .def_readwrite("loss", &puyotan::RewardWeights::Match::loss)
+        .def_readwrite("draw", &puyotan::RewardWeights::Match::draw);
+
+    pybind11::class_<puyotan::RewardWeights::Turn>(m, "TurnWeights")
+        .def_readwrite("step_penalty", &puyotan::RewardWeights::Turn::step_penalty);
+
+    pybind11::class_<puyotan::RewardWeights::Performance>(m, "PerformanceWeights")
+        .def_readwrite("score_scale",       &puyotan::RewardWeights::Performance::score_scale)
+        .def_readwrite("chain_bonus_scale", &puyotan::RewardWeights::Performance::chain_bonus_scale);
+
+    pybind11::class_<puyotan::RewardWeights::Board>(m, "BoardWeights")
+        .def_readwrite("puyo_count_penalty", &puyotan::RewardWeights::Board::puyo_count_penalty)
+        .def_readwrite("connectivity_bonus", &puyotan::RewardWeights::Board::connectivity_bonus)
+        .def_readwrite("isolated_puyo_penalty",      &puyotan::RewardWeights::Board::isolated_puyo_penalty)
+        .def_readwrite("death_col_height_penalty",   &puyotan::RewardWeights::Board::death_col_height_penalty)
+        .def_readwrite("color_diversity_reward",     &puyotan::RewardWeights::Board::color_diversity_reward)
+        .def_readwrite("buried_puyo_penalty", &puyotan::RewardWeights::Board::buried_puyo_penalty)
+        .def_readwrite("ojama_drop_penalty",  &puyotan::RewardWeights::Board::ojama_drop_penalty)
+        .def_readwrite("potential_chain_bonus_scale", &puyotan::RewardWeights::Board::potential_chain_bonus_scale);
+
+    pybind11::class_<puyotan::RewardWeights::Opponent>(m, "OpponentWeights")
+        .def_readwrite("field_pressure_reward", &puyotan::RewardWeights::Opponent::field_pressure_reward)
+        .def_readwrite("connectivity_penalty",  &puyotan::RewardWeights::Opponent::connectivity_penalty)
+        .def_readwrite("ojama_diff_scale",      &puyotan::RewardWeights::Opponent::ojama_diff_scale)
+        .def_readwrite("initiative_bonus",      &puyotan::RewardWeights::Opponent::initiative_bonus);
+
+    pybind11::class_<puyotan::RewardWeights>(m, "RewardWeights")
+        .def_readwrite("match",       &puyotan::RewardWeights::match)
+        .def_readwrite("turn",        &puyotan::RewardWeights::turn)
+        .def_readwrite("performance", &puyotan::RewardWeights::performance)
+        .def_readwrite("board",       &puyotan::RewardWeights::board)
+        .def_readwrite("opponent",    &puyotan::RewardWeights::opponent);
+
+    pybind11::class_<puyotan::RewardCalculator>(m, "RewardCalculator")
+        .def(pybind11::init<>())
+        .def_readwrite("weights", &puyotan::RewardCalculator::weights)
+        .def("load_from_json", &puyotan::RewardCalculator::load_from_json)
+        .def("load_from_json_string", &puyotan::RewardCalculator::load_from_json_string);
 
     // ===== OnnxPolicy =====
     pybind11::class_<puyotan::OnnxPolicy>(m, "OnnxPolicy")

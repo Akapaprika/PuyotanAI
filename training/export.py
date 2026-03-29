@@ -2,11 +2,22 @@
 PyTorch モデル → ONNX 書き出しモジュール（単一責務）
 
 使用方法:
-  python -m training.export --checkpoint models/puyotan_v1.pt --output models/puyotan_v1.onnx
+  # 特定のファイルを変換
+  python -m training.export --checkpoint models/puyotan_solo.pt --output models/puyotan_solo.onnx
+  
+  # models ディレクトリをスキャンして全ての .pt を .onnx に変換
+  python -m training.export
 """
 import argparse
 from pathlib import Path
 import torch
+import sys
+import os
+
+# プロジェクトルートをパスに追加
+BASE_DIR = Path(__file__).resolve().parent.parent
+sys.path.append(str(BASE_DIR))
+
 from training.model import PuyotanPolicy
 
 
@@ -65,9 +76,34 @@ def export_to_onnx(model_or_path, output_path: str, hidden_dim=128):
     print(f"Export complete: {output_path}")
 
 
+def find_and_export_all(models_dir: Path):
+    """
+    指定したディレクトリ配下の .pt ファイルを再帰的に探し、対応する .onnx を生成する。
+    """
+    print(f"Scanning directory: {models_dir}")
+    pt_files = list(models_dir.rglob("*.pt"))
+    if not pt_files:
+        print("No .pt files found.")
+        return
+
+    for pt in pt_files:
+        onnx_path = pt.with_suffix(".onnx")
+        try:
+            export_to_onnx(pt, str(onnx_path))
+        except Exception as e:
+            print(f"Failed to export {pt}: {e}")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--checkpoint", required=True, help="Path to .pt file")
-    parser.add_argument("--output", required=True, help="Path to output .onnx file")
+    parser.add_argument("--checkpoint", help="Path to .pt file (optional if scanning)")
+    parser.add_argument("--output", help="Path to output .onnx file (optional if scanning)")
+    parser.add_argument("--models_dir", default=str(BASE_DIR / "models"), help="Directory to scan for .pt files")
     args = parser.parse_args()
-    export_to_onnx(args.checkpoint, args.output)
+
+    if args.checkpoint:
+        # 手動指定モード
+        output = args.output or str(Path(args.checkpoint).with_suffix(".onnx"))
+        export_to_onnx(args.checkpoint, output)
+    else:
+        # スキャンモード
+        find_and_export_all(Path(args.models_dir))

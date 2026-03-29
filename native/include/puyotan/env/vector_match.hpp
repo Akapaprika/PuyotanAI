@@ -4,6 +4,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <puyotan/engine/match.hpp>
+#include <puyotan/env/reward.hpp>
 
 namespace puyotan {
 
@@ -44,12 +45,12 @@ public:
      * reward calculation in a single OpenMP-accelerated call.
      * 
      * @param p1_actions Action indices for Player 1 (batch_size).
-     * @param p2_actions Optional action indices for Player 2.
+     * @param p2_actions Action indices for Player 2 (batch_size). Mirror P1 for solo mode.
      * @param out_obs Optional pre-allocated buffer for observation tensors.
      * @return py::tuple (observations, rewards, terminated, info).
      */
     pybind11::tuple step(pybind11::array_t<int> p1_actions, 
-                         std::optional<pybind11::array_t<int>> p2_actions = std::nullopt, 
+                         pybind11::array_t<int> p2_actions, 
                          std::optional<pybind11::array_t<uint8_t>> out_obs = std::nullopt);
 
     /**
@@ -62,6 +63,8 @@ public:
     size_t size() const { return matches_.size(); }
     PuyotanMatch& getMatch(int i) { return matches_[i]; }
     const PuyotanMatch& getMatch(int i) const { return matches_[i]; }
+
+    RewardCalculator reward_calc; ///< Configurable reward parameters
 
 private:
     std::vector<PuyotanMatch> matches_;
