@@ -16,7 +16,7 @@ from training.export import export_to_onnx
 
 # 設定
 NUM_ENVS = 256
-STEPS_PER_ITER = 192
+STEPS_PER_ITER = 128
 TOTAL_ITERS = 500  # ソロ用にとりあえず短めに設定
 LOG_INTERVAL = 10
 SAVE_INTERVAL = 50
@@ -33,9 +33,13 @@ def solo_training_loop():
     
     env = PuyotanVectorEnv(num_envs=NUM_ENVS)
     
-    # 中央管理された報酬設定をロード (C++ ネイティブ)
+    # 中央管理された報酬設定をロード (Python側で読み込んで文字列として渡すことで日本語パス問題を回避)
     reward_config_path = BASE_DIR / "native" / "resources" / "reward_default.json"
-    env.reward_calc.load_from_json(str(reward_config_path))
+    if reward_config_path.exists():
+        with open(reward_config_path, "r", encoding="utf-8") as f:
+            env.reward_calc.load_from_json_string(f.read())
+    else:
+        print(f"[WARNING] Reward config not found: {reward_config_path}")
     
     trainer = PPOTrainer(env, num_rollout_steps=STEPS_PER_ITER)
     
@@ -49,8 +53,7 @@ def solo_training_loop():
     
     # 集計用
     acc_loss = 0.0
-    acc_fps = 0.0
-    acc_mean_chain = 0.0
+    acc_sps = 0.0
     acc_avg_max_chain = 0.0
     acc_max_chain = 0.0
     acc_reward = 0.0
@@ -64,12 +67,11 @@ def solo_training_loop():
         metrics = trainer.train(p2_policy=None)
         
         elapsed = time.perf_counter() - start_time
-        fps = (NUM_ENVS * STEPS_PER_ITER) / elapsed
+        sps = (NUM_ENVS * STEPS_PER_ITER) / elapsed
         
         # 集計
         acc_loss += metrics['loss']
-        acc_fps += fps
-        acc_mean_chain += metrics['mean_chain']
+        acc_sps += sps
         acc_avg_max_chain += metrics['avg_max_chain']
         acc_reward += metrics['avg_reward']
         acc_score += metrics['avg_score']
@@ -79,8 +81,7 @@ def solo_training_loop():
         if iteration % LOG_INTERVAL == 0 or iteration == 1:
             div = min(iteration, LOG_INTERVAL)
             avg_loss   = acc_loss / div
-            avg_fps    = acc_fps / div
-            avg_chain  = acc_mean_chain / div
+            avg_sps    = acc_sps / div
             avg_max    = acc_avg_max_chain / div
             avg_reward = acc_reward / div
             avg_score  = acc_score / div
@@ -88,11 +89,10 @@ def solo_training_loop():
             print(f"[Iter {iteration:4d}/{TOTAL_ITERS}] "
                   f"AvgRew={avg_reward:6.3f} | "
                   f"AvgScore={avg_score:6.1f} | "
-                  f"AvgChain={avg_chain:4.2f} | "
                   f"AvgMax={avg_max:4.2f} | "
-                  f"FPS={avg_fps:.0f}")
+                  f"SPS={avg_sps:.0f}")
             
-            acc_loss, acc_fps, acc_max_chain, acc_mean_chain, acc_avg_max_chain = 0, 0, 0, 0, 0
+            acc_loss, acc_sps, acc_max_chain, acc_avg_max_chain = 0, 0, 0, 0
             acc_reward, acc_score = 0, 0
         
         if iteration % SAVE_INTERVAL == 0:

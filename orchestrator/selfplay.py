@@ -18,7 +18,7 @@ from training.export import export_to_onnx
 
 # 設定
 NUM_ENVS = 256
-STEPS_PER_ITER = 192
+STEPS_PER_ITER = 128
 TOTAL_ITERS = 1000
 LOG_INTERVAL = 10                     # ログ出力間隔（イテレーション数）
 SAVE_INTERVAL = 10                    # モデル保存間隔
@@ -45,9 +45,13 @@ def selfplay_loop():
     try:
         env = PuyotanVectorEnv(num_envs=NUM_ENVS)
         
-        # 中央管理された報酬設定をロード (C++ ネイティブ)
+        # 中央管理された報酬設定をロード (Python側で読み込んで文字列として渡すことで日本語パス問題を回避)
         reward_config_path = BASE_DIR / "native" / "resources" / "reward_default.json"
-        env.reward_calc.load_from_json(str(reward_config_path))
+        if reward_config_path.exists():
+            with open(reward_config_path, "r", encoding="utf-8") as f:
+                env.reward_calc.load_from_json_string(f.read())
+        else:
+            print(f"[WARNING] Reward config not found: {reward_config_path}")
         
         trainer = PPOTrainer(env, num_rollout_steps=STEPS_PER_ITER)
         
@@ -67,7 +71,7 @@ def selfplay_loop():
         
         # 集計用（LOG_INTERVAL 毎にまとめて出力）
         acc_loss = 0.0
-        acc_fps = 0.0
+        acc_sps = 0.0
         acc_mean_chain = 0.0
         acc_avg_max_chain = 0.0
         acc_max_chain = 0.0
@@ -108,11 +112,11 @@ def selfplay_loop():
             metrics = trainer.train(p2_policy=p2_policy)
             
             elapsed = time.perf_counter() - start_time
-            fps = (NUM_ENVS * STEPS_PER_ITER) / elapsed
+            sps = (NUM_ENVS * STEPS_PER_ITER) / elapsed
             
             # 集計
             acc_loss += metrics['loss']
-            acc_fps += fps
+            acc_sps += sps
             acc_mean_chain += metrics['mean_chain']
             acc_avg_max_chain += metrics['avg_max_chain']
             acc_reward += metrics['avg_reward']
@@ -124,7 +128,7 @@ def selfplay_loop():
             # LOG_INTERVAL ごとにまとめて出力
             if iteration % LOG_INTERVAL == 0 or iteration == 1:
                 avg_loss = acc_loss / min(iteration, LOG_INTERVAL)
-                avg_fps = acc_fps / min(iteration, LOG_INTERVAL)
+                avg_sps = acc_sps / min(iteration, LOG_INTERVAL)
                 avg_chain = acc_mean_chain / min(iteration, LOG_INTERVAL)
                 avg_max = acc_avg_max_chain / min(iteration, LOG_INTERVAL)
                 avg_reward = acc_reward / min(iteration, LOG_INTERVAL)
@@ -136,10 +140,10 @@ def selfplay_loop():
                       f"AvgChain={avg_chain:4.2f} | "
                       f"AvgMax={avg_max:4.2f} | "
                       f"Max={acc_max_chain:2d} | "
-                      f"FPS={avg_fps:.0f}")
+                      f"SPS={avg_sps:.0f}")
                 
                 acc_loss = 0.0
-                acc_fps = 0.0
+                acc_sps = 0.0
                 acc_max_chain = 0
                 acc_mean_chain = 0.0
                 acc_avg_max_chain = 0.0

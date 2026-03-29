@@ -87,7 +87,7 @@ def watch_solo(model_path="models/puyotan_latest.pt"):
                 action, _, _, _ = model.get_action_and_value(obs_t)
             
             act = action.cpu().numpy().astype(np.int32)
-            obs, rewards, dones, _, info = env.step(act, None)
+            obs, rewards, dones, _, info = env.step(act, act)  # Mirror P1 for solo mode
             
             reward = rewards[0]
             total_reward += reward

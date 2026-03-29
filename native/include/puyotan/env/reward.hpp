@@ -1,9 +1,13 @@
+#pragma once
+
 #include <puyotan/common/types.hpp>
 #include <external/nlohmann/json.hpp>
 #include <fstream>
 #include <string>
 
 namespace puyotan {
+
+class PuyotanMatch;
 
 using json = nlohmann::json;
 
@@ -43,17 +47,17 @@ struct RewardContext {
 
 struct RewardWeights {
     struct Match {
-        float win = 25.0f;
-        float loss = -25.0f;
-        float draw = -12.5f;
+        float win = 0.0f;
+        float loss = 0.0f;
+        float draw = 0.0f;
     } match;
 
     struct Turn {
-        float step_penalty = -0.01f;
+        float step_penalty = 0.0f;
     } turn;
 
     struct Performance {
-        float score_scale = 0.002f;
+        float score_scale = 0.0f;
         float chain_bonus_scale = 0.0f;
     } performance;
 
@@ -65,14 +69,14 @@ struct RewardWeights {
         float color_diversity_reward = 0.0f;
         float buried_puyo_penalty = 0.0f;
         float ojama_drop_penalty = 0.0f;
-        float potential_chain_bonus_scale = 0.0f; // Reward for held chain potential
+        float potential_chain_bonus_scale = 0.0f;
     } board;
 
     struct Opponent {
         float field_pressure_reward = 0.0f;
         float connectivity_penalty = 0.0f;
         float ojama_diff_scale = 0.0f;
-        float initiative_bonus = 0.0f; // Bonus when S can fire in 1 and O cannot
+        float initiative_bonus = 0.0f;
     } opponent;
 
     void from_json(const json& j) {
@@ -118,11 +122,17 @@ public:
 
     void load_from_json(const std::string& path) {
         std::ifstream f(path);
-        if (!f.is_open()) return;
+        if (!f.is_open()) {
+            printf("[WARNING] Failed to open reward config file: %s\n", path.c_str());
+            return;
+        }
         try {
             json j = json::parse(f);
             weights.from_json(j);
-        } catch (...) {}
+            printf("[RewardCalculator] Loaded reward config from: %s\n", path.c_str());
+        } catch (const std::exception& e) {
+            printf("[ERROR] Failed to parse reward JSON: %s\n", e.what());
+        }
     }
 
     void load_from_json_string(const std::string& json_str) {
@@ -131,6 +141,10 @@ public:
             weights.from_json(j);
         } catch (...) {}
     }
+
+    RewardContext extractContext(const PuyotanMatch& m, 
+                                 int start_score_p1, int start_score_p2,
+                                 int pre_ojama_p1, int pre_ojama_p2) const;
 
     float calculate(const RewardContext& ctx, int player_id) const {
         bool is_p1 = (player_id == 0);

@@ -90,6 +90,7 @@ void PuyotanMatch::stepNextFrame() noexcept {
                 case ActionType::Pass:
                     break;
                 case ActionType::Put: {
+                    p.last_chain_count = 0; // Reset for the new turn
                     const PuyoPiece tumo = tsumo_.get(p.active_next_pos);
                     const int r = static_cast<int>(action.rotation);
                     const int x_axis = action.x;

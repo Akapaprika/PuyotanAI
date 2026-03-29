@@ -189,7 +189,7 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("setActions", &puyotan::PuyotanVectorMatch::setActions,
              pybind11::arg("match_indices"), pybind11::arg("player_ids"), pybind11::arg("actions"))
         .def("step", &puyotan::PuyotanVectorMatch::step,
-             pybind11::arg("p1_actions"), pybind11::arg("p2_actions") = pybind11::none(), pybind11::arg("out_obs") = pybind11::none(),
+             pybind11::arg("p1_actions"), pybind11::arg("p2_actions"), pybind11::arg("out_obs") = pybind11::none(),
              "Fast OpenMP bulk step, returning (obs, rewards, terminated)")
         .def("getObservationsAll", &puyotan::PuyotanVectorMatch::getObservationsAll, pybind11::arg("out_obs") = pybind11::none())
         .def("getMatch", static_cast<puyotan::PuyotanMatch& (puyotan::PuyotanVectorMatch::*)(int)>(&puyotan::PuyotanVectorMatch::getMatch), pybind11::return_value_policy::reference_internal)
@@ -252,7 +252,6 @@ PYBIND11_MODULE(puyotan_native, m) {
              pybind11::arg("obs"),
              "Run inference on a batch of uint8 observations. Returns list of action indices.")
         .def("is_loaded", &puyotan::OnnxPolicy::isLoaded);
-}
 }
 
 } // namespace puyotan
