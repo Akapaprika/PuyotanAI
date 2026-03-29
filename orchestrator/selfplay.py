@@ -38,15 +38,16 @@ class RandomPolicy:
     def infer(self, obs, num_envs):
         return np.random.randint(0, 22, size=num_envs).astype(np.int32)
 
-def selfplay_loop():
+def selfplay_loop(config_name="reward_match.json"):
     print("=== PuyotanAI Self-Play & Training Loop Starting ===")
+    print(f"Using reward config: {config_name}")
     MODELS_DIR.mkdir(exist_ok=True)
     
     try:
         env = PuyotanVectorEnv(num_envs=NUM_ENVS)
         
         # 中央管理された報酬設定をロード (Python側で読み込んで文字列として渡すことで日本語パス問題を回避)
-        reward_config_path = BASE_DIR / "native" / "resources" / "reward_default.json"
+        reward_config_path = BASE_DIR / "native" / "resources" / config_name
         if reward_config_path.exists():
             with open(reward_config_path, "r", encoding="utf-8") as f:
                 env.reward_calc.load_from_json_string(f.read())

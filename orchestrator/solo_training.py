@@ -27,14 +27,15 @@ LATEST_PT = MODELS_DIR / "puyotan_solo_latest.pt"
 # セッション固有名 (記録用)
 SESSION_PT = MODELS_DIR / f"puyotan_solo_{TIMESTAMP}.pt"
 
-def solo_training_loop():
+def solo_training_loop(config_name="reward_solo.json"):
     print(f"=== PuyotanAI Solo Training Starting (Session: {TIMESTAMP}) ===")
+    print(f"Using reward config: {config_name}")
     MODELS_DIR.mkdir(exist_ok=True)
     
     env = PuyotanVectorEnv(num_envs=NUM_ENVS)
     
     # 中央管理された報酬設定をロード (Python側で読み込んで文字列として渡すことで日本語パス問題を回避)
-    reward_config_path = BASE_DIR / "native" / "resources" / "reward_default.json"
+    reward_config_path = BASE_DIR / "native" / "resources" / config_name
     if reward_config_path.exists():
         with open(reward_config_path, "r", encoding="utf-8") as f:
             env.reward_calc.load_from_json_string(f.read())
