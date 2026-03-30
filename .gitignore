@@ -12,9 +12,7 @@ build/
 dist/
 
 # Models (Keep repository lightweight)
-models/*.pt
-models/*.onnx
-models/*.onnx.data
+models/
 
 # Native (C++ Build & External Libs)
 native/build*/
