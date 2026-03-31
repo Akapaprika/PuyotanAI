@@ -95,7 +95,7 @@ class PlayerSettingsWidget(QWidget):
             self,
             f"Select ONNX model for P{self.player_id + 1}",
             start_dir,
-            "ONNX Models (*.onnx *.pt);;All Files (*)"
+            "ONNX Models (*.onnx)"
         )
         if path:
             self._model_path = path
