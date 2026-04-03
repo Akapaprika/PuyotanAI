@@ -3,18 +3,24 @@
 #include <algorithm>
 #include <iostream>
 #include <numeric>
+#include <span>
 #include <stdexcept>
 
 #include <torch/torch.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 
+#include <puyotan/env/observation.hpp>
 #include <puyotan/rl/mlp_policy.hpp>
 #include <puyotan/rl/cnn_policy.hpp>
 
 namespace py = pybind11;
 
 namespace puyotan::rl {
+
+// Bytes per environment observation: [kObsPlayers * kObsColors * kObsCols * kObsRows]
+static constexpr int kObsBytesPerEnv =
+    kObsPlayers * kObsColors * kObsCols * kObsRows; // = 2*5*6*14 = 840
 
 // ---------------------------------------------------------------------------
 // Constructor
@@ -32,6 +38,14 @@ CppPPOTrainer::CppPPOTrainer(int num_envs, int num_steps,
     , arch_(arch)
     , hidden_dim_(hidden_dim)
     , episode_scores_(torch::zeros({num_envs}, torch::kFloat32))
+    // Pre-allocate all native I/O buffers once.
+    , act_p1_buf_(num_envs)
+    , act_p2_buf_(num_envs)
+    , rew_buf_(num_envs)
+    , done_buf_(num_envs)
+    , chain_buf_(num_envs)
+    , score_buf_(num_envs)
+    , obs_buf_(static_cast<std::size_t>(num_envs) * kObsBytesPerEnv)
 {
     // Build policy
     if (arch == "mlp") {
@@ -43,20 +57,21 @@ CppPPOTrainer::CppPPOTrainer(int num_envs, int num_steps,
     }
     policy_->train(true);
 
-    // Build optimizer over all policy parameters
+    // Build optimizer
     optimizer_ = std::make_unique<torch::optim::Adam>(
         policy_->parameters(),
         torch::optim::AdamOptions(cfg_.lr).eps(1e-5));
 
-    // Get initial observations
+    // Get initial observations via native path.
+    // Release GIL so OpenMP threads inside getObservationsNative can run freely.
     {
-        py::gil_scoped_acquire gil;
-        auto obs_np = env_.getObservationsAll();
-        auto* ptr   = static_cast<uint8_t*>(obs_np.mutable_data());
-        curr_obs_   = torch::from_blob(ptr,
-                        {num_envs, kObsPlayers, kObsColors, kObsCols, kObsRows},
-                        torch::kUInt8).clone();
+        py::gil_scoped_release release;
+        env_.getObservationsNative(std::span<uint8_t>(obs_buf_));
     }
+    curr_obs_ = torch::from_blob(
+        obs_buf_.data(),
+        {num_envs, kObsPlayers, kObsColors, kObsCols, kObsRows},
+        torch::kUInt8).clone();
 
     std::cout << "[CppPPOTrainer] arch=" << arch
               << "  hidden=" << hidden_dim
@@ -108,73 +123,64 @@ std::tuple<int, float, float, float> CppPPOTrainer::collectRollouts_(bool p2_ran
     float sum_max_chain = 0.0f;
     float sum_reward    = 0.0f;
     std::vector<float> completed_scores;
-    std::vector<int> max_per_env(num_envs_, 0);
+    std::vector<int>   max_per_env(num_envs_, 0);
+
+    // Span views over the pre-allocated buffers.
+    std::span<int>      sp_p1  (act_p1_buf_);
+    std::span<int>      sp_p2  (act_p2_buf_);
+    std::span<float>    sp_rew (rew_buf_);
+    std::span<float>    sp_done(done_buf_);
+    std::span<int32_t>  sp_chain(chain_buf_);
+    std::span<int32_t>  sp_score(score_buf_);
+    std::span<uint8_t>  sp_obs (obs_buf_);
 
     for (int t = 0; t < num_steps_; ++t) {
         buffer_.storeObs(t, curr_obs_);
 
+        // ----- Inference (no GIL, pure LibTorch) -----
         torch::Tensor obs_f = curr_obs_.to(torch::kFloat32);
-
         PolicyOutput out;
-        torch::Tensor actions_p2;
-
         {
             torch::NoGradGuard no_grad;
             out = policy_->getActionAndValue(obs_f);
 
             if (opp_policy_) {
                 torch::Tensor opp_obs = obs_f.flip({1}).contiguous();
-                PolicyOutput opp_out = opp_policy_->getActionAndValue(opp_obs);
-                actions_p2 = opp_out.actions;
-            }
-        }
-
-        torch::Tensor actions_p1 = out.actions;
-
-        py::gil_scoped_acquire gil;
-
-        // p1 actions
-        auto act_np = py::array_t<int>(num_envs_);
-        {
-            auto buf = act_np.mutable_unchecked<1>();
-            auto acc = actions_p1.accessor<int64_t, 1>();
-            for (int i = 0; i < num_envs_; ++i) buf(i) = static_cast<int>(acc[i]);
-        }
-
-        // p2 actions
-        auto act_p2_np = py::array_t<int>(num_envs_);
-        {
-            auto buf = act_p2_np.mutable_unchecked<1>();
-            if (opp_policy_) {
-                auto opp_acc = actions_p2.accessor<int64_t, 1>();
-                for (int i = 0; i < num_envs_; ++i) buf(i) = static_cast<int>(opp_acc[i]);
-            } else if (p2_random) {
+                PolicyOutput  opp_out = opp_policy_->getActionAndValue(opp_obs);
+                // Copy opponent actions into p2 buffer.
+                auto opp_acc = opp_out.actions.accessor<int64_t, 1>();
                 for (int i = 0; i < num_envs_; ++i)
-                    buf(i) = std::rand() % kNumActions;
-            } else {
-                auto acc = actions_p1.accessor<int64_t, 1>();
-                for (int i = 0; i < num_envs_; ++i) buf(i) = static_cast<int>(acc[i]);
+                    sp_p2[i] = static_cast<int>(opp_acc[i]);
             }
         }
 
-        auto result = env_.step(act_np, act_p2_np);
-
-        auto obs_np     = result[0].cast<py::array_t<uint8_t>>();
-        auto rewards_np = result[1].cast<py::array_t<float>>();
-        auto dones_np   = result[2].cast<py::array_t<bool>>();
-        auto chains_np  = result[3].cast<py::array_t<int32_t>>();
-        auto scores_np  = result[4].cast<py::array_t<int32_t>>();
-
-        const float* rptr = rewards_np.data();
-        const bool*  dptr = dones_np.data();
-        
-        auto rewards_t = torch::from_blob(const_cast<float*>(rptr), {num_envs_}, torch::kFloat32).clone();
-        
-        auto dones_t = torch::zeros({num_envs_}, torch::kFloat32);
-        auto dacc_t  = dones_t.accessor<float, 1>();
-        for (int i = 0; i < num_envs_; ++i) {
-            dacc_t[i] = dptr[i] ? 1.0f : 0.0f;
+        // Copy P1 actions into native buffer.
+        {
+            auto acc = out.actions.accessor<int64_t, 1>();
+            for (int i = 0; i < num_envs_; ++i)
+                sp_p1[i] = static_cast<int>(acc[i]);
         }
+
+        // P2 fallback (solo / random)
+        if (!opp_policy_) {
+            if (p2_random) {
+                for (int i = 0; i < num_envs_; ++i)
+                    sp_p2[i] = std::rand() % kNumActions;
+            } else {
+                // Mirror P1
+                std::ranges::copy(sp_p1, sp_p2.begin());
+            }
+        }
+
+        // ----- Native step — release GIL so OpenMP threads can run -----
+        {
+            py::gil_scoped_release release;
+            env_.stepNative(sp_p1, sp_p2, sp_rew, sp_done, sp_chain, sp_score, sp_obs);
+        }
+
+        // Build reward and done tensors directly from the native buffers (no copy).
+        auto rewards_t = torch::from_blob(sp_rew.data(),  {num_envs_}, torch::kFloat32).clone();
+        auto dones_t   = torch::from_blob(sp_done.data(), {num_envs_}, torch::kFloat32).clone();
 
         buffer_.storeStep(t,
             out.actions.to(torch::kInt64),
@@ -183,15 +189,14 @@ std::tuple<int, float, float, float> CppPPOTrainer::collectRollouts_(bool p2_ran
             rewards_t,
             dones_t);
 
-        {
-            const int32_t* cptr = chains_np.data();
-            for (int i = 0; i < num_envs_; ++i) {
-                int c = cptr[i];
-                max_per_env[i]  = std::max(max_per_env[i], c);
-                max_chain       = std::max(max_chain, c);
-            }
+        // Chain stats
+        for (int i = 0; i < num_envs_; ++i) {
+            int c = sp_chain[i];
+            max_per_env[i] = std::max(max_per_env[i], c);
+            max_chain      = std::max(max_chain, c);
         }
 
+        // Episode score accumulation
         {
             auto racc = rewards_t.accessor<float, 1>();
             auto dacc = dones_t.accessor<float, 1>();
@@ -206,22 +211,20 @@ std::tuple<int, float, float, float> CppPPOTrainer::collectRollouts_(bool p2_ran
             }
         }
 
-        const uint8_t* optr = obs_np.data();
+        // Next observation is already in obs_buf_ (written by stepNative).
         curr_obs_ = torch::from_blob(
-            const_cast<uint8_t*>(optr),
+            sp_obs.data(),
             {num_envs_, kObsPlayers, kObsColors, kObsCols, kObsRows},
             torch::kUInt8).clone();
     }
 
-    torch::Tensor next_value;
+    // Bootstrap value for GAE
     {
         torch::NoGradGuard no_grad;
-        auto obs_f = curr_obs_.to(torch::kFloat32);
-        auto boot = policy_->getActionAndValue(obs_f);
-        next_value = boot.values;
+        auto obs_f     = curr_obs_.to(torch::kFloat32);
+        auto boot      = policy_->getActionAndValue(obs_f);
+        buffer_.computeGae(boot.values, cfg_.gamma, cfg_.lambda);
     }
-
-    buffer_.computeGae(next_value, cfg_.gamma, cfg_.lambda);
 
     sum_max_chain = std::accumulate(max_per_env.begin(), max_per_env.end(), 0.0f)
                   / static_cast<float>(num_envs_);

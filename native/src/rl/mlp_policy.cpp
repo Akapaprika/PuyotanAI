@@ -1,5 +1,7 @@
 #include <puyotan/rl/mlp_policy.hpp>
 
+#include <filesystem>
+#include <fstream>
 #include <stdexcept>
 
 #include <torch/torch.h>
@@ -82,14 +84,22 @@ void MLPPolicyWrapper::train(bool mode) {
 }
 
 void MLPPolicyWrapper::save(const std::string& path) {
+    // Use std::filesystem::path to correctly handle UTF-8 paths on Windows.
+    // LibTorch's archive.save_to(path) fails on non-ASCII paths with MSVC.
+    std::filesystem::path fspath(std::u8string(path.begin(), path.end()));
+    std::ofstream ofs(fspath, std::ios::binary);
+    if (!ofs) throw std::runtime_error("MLPPolicyWrapper::save: cannot open: " + path);
     torch::serialize::OutputArchive archive;
     net_->save(archive);
-    archive.save_to(path);
+    archive.save_to(ofs);
 }
 
 void MLPPolicyWrapper::load(const std::string& path) {
+    std::filesystem::path fspath(std::u8string(path.begin(), path.end()));
+    std::ifstream ifs(fspath, std::ios::binary);
+    if (!ifs) throw std::runtime_error("MLPPolicyWrapper::load: cannot open: " + path);
     torch::serialize::InputArchive archive;
-    archive.load_from(path);
+    archive.load_from(ifs);
     net_->load(archive);
 }
 

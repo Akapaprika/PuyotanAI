@@ -1,5 +1,9 @@
 #include <puyotan/rl/cnn_policy.hpp>
 
+#include <filesystem>
+#include <fstream>
+#include <stdexcept>
+
 #include <torch/torch.h>
 
 #include <puyotan/rl/constants.hpp>
@@ -91,14 +95,20 @@ void CNNPolicyWrapper::train(bool mode) {
 }
 
 void CNNPolicyWrapper::save(const std::string& path) {
+    std::filesystem::path fspath(std::u8string(path.begin(), path.end()));
+    std::ofstream ofs(fspath, std::ios::binary);
+    if (!ofs) throw std::runtime_error("CNNPolicyWrapper::save: cannot open: " + path);
     torch::serialize::OutputArchive archive;
     net_->save(archive);
-    archive.save_to(path);
+    archive.save_to(ofs);
 }
 
 void CNNPolicyWrapper::load(const std::string& path) {
+    std::filesystem::path fspath(std::u8string(path.begin(), path.end()));
+    std::ifstream ifs(fspath, std::ios::binary);
+    if (!ifs) throw std::runtime_error("CNNPolicyWrapper::load: cannot open: " + path);
     torch::serialize::InputArchive archive;
-    archive.load_from(path);
+    archive.load_from(ifs);
     net_->load(archive);
 }
 

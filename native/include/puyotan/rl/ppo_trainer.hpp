@@ -1,8 +1,11 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <tuple>
+#include <vector>
+
 #include <torch/torch.h>
 
 #include <puyotan/rl/policy.hpp>
@@ -108,6 +111,15 @@ private:
 
     torch::Tensor curr_obs_;
     torch::Tensor episode_scores_;
+
+    // --- Pre-allocated native I/O buffers (reused every step, no per-step allocs)
+    std::vector<int>      act_p1_buf_;
+    std::vector<int>      act_p2_buf_;
+    std::vector<float>    rew_buf_;
+    std::vector<float>    done_buf_;
+    std::vector<int32_t>  chain_buf_;
+    std::vector<int32_t>  score_buf_;
+    std::vector<uint8_t>  obs_buf_;   ///< [N * kBytesPerObservation] flat
 
     /**
      * @brief Collect rollouts from environments.
