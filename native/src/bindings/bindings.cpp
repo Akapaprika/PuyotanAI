@@ -12,7 +12,6 @@
 #include <puyotan/policy/onnx_policy.hpp>
 #include <puyotan/env/vector_match.hpp>
 #include <puyotan/env/observation.hpp>
-#include <puyotan/env/rl_utils.hpp>
 #include <puyotan/rl/constants.hpp>
 #include <puyotan/rl/ppo_trainer.hpp>
 #include <torch/torch.h>
@@ -161,10 +160,14 @@ PYBIND11_MODULE(puyotan_native, m) {
     // =========================================================================
     // Environment
     // =========================================================================
-    m.def("compute_gae", &computeGae,
-          pybind11::arg("rewards"), pybind11::arg("values"),
-          pybind11::arg("dones"),   pybind11::arg("next_value"),
-          pybind11::arg("gamma"),   pybind11::arg("lam"));
+
+    // -- RL Action Table --
+    // kNumRLActions and get_rl_action() are the SINGLE SOURCE OF TRUTH for
+    // the action index <-> (col, rotation) mapping used by training AND GUI.
+    m.attr("kNumRLActions") = kNumRLActions;
+    m.def("get_rl_action", &getRLAction, pybind11::arg("idx"),
+          "Convert a flat RL action index to an Action (col, rotation). "
+          "Returns Pass action for out-of-range indices.");
 
     m.def("build_observation",
         [](const PuyotanMatch& match) {
@@ -184,11 +187,6 @@ PYBIND11_MODULE(puyotan_native, m) {
              pybind11::call_guard<pybind11::gil_scoped_release>())
         .def("setActions", &PuyotanVectorMatch::setActions,
              pybind11::arg("match_indices"), pybind11::arg("player_ids"), pybind11::arg("actions"))
-        .def("step", &PuyotanVectorMatch::step,
-             pybind11::arg("p1_actions"), pybind11::arg("p2_actions"),
-             pybind11::arg("out_obs") = pybind11::none())
-        .def("getObservationsAll", &PuyotanVectorMatch::getObservationsAll,
-             pybind11::arg("out_obs") = pybind11::none())
         .def("getMatch", static_cast<PuyotanMatch& (PuyotanVectorMatch::*)(int)>(&PuyotanVectorMatch::getMatch),
              pybind11::return_value_policy::reference_internal)
         .def_property_readonly("size", &PuyotanVectorMatch::size)
@@ -294,6 +292,7 @@ PYBIND11_MODULE(puyotan_native, m) {
              pybind11::arg("base_seed")  = 1u,
              pybind11::arg("cfg")        = rl::PPOConfig{})
         .def("trainStep", &rl::CppPPOTrainer::trainStep,
+             pybind11::call_guard<pybind11::gil_scoped_release>(),
              pybind11::arg("p2_random") = false,
              "Run one rollout + PPO update. Returns TrainMetrics.")
         .def("save", &rl::CppPPOTrainer::save, pybind11::arg("path"))

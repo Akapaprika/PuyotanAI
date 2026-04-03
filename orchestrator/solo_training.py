@@ -30,13 +30,11 @@ except ImportError as e:
     print(f"Failed to import puyotan_native: {e}")
     sys.exit(1)
 
-from training.config import DEFAULT_NUM_ENVS, DEFAULT_STEPS_PER_ITER
-
 # ---------------------------------------------------------------------------
 # Solo training configuration
 # ---------------------------------------------------------------------------
-NUM_ENVS       = DEFAULT_NUM_ENVS
-STEPS_PER_ITER = DEFAULT_STEPS_PER_ITER
+NUM_ENVS       = 256
+STEPS_PER_ITER = 128
 TOTAL_ITERS    = 500
 LOG_INTERVAL   = 10
 SAVE_INTERVAL  = 50

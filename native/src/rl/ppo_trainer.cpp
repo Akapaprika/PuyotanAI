@@ -7,8 +7,6 @@
 #include <stdexcept>
 
 #include <torch/torch.h>
-#include <pybind11/pybind11.h>
-#include <pybind11/numpy.h>
 
 #include <puyotan/env/observation.hpp>
 #include <puyotan/rl/mlp_policy.hpp>
@@ -63,11 +61,7 @@ CppPPOTrainer::CppPPOTrainer(int num_envs, int num_steps,
         torch::optim::AdamOptions(cfg_.lr).eps(1e-5));
 
     // Get initial observations via native path.
-    // Release GIL so OpenMP threads inside getObservationsNative can run freely.
-    {
-        py::gil_scoped_release release;
-        env_.getObservationsNative(std::span<uint8_t>(obs_buf_));
-    }
+    env_.getObservationsNative(std::span<uint8_t>(obs_buf_));
     curr_obs_ = torch::from_blob(
         obs_buf_.data(),
         {num_envs, kObsPlayers, kObsColors, kObsCols, kObsRows},
@@ -172,11 +166,8 @@ std::tuple<int, float, float, float> CppPPOTrainer::collectRollouts_(bool p2_ran
             }
         }
 
-        // ----- Native step — release GIL so OpenMP threads can run -----
-        {
-            py::gil_scoped_release release;
-            env_.stepNative(sp_p1, sp_p2, sp_rew, sp_done, sp_chain, sp_score, sp_obs);
-        }
+        // ----- Native step — OpenMP threads can run freely -----
+        env_.stepNative(sp_p1, sp_p2, sp_rew, sp_done, sp_chain, sp_score, sp_obs);
 
         // Build reward and done tensors directly from the native buffers (no copy).
         auto rewards_t = torch::from_blob(sp_rew.data(),  {num_envs_}, torch::kFloat32).clone();
