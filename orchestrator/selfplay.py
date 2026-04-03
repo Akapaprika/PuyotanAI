@@ -112,7 +112,7 @@ def selfplay_loop(
             acc_sps       += sps
             acc_avg_max   += metrics.avg_max_chain
             acc_reward    += metrics.avg_reward
-            acc_score     += metrics.avg_score
+            acc_score     += metrics.avg_game_score
             acc_max_chain  = max(acc_max_chain, metrics.max_chain)
 
             if iteration % LOG_INTERVAL == 0 or iteration == 1:

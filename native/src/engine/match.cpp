@@ -90,7 +90,9 @@ void PuyotanMatch::stepNextFrame() noexcept {
                 case ActionType::Pass:
                     break;
                 case ActionType::Put: {
-                    p.last_chain_count = 0; // Reset for the new turn
+                    p.last_chain_count  = 0;     // Reset for the new turn
+                    p.last_all_clear    = false; // Reset per-turn event flags
+                    p.last_erased_count = 0;
                     const PuyoPiece tumo = tsumo_.get(p.active_next_pos);
                     const int r = static_cast<int>(action.rotation);
                     const int x_axis = action.x;
@@ -127,6 +129,7 @@ void PuyotanMatch::stepNextFrame() noexcept {
                     Chain::applyErasure(p.field, pending_erasure_[id]);
                     const ErasureData& info = pending_erasure_[id];
                     ++p.chain_count;
+                    p.last_erased_count += static_cast<uint16_t>(info.num_erased); // [EVENT] accumulate
                     int step_score = Scorer::calculateStepScore(info, p.chain_count);
                     p.score += step_score;
                     
@@ -145,9 +148,10 @@ void PuyotanMatch::stepNextFrame() noexcept {
                     // Unconditional ojama send (branchless)
                     sendOjama(id, ojama);
                     
-                    // All Clear check (Pure mathematical branchless): 
-                    // Add bonus if the board was completely emptied by the erasure.
-                    p.score += static_cast<int>(p.field.getOccupied().empty()) * config::Score::kAllClearBonus;
+                    // All Clear check (branchless + event flag):
+                    bool field_empty = p.field.getOccupied().empty();
+                    p.score        += static_cast<int>(field_empty) * config::Score::kAllClearBonus;
+                    p.last_all_clear |= field_empty; // [EVENT] set flag
 
                     if (Gravity::canFall(p.field)) {
                         // After erasure, if puyos are floating, start falling phase.

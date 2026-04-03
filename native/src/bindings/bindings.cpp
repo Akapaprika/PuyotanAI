@@ -127,6 +127,8 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("active_ojama",      &PuyotanPlayer::active_ojama)
         .def_readwrite("chain_count",       &PuyotanPlayer::chain_count)
         .def_readwrite("last_chain_count",  &PuyotanPlayer::last_chain_count)
+        .def_readwrite("last_all_clear",    &PuyotanPlayer::last_all_clear)
+        .def_readwrite("last_erased_count", &PuyotanPlayer::last_erased_count)
         .def_readwrite("current_action",    &PuyotanPlayer::current_action)
         .def_readwrite("next_action",       &PuyotanPlayer::next_action);
 
@@ -204,18 +206,27 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("step_penalty", &RewardWeights::Turn::step_penalty);
 
     pybind11::class_<RewardWeights::Performance>(m, "PerformanceWeights")
-        .def_readwrite("score_scale",       &RewardWeights::Performance::score_scale)
-        .def_readwrite("chain_bonus_scale", &RewardWeights::Performance::chain_bonus_scale);
+        .def_readwrite("score_scale",              &RewardWeights::Performance::score_scale)
+        .def_readwrite("chain_scale",              &RewardWeights::Performance::chain_scale)
+        .def_readwrite("chain_power",              &RewardWeights::Performance::chain_power)
+        .def_readwrite("min_chain_threshold",      &RewardWeights::Performance::min_chain_threshold)
+        .def_readwrite("premature_chain_penalty",  &RewardWeights::Performance::premature_chain_penalty)
+        .def_readwrite("all_clear_bonus",          &RewardWeights::Performance::all_clear_bonus)
+        .def_readwrite("erasure_count_scale",      &RewardWeights::Performance::erasure_count_scale)
+        .def_readwrite("ojama_sent_scale",         &RewardWeights::Performance::ojama_sent_scale);
 
     pybind11::class_<RewardWeights::Board>(m, "BoardWeights")
-        .def_readwrite("puyo_count_penalty",         &RewardWeights::Board::puyo_count_penalty)
-        .def_readwrite("connectivity_bonus",          &RewardWeights::Board::connectivity_bonus)
-        .def_readwrite("isolated_puyo_penalty",      &RewardWeights::Board::isolated_puyo_penalty)
-        .def_readwrite("death_col_height_penalty",   &RewardWeights::Board::death_col_height_penalty)
-        .def_readwrite("color_diversity_reward",     &RewardWeights::Board::color_diversity_reward)
-        .def_readwrite("buried_puyo_penalty",         &RewardWeights::Board::buried_puyo_penalty)
-        .def_readwrite("ojama_drop_penalty",          &RewardWeights::Board::ojama_drop_penalty)
-        .def_readwrite("potential_chain_bonus_scale", &RewardWeights::Board::potential_chain_bonus_scale);
+        .def_readwrite("puyo_count_penalty",          &RewardWeights::Board::puyo_count_penalty)
+        .def_readwrite("connectivity_bonus",           &RewardWeights::Board::connectivity_bonus)
+        .def_readwrite("isolated_puyo_penalty",       &RewardWeights::Board::isolated_puyo_penalty)
+        .def_readwrite("near_group_bonus",             &RewardWeights::Board::near_group_bonus)
+        .def_readwrite("height_variance_penalty",      &RewardWeights::Board::height_variance_penalty)
+        .def_readwrite("death_col_height_penalty",    &RewardWeights::Board::death_col_height_penalty)
+        .def_readwrite("color_diversity_reward",      &RewardWeights::Board::color_diversity_reward)
+        .def_readwrite("buried_puyo_penalty",          &RewardWeights::Board::buried_puyo_penalty)
+        .def_readwrite("ojama_drop_penalty",           &RewardWeights::Board::ojama_drop_penalty)
+        .def_readwrite("pending_ojama_penalty",        &RewardWeights::Board::pending_ojama_penalty)
+        .def_readwrite("potential_chain_bonus_scale",  &RewardWeights::Board::potential_chain_bonus_scale);
 
     pybind11::class_<RewardWeights::Opponent>(m, "OpponentWeights")
         .def_readwrite("field_pressure_reward", &RewardWeights::Opponent::field_pressure_reward)
@@ -277,11 +288,11 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("minibatch",     &rl::PPOConfig::minibatch);
 
     pybind11::class_<rl::TrainMetrics>(m, "TrainMetrics")
-        .def_readonly("loss",          &rl::TrainMetrics::loss)
-        .def_readonly("avg_reward",    &rl::TrainMetrics::avg_reward)
-        .def_readonly("max_chain",     &rl::TrainMetrics::max_chain)
-        .def_readonly("avg_max_chain", &rl::TrainMetrics::avg_max_chain)
-        .def_readonly("avg_score",     &rl::TrainMetrics::avg_score);
+        .def_readonly("loss",           &rl::TrainMetrics::loss)
+        .def_readonly("avg_reward",     &rl::TrainMetrics::avg_reward)
+        .def_readonly("max_chain",      &rl::TrainMetrics::max_chain)
+        .def_readonly("avg_max_chain",  &rl::TrainMetrics::avg_max_chain)
+        .def_readonly("avg_game_score", &rl::TrainMetrics::avg_game_score);
 
     pybind11::class_<rl::CppPPOTrainer>(m, "CppPPOTrainer")
         .def(pybind11::init<int, int, const std::string&, int, uint32_t, rl::PPOConfig>(),

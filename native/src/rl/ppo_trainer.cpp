@@ -36,6 +36,7 @@ CppPPOTrainer::CppPPOTrainer(int num_envs, int num_steps,
     , arch_(arch)
     , hidden_dim_(hidden_dim)
     , episode_scores_(torch::zeros({num_envs}, torch::kFloat32))
+    , episode_game_scores_(torch::zeros({num_envs}, torch::kFloat32))
     // Pre-allocate all native I/O buffers once.
     , act_p1_buf_(num_envs)
     , act_p2_buf_(num_envs)
@@ -77,9 +78,9 @@ CppPPOTrainer::CppPPOTrainer(int num_envs, int num_steps,
 // Public: trainStep
 // ---------------------------------------------------------------------------
 TrainMetrics CppPPOTrainer::trainStep(bool p2_random) {
-    auto [max_chain, avg_max_chain, avg_reward, avg_score] = collectRollouts_(p2_random);
+    auto [max_chain, avg_max_chain, avg_reward, avg_game_score] = collectRollouts_(p2_random);
     float loss = ppoUpdate_();
-    return TrainMetrics{loss, avg_reward, max_chain, avg_max_chain, avg_score};
+    return TrainMetrics{loss, avg_reward, max_chain, avg_max_chain, avg_game_score};
 }
 
 // ---------------------------------------------------------------------------
@@ -187,17 +188,20 @@ std::tuple<int, float, float, float> CppPPOTrainer::collectRollouts_(bool p2_ran
             max_chain      = std::max(max_chain, c);
         }
 
-        // Episode score accumulation
+        // Episode score accumulation (RL reward) + game score (raw points)
         {
-            auto racc = rewards_t.accessor<float, 1>();
-            auto dacc = dones_t.accessor<float, 1>();
-            auto sacc = episode_scores_.accessor<float, 1>();
+            auto racc  = rewards_t.accessor<float, 1>();
+            auto dacc  = dones_t.accessor<float, 1>();
+            auto sacc  = episode_scores_.accessor<float, 1>();
+            auto gsacc = episode_game_scores_.accessor<float, 1>();
             for (int i = 0; i < num_envs_; ++i) {
-                sacc[i] += racc[i];
+                sacc[i]  += racc[i];
+                gsacc[i] += static_cast<float>(sp_score[i]);  // raw Puyo points
                 sum_reward += racc[i];
                 if (dacc[i] > 0.5f) {
-                    completed_scores.push_back(sacc[i]);
-                    sacc[i] = 0.0f;
+                    completed_scores.push_back(gsacc[i]);  // report game score
+                    sacc[i]  = 0.0f;
+                    gsacc[i] = 0.0f;
                 }
             }
         }
@@ -220,12 +224,14 @@ std::tuple<int, float, float, float> CppPPOTrainer::collectRollouts_(bool p2_ran
     sum_max_chain = std::accumulate(max_per_env.begin(), max_per_env.end(), 0.0f)
                   / static_cast<float>(num_envs_);
     float avg_reward = sum_reward / static_cast<float>(num_steps_ * num_envs_);
-    float avg_score  = completed_scores.empty()
-        ? episode_scores_.mean().item<float>()
+    // avg_game_score: use completed episode game scores;
+    // fall back to current running sum mean if no episode finished this rollout.
+    float avg_game_score = completed_scores.empty()
+        ? episode_game_scores_.mean().item<float>()
         : std::accumulate(completed_scores.begin(), completed_scores.end(), 0.0f)
           / static_cast<float>(completed_scores.size());
 
-    return {max_chain, sum_max_chain, avg_reward, avg_score};
+    return {max_chain, sum_max_chain, avg_reward, avg_game_score};
 }
 
 // ---------------------------------------------------------------------------

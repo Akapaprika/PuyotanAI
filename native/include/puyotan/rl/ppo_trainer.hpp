@@ -21,10 +21,10 @@ namespace puyotan::rl {
  */
 struct TrainMetrics {
     float loss;
-    float avg_reward;
-    int   max_chain;
-    float avg_max_chain;
-    float avg_score;
+    float avg_reward;       ///< Mean RL reward per step (scaled, shaped)
+    int   max_chain;        ///< Max chain achieved across all envs in this rollout
+    float avg_max_chain;    ///< Mean of per-env max chain counts
+    float avg_game_score;   ///< Mean completed-episode Puyo score (raw game points, NOT RL reward)
 };
 
 /**
@@ -110,7 +110,8 @@ private:
     int hidden_dim_;
 
     torch::Tensor curr_obs_;
-    torch::Tensor episode_scores_;
+    torch::Tensor episode_scores_;       ///< Accumulated RL reward per env (for avg_reward)
+    torch::Tensor episode_game_scores_;  ///< Accumulated raw game score per env (for avg_game_score)
 
     // --- Pre-allocated native I/O buffers (reused every step, no per-step allocs)
     std::vector<int>      act_p1_buf_;

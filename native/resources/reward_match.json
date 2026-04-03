@@ -1,30 +1,39 @@
 {
     "match": {
-        "win": 25.0,
+        "win": 50.0,
         "loss": -50.0,
-        "draw": -12.5
+        "draw": -10.0
     },
     "turn": {
         "step_penalty": -0.05
     },
     "performance": {
-        "score_scale": 0.1,
-        "chain_bonus_scale": 0.1
+        "chain_scale": 0.5,
+        "chain_power": 2.0,
+        "min_chain_threshold": 0.0,
+        "premature_chain_penalty": 0.0,
+        "all_clear_bonus": 20.0,
+        "erasure_count_scale": 0.005,
+        "score_scale": 0.05,
+        "ojama_sent_scale": 0.3
     },
     "board": {
-        "puyo_count_penalty": -0.001,
-        "connectivity_bonus": 0.05,
+        "puyo_count_penalty": -0.005,
+        "connectivity_bonus": 0.03,
         "isolated_puyo_penalty": -0.02,
+        "near_group_bonus": 0.02,
+        "height_variance_penalty": 0.05,
         "death_col_height_penalty": -0.5,
         "color_diversity_reward": 0.02,
         "buried_puyo_penalty": -0.1,
         "ojama_drop_penalty": -0.2,
+        "pending_ojama_penalty": -0.2,
         "potential_chain_bonus_scale": 0.3
     },
     "opponent": {
-        "field_pressure_reward": 0.01,
+        "field_pressure_reward": 0.02,
         "connectivity_penalty": -0.02,
-        "ojama_diff_scale": 0.01,
+        "ojama_diff_scale": 0.0,
         "initiative_bonus": 1.5
     }
 }
