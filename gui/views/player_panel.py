@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QGridLayout,
     QPushButton, QLabel, QSizePolicy
 )
-from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtCore import pyqtSignal, Qt, QTimer
 
 from .board_widget import BoardWidget, BoardSnapshot
 
@@ -29,6 +29,35 @@ class PlayerPanel(QFrame):
 
         self._buttons, self._controls_widget, self._controls_layout = self._build_controls()
         root.addWidget(self._controls_widget)
+
+        # All Clear Sign (positioned at the top, outside the board)
+        self.all_clear_label = QLabel("")
+        self.all_clear_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.all_clear_label.setMinimumHeight(30)
+        self.all_clear_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.all_clear_label.setStyleSheet("background: transparent;")
+        root.insertWidget(0, self.all_clear_label)
+
+        self._all_clear_timer = QTimer(self)
+        self._all_clear_timer.setSingleShot(True)
+        self._all_clear_timer.timeout.connect(self._hide_all_clear)
+
+    def trigger_all_clear(self):
+        self.all_clear_label.setText("🎉 ALL CLEAR! 🎉")
+        self.all_clear_label.setStyleSheet("""
+            QLabel {
+                color: #FFF200;
+                background-color: rgba(220, 38, 38, 200);
+                font-size: 18px;
+                font-weight: bold;
+                border-radius: 4px;
+            }
+        """)
+        self._all_clear_timer.start(3000)
+
+    def _hide_all_clear(self):
+        self.all_clear_label.setText("")
+        self.all_clear_label.setStyleSheet("background: transparent;")
 
     # ------------------------------------------------------------------
     # Public API
