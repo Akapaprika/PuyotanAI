@@ -42,6 +42,9 @@ CppPPOTrainer::CppPPOTrainer(int num_envs, int num_steps,
     optimizer_ = std::make_unique<torch::optim::Adam>(
         policy_->parameters(),
         torch::optim::AdamOptions(cfg_.lr).eps(1e-5));
+    // Limit LibTorch threads to prevent contention on 2-core systems.
+    at::set_num_threads(1);
+    at::set_num_interop_threads(1);
     // Get initial observations via native path.
     env_.getObservationsNative(std::span<uint8_t>(obs_buf_));
     curr_obs_ = torch::from_blob(

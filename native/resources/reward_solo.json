@@ -28,7 +28,7 @@
         "buried_puyo_penalty": -0.1,
         "ojama_drop_penalty": -0.2,
         "pending_ojama_penalty": -0.2,
-        "potential_chain_bonus_scale": 0.5
+        "potential_chain_bonus_scale": 0.0
     },
     "opponent": {
         "field_pressure_reward": 0.0,

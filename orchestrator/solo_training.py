@@ -43,11 +43,12 @@ def solo_training_loop(
     config_name: str = "reward_solo.json",
     arch: str = "mlp",
 ) -> None:
+    cfg_inst = config.get_config(arch)
     print(f"=== PuyotanAI Solo Training (C++ LibTorch) session={TIMESTAMP} ===")
     print(f"  reward config : {config_name}")
     print(f"  backbone      : {arch.upper()}")
-    print(f"  envs          : {config.NUM_ENVS}")
-    print(f"  steps/iter    : {config.STEPS_PER_ITER}")
+    print(f"  envs          : {cfg_inst.NUM_ENVS}")
+    print(f"  steps/iter    : {cfg_inst.STEPS_PER_ITER}")
 
     arch_dir   = MODELS_DIR / arch
     latest_pt  = arch_dir / "puyotan_solo_latest.pt"
@@ -56,17 +57,17 @@ def solo_training_loop(
     arch_dir.mkdir(parents=True, exist_ok=True)
 
     cfg = puyotan_native.PPOConfig()
-    cfg.lr = config.LEARNING_RATE
-    cfg.num_epochs = config.NUM_EPOCHS
-    cfg.minibatch = config.MINIBATCH
-    cfg.gamma = config.GAE_GAMMA
-    cfg.lambda_ = config.GAE_LAMBDA
+    cfg.lr = cfg_inst.LEARNING_RATE
+    cfg.num_epochs = cfg_inst.NUM_EPOCHS
+    cfg.minibatch = cfg_inst.MINIBATCH
+    cfg.gamma = cfg_inst.GAE_GAMMA
+    cfg.lambda_ = cfg_inst.GAE_LAMBDA
 
     trainer = puyotan_native.CppPPOTrainer(
-        num_envs=config.NUM_ENVS,
-        num_steps=config.STEPS_PER_ITER,
+        num_envs=cfg_inst.NUM_ENVS,
+        num_steps=cfg_inst.STEPS_PER_ITER,
         arch=arch,
-        hidden_dim=config.HIDDEN_DIM,
+        hidden_dim=cfg_inst.HIDDEN_DIM,
         base_seed=1,
         cfg=cfg,
     )
@@ -85,14 +86,14 @@ def solo_training_loop(
     acc_loss = acc_sps = acc_avg_max = acc_reward = acc_score = 0.0
     acc_max_chain = 0.0
 
-    for i in range(config.TOTAL_ITERS):
+    for i in range(cfg_inst.TOTAL_ITERS):
         iteration = i + 1
         t0 = time.perf_counter()
 
         metrics = trainer.trainStep(p2_random=False)
 
         elapsed = time.perf_counter() - t0
-        sps     = (config.NUM_ENVS * config.STEPS_PER_ITER) / elapsed
+        sps     = (cfg_inst.NUM_ENVS * cfg_inst.STEPS_PER_ITER) / elapsed
 
         acc_loss      += metrics.loss
         acc_sps       += sps
@@ -101,10 +102,10 @@ def solo_training_loop(
         acc_score     += metrics.avg_game_score
         acc_max_chain  = max(acc_max_chain, metrics.max_chain)
 
-        if iteration % config.LOG_INTERVAL == 0 or iteration == 1:
-            div = min(iteration, config.LOG_INTERVAL)
+        if iteration % cfg_inst.LOG_INTERVAL == 0 or iteration == 1:
+            div = min(iteration, cfg_inst.LOG_INTERVAL)
             print(
-                f"[Iter {iteration:4d}/{config.TOTAL_ITERS}]"
+                f"[Iter {iteration:4d}/{cfg_inst.TOTAL_ITERS}]"
                 f"  Loss={acc_loss/div:6.3f}"
                 f"  AvgRew={acc_reward/div:6.3f}"
                 f"  AvgScore={acc_score/div:6.1f}"
@@ -114,7 +115,7 @@ def solo_training_loop(
             )
             acc_loss = acc_sps = acc_max_chain = acc_avg_max = acc_reward = acc_score = 0.0
 
-        if iteration % config.SAVE_INTERVAL == 0 or iteration == config.TOTAL_ITERS:
+        if iteration % cfg_inst.SAVE_INTERVAL == 0 or iteration == cfg_inst.TOTAL_ITERS:
             trainer.save(str(session_pt))
             import shutil
             shutil.copy2(str(session_pt), str(latest_pt))
