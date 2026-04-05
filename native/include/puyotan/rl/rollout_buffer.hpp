@@ -5,13 +5,12 @@
 #include <puyotan/rl/constants.hpp>
 
 namespace puyotan::rl {
-
 /**
  * @class RolloutBuffer
  * @brief Pre-allocated tensor storage for PPO rollout data.
  */
 class RolloutBuffer {
-public:
+  public:
     /**
      * @brief Constructor
      * @param num_steps  Rollout length.
@@ -50,26 +49,28 @@ public:
      * @param lambda      GAE parameter.
      */
     void computeGae(const torch::Tensor& next_value,
-                     float gamma = kDefaultGamma,
-                     float lambda = kDefaultLambda);
+                    float gamma = kDefaultGamma,
+                    float lambda = kDefaultLambda);
 
     /** @brief Return flattened view of observations [S*N, ...] */
-    torch::Tensor flatObs()       const;
+    torch::Tensor flatObs() const;
     /** @brief Return flattened view of actions [S*N] */
-    torch::Tensor flatActions()   const;
+    torch::Tensor flatActions() const;
     /** @brief Return flattened view of log probabilities [S*N] */
     torch::Tensor flatLogProbs() const;
     /** @brief Return flattened view of values [S*N] */
-    torch::Tensor flatValues()    const;
+    torch::Tensor flatValues() const;
     /** @brief Return flattened view of advantages [S*N] */
-    torch::Tensor flatAdvantages()const;
+    torch::Tensor flatAdvantages() const;
     /** @brief Return flattened view of returns (Adv + Val) [S*N] */
-    torch::Tensor flatReturns()   const;
+    torch::Tensor flatReturns() const;
 
     /** @return Total number of steps in buffer (steps * envs). */
-    int totalSteps() const { return num_steps_ * num_envs_; }
+    int totalSteps() const {
+        return num_steps_ * num_envs_;
+    }
 
-private:
+  private:
     int num_steps_;
     int num_envs_;
     torch::Device device_;
@@ -83,5 +84,4 @@ private:
     torch::Tensor advantages_buf_;
     torch::Tensor returns_buf_;
 };
-
 } // namespace puyotan::rl

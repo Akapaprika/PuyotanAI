@@ -5,7 +5,6 @@
 #include <puyotan/core/board.hpp>
 
 namespace puyotan {
-
 /**
  * @struct ErasureData
  * @brief Container for results of a puyo erasure scan.
@@ -13,13 +12,13 @@ namespace puyotan {
 struct ErasureData {
     /// Sizes of each erased group (up to kMaxErasureGroups).
     std::array<uint8_t, config::Rule::kMaxErasureGroups> group_sizes;
-    
+
     /// Bitmask of erased puyos for each color plane.
     std::array<BitBoard, config::Rule::kColors> erased_per_color;
-    
+
     /// Combined bitmask of all erased puyos (including Ojama).
     BitBoard total_erased;
-    
+
     int num_erased = 0; ///< Total number of non-ojama puyos erased
     int num_colors = 0; ///< Number of distinct colors erased (for score bonus)
     int num_groups = 0; ///< Total number of groups found
@@ -30,7 +29,7 @@ struct ErasureData {
  * @brief Logic for detecting and processing puyo erasures (chains).
  */
 class Chain {
-public:
+  public:
     static constexpr uint32_t kAllColorsMask = (1u << config::Rule::kColors) - 1u;
 
     /**
@@ -64,5 +63,4 @@ public:
      */
     static bool canFire(const Board& board, uint32_t color_mask = kAllColorsMask) noexcept;
 };
-
 } // namespace puyotan

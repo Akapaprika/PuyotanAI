@@ -3,15 +3,14 @@
 #include <puyotan/core/board.hpp>
 
 namespace puyotan {
-
 /**
  * @class Gravity
  * @brief Utility class for processing world-class bitwise gravity.
- * 
+ *
  * Provides static methods to simulate vertical puyo falling.
  */
 class Gravity {
-public:
+  public:
     /**
      * @brief Drops all puyos until they hit the bottom or another puyo.
      * @param board The board to process.
@@ -28,5 +27,4 @@ public:
      */
     static bool canFall(const Board& board) noexcept;
 };
-
 } // namespace puyotan

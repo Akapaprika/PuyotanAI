@@ -1,20 +1,19 @@
 #pragma once
 
-#include <puyotan/common/config.hpp>
-#include <puyotan/core/chain.hpp>
 #include <algorithm>
 #include <cassert>
+#include <puyotan/common/config.hpp>
+#include <puyotan/core/chain.hpp>
 
 namespace puyotan {
-
 /**
  * @class Scorer
  * @brief Implements the standard Puyo Puyo scoring algorithm.
- * 
+ *
  * Score = (Num Erased * 10) * (Chain Bonus + Color Bonus + Group Bonus)
  */
 class Scorer {
-public:
+  public:
     /**
      * @brief Calculates the score for a single chain step.
      * @param data Erasure information (number of colors, groups, etc.).
@@ -32,8 +31,8 @@ public:
         const int bonus_sum = chain_bonus + color_bonus + group_bonus;
         // Branchless CMOV-eliminated max(1, sum): sum is never negative, so if sum == 0 we add 1.
         const int total_bonus = bonus_sum + (bonus_sum == 0);
-        
-        // (data.num_erased * 10) is computed in parallel with bonus_sum on the CPU 
+
+        // (data.num_erased * 10) is computed in parallel with bonus_sum on the CPU
         // because it has no dependencies, minimizing critical path latency.
         return (data.num_erased * 10) * total_bonus;
     }
@@ -42,7 +41,7 @@ public:
     static_assert(config::Score::kColorBonusesSize >= 5, "Color bonus array must cover all 5 colors");
     static_assert(config::Score::kGroupBonusesSize >= 1, "Group bonus array cannot be empty");
 
-private:
+  private:
     static constexpr int getChainBonus(int chain) noexcept {
         // Chain count is bounded by board dimensions (max 19-21); assert is sufficient.
         assert(chain >= 1 && chain <= config::Score::kChainBonusesSize);
@@ -76,5 +75,4 @@ private:
         return kPaddedGroupBonuses[idx];
     }
 };
-
 } // namespace puyotan

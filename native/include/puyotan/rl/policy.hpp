@@ -1,11 +1,10 @@
 #pragma once
 
 #include <string>
-#include <vector>
 #include <torch/torch.h>
+#include <vector>
 
 namespace puyotan::rl {
-
 /**
  * @struct PolicyOutput
  * @brief Result of a single forward + sample pass through the policy.
@@ -22,7 +21,7 @@ struct PolicyOutput {
  * @brief Abstract Actor-Critic policy interface.
  */
 class IPolicy {
-public:
+  public:
     virtual ~IPolicy() = default;
 
     /**
@@ -55,5 +54,4 @@ public:
      */
     virtual void load(const std::string& path) = 0;
 };
-
 } // namespace puyotan::rl
