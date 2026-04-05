@@ -103,8 +103,8 @@ std::tuple<int, float, float, float> CppPPOTrainer::collectRollouts_(bool p2_ran
     std::span<int32_t> sp_score(score_buf_);
     std::span<uint8_t> sp_obs(obs_buf_);
     for (int t = 0; t < num_steps_; ++t) {
-        buffer_.storeObs(t, curr_obs_);
-        // ----- Inference (no GIL, pure LibTorch) -----
+        buffer_.storeObs(t, curr_obs_); // stored as uint8
+        // Convert once to float32 for inference - reused for storeObs and policy
         torch::Tensor obs_f = curr_obs_.to(torch::kFloat32);
         PolicyOutput out;
         {
