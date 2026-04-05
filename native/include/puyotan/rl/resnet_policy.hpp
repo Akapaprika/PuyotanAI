@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <string>
 #include <torch/torch.h>
 
@@ -28,7 +29,17 @@ struct ResNetBlockImpl : torch::nn::Module {
 };
 TORCH_MODULE(ResNetBlock);
 
-/** @struct ResNetBackboneImpl */
+/**
+ * @struct ResNetBackboneImpl
+ * @brief ResNet feature extractor with Global Average Pooling.
+ *
+ * Architecture: Conv_in -> BN -> ReLU -> N x ResNetBlock -> GAP -> Linear
+ * GAP reduces [B, channels, H, W] -> [B, channels], dramatically cutting
+ * the FC layer size and making this viable on a 2-core CPU.
+ *
+ * Default light config (2-core): channels=32, num_blocks=2
+ * Heavy config (GPU/cloud):      channels=64, num_blocks=4+
+ */
 struct ResNetBackboneImpl : torch::nn::Module {
     torch::nn::Conv2d conv_in{nullptr};
     torch::nn::BatchNorm2d bn_in{nullptr};
@@ -36,7 +47,7 @@ struct ResNetBackboneImpl : torch::nn::Module {
     torch::nn::Linear fc{nullptr};
     int out_dim;
 
-    explicit ResNetBackboneImpl(int hidden_dim);
+    explicit ResNetBackboneImpl(int hidden_dim, int channels = 32, int num_blocks = 2);
     torch::Tensor forward(torch::Tensor x);
 };
 TORCH_MODULE(ResNetBackbone);
@@ -46,7 +57,7 @@ struct ResNetPolicyImpl : torch::nn::Module {
     ResNetBackbone backbone;
     torch::nn::Linear actor{nullptr}, critic{nullptr};
 
-    explicit ResNetPolicyImpl(int hidden_dim = kDefaultHidden);
+    explicit ResNetPolicyImpl(int hidden_dim = kDefaultHidden, int channels = 32, int num_blocks = 2);
     std::pair<torch::Tensor, torch::Tensor> forward(const torch::Tensor& obs);
 };
 TORCH_MODULE(ResNetPolicy);
@@ -54,7 +65,8 @@ TORCH_MODULE(ResNetPolicy);
 /** @class ResNetPolicyWrapper */
 class ResNetPolicyWrapper : public IPolicy {
   public:
-    explicit ResNetPolicyWrapper(int hidden_dim = kDefaultHidden);
+    explicit ResNetPolicyWrapper(int hidden_dim = kDefaultHidden,
+                                 const std::map<std::string, int>& arch_params = {});
 
     PolicyOutput getActionAndValue(
         const torch::Tensor& obs,
@@ -65,9 +77,7 @@ class ResNetPolicyWrapper : public IPolicy {
     void save(const std::string& path) override;
     void load(const std::string& path) override;
 
-    ResNetPolicy& module() {
-        return net_;
-    }
+    ResNetPolicy& module() { return net_; }
 
   private:
     ResNetPolicy net_;

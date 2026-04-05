@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <iostream>
+#include <map>
 #include <numeric>
 #include <puyotan/env/observation.hpp>
 #include <puyotan/rl/cnn_policy.hpp>
@@ -22,18 +23,23 @@ CppPPOTrainer::CppPPOTrainer(int num_envs, int num_steps,
                              const std::string& arch,
                              int hidden_dim,
                              uint32_t base_seed,
-                             PPOConfig cfg)
-    : env_(num_envs, base_seed), buffer_(num_steps, num_envs, torch::kCPU), cfg_(cfg), num_envs_(num_envs), num_steps_(num_steps), arch_(arch), hidden_dim_(hidden_dim), episode_scores_(torch::zeros({num_envs}, torch::kFloat32)), episode_game_scores_(torch::zeros({num_envs}, torch::kFloat32))
-      // Pre-allocate all native I/O buffers once.
-      ,
-      act_p1_buf_(num_envs), act_p2_buf_(num_envs), rew_buf_(num_envs), done_buf_(num_envs), chain_buf_(num_envs), score_buf_(num_envs), obs_buf_(static_cast<std::size_t>(num_envs) * kObsBytesPerEnv) {
+                             PPOConfig cfg,
+                             const std::map<std::string, int>& arch_params)
+    : env_(num_envs, base_seed), buffer_(num_steps, num_envs, torch::kCPU), cfg_(cfg),
+      num_envs_(num_envs), num_steps_(num_steps), arch_(arch), hidden_dim_(hidden_dim),
+      arch_params_(arch_params),
+      episode_scores_(torch::zeros({num_envs}, torch::kFloat32)),
+      episode_game_scores_(torch::zeros({num_envs}, torch::kFloat32)),
+      act_p1_buf_(num_envs), act_p2_buf_(num_envs), rew_buf_(num_envs), done_buf_(num_envs),
+      chain_buf_(num_envs), score_buf_(num_envs),
+      obs_buf_(static_cast<std::size_t>(num_envs) * kObsBytesPerEnv) {
     // Build policy
     if (arch == "mlp") {
         policy_ = std::make_unique<MLPPolicyWrapper>(hidden_dim);
     } else if (arch == "cnn") {
-        policy_ = std::make_unique<CNNPolicyWrapper>(hidden_dim);
+        policy_ = std::make_unique<CNNPolicyWrapper>(hidden_dim, arch_params_);
     } else if (arch == "resnet") {
-        policy_ = std::make_unique<ResNetPolicyWrapper>(hidden_dim);
+        policy_ = std::make_unique<ResNetPolicyWrapper>(hidden_dim, arch_params_);
     } else {
         throw std::invalid_argument("Unknown arch: " + arch + " (expected 'mlp', 'cnn' or 'resnet')");
     }
@@ -74,9 +80,9 @@ void CppPPOTrainer::loadP2(const std::string& path) {
     if (arch_ == "mlp") {
         opp_policy_ = std::make_unique<MLPPolicyWrapper>(hidden_dim_);
     } else if (arch_ == "cnn") {
-        opp_policy_ = std::make_unique<CNNPolicyWrapper>(hidden_dim_);
+        opp_policy_ = std::make_unique<CNNPolicyWrapper>(hidden_dim_, arch_params_);
     } else if (arch_ == "resnet") {
-        opp_policy_ = std::make_unique<ResNetPolicyWrapper>(hidden_dim_);
+        opp_policy_ = std::make_unique<ResNetPolicyWrapper>(hidden_dim_, arch_params_);
     } else {
         throw std::invalid_argument("Unknown arch for P2: " + arch_);
     }
