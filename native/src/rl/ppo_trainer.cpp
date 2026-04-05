@@ -4,6 +4,7 @@
 #include <puyotan/env/observation.hpp>
 #include <puyotan/rl/cnn_policy.hpp>
 #include <puyotan/rl/mlp_policy.hpp>
+#include <puyotan/rl/resnet_policy.hpp>
 #include <puyotan/rl/ppo_trainer.hpp>
 #include <span>
 #include <stdexcept>
@@ -30,8 +31,10 @@ CppPPOTrainer::CppPPOTrainer(int num_envs, int num_steps,
         policy_ = std::make_unique<MLPPolicyWrapper>(hidden_dim);
     } else if (arch == "cnn") {
         policy_ = std::make_unique<CNNPolicyWrapper>(hidden_dim);
+    } else if (arch == "resnet") {
+        policy_ = std::make_unique<ResNetPolicyWrapper>(hidden_dim);
     } else {
-        throw std::invalid_argument("Unknown arch: " + arch + " (expected 'mlp' or 'cnn')");
+        throw std::invalid_argument("Unknown arch: " + arch + " (expected 'mlp', 'cnn' or 'resnet')");
     }
     policy_->train(true);
     // Build optimizer
@@ -72,6 +75,8 @@ void CppPPOTrainer::loadP2(const std::string& path) {
         opp_policy_ = std::make_unique<MLPPolicyWrapper>(hidden_dim_);
     } else if (arch_ == "cnn") {
         opp_policy_ = std::make_unique<CNNPolicyWrapper>(hidden_dim_);
+    } else if (arch_ == "resnet") {
+        opp_policy_ = std::make_unique<ResNetPolicyWrapper>(hidden_dim_);
     } else {
         throw std::invalid_argument("Unknown arch for P2: " + arch_);
     }

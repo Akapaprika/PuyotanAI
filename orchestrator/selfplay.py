@@ -39,8 +39,8 @@ NUM_ENVS          = 256
 STEPS_PER_ITER    = 128
 TOTAL_ITERS       = 1000
 LOG_INTERVAL      = 10
-SAVE_INTERVAL     = 50
-SNAPSHOT_INTERVAL = 50   # How often the frozen opponent policy is refreshed
+SAVE_INTERVAL     = 10
+SNAPSHOT_INTERVAL = 10   # Refresh opponent as we save now
 HIDDEN_DIM        = 128
 
 MODELS_DIR = BASE_DIR / "models"
@@ -141,7 +141,7 @@ def selfplay_loop(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="PuyotanAI self-play training (C++)")
-    parser.add_argument("--arch",   default="mlp", choices=["mlp", "cnn"],
+    parser.add_argument("--arch",   default="mlp", choices=["mlp", "cnn", "resnet"],
                         help="Backbone architecture (default: mlp)")
     parser.add_argument("--reward", default="reward_match.json",
                         help="Reward config filename under native/resources/")

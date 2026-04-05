@@ -37,7 +37,7 @@ NUM_ENVS       = 256
 STEPS_PER_ITER = 128
 TOTAL_ITERS    = 500
 LOG_INTERVAL   = 10
-SAVE_INTERVAL  = 50
+SAVE_INTERVAL  = 10
 HIDDEN_DIM     = 128
 
 MODELS_DIR = BASE_DIR / "models"
@@ -128,7 +128,7 @@ def solo_training_loop(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="PuyotanAI Solo Training (C++)")
     parser.add_argument("--config", type=str, default="reward_solo.json", help="Reward weights JSON name")
-    parser.add_argument("--arch", type=str, default="mlp", choices=["mlp", "cnn", "attention"], help="Model backbone architecture")
+    parser.add_argument("--arch", type=str, default="mlp", choices=["mlp", "cnn", "attention", "resnet"], help="Model backbone architecture")
     args = parser.parse_args()
 
     solo_training_loop(config_name=args.config, arch=args.arch)
