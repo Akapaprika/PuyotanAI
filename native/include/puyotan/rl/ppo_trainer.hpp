@@ -8,23 +8,22 @@
 
 #include <torch/torch.h>
 
+#include <puyotan/env/vector_match.hpp>
+#include <puyotan/rl/constants.hpp>
 #include <puyotan/rl/policy.hpp>
 #include <puyotan/rl/rollout_buffer.hpp>
-#include <puyotan/rl/constants.hpp>
-#include <puyotan/env/vector_match.hpp>
 
 namespace puyotan::rl {
-
 /**
  * @struct TrainMetrics
  * @brief Metrics returned from a single trainStep() call.
  */
 struct TrainMetrics {
     float loss;
-    float avg_reward;
-    int   max_chain;
-    float avg_max_chain;
-    float avg_score;
+    float avg_reward;     ///< Mean RL reward per step (scaled, shaped)
+    int max_chain;        ///< Max chain achieved across all envs in this rollout
+    float avg_max_chain;  ///< Mean of per-env max chain counts
+    float avg_game_score; ///< Mean completed-episode Puyo score (raw game points, NOT RL reward)
 };
 
 /**
@@ -32,15 +31,15 @@ struct TrainMetrics {
  * @brief All tunable PPO hyperparameters in one struct.
  */
 struct PPOConfig {
-    float gamma         = kDefaultGamma;
-    float lambda        = kDefaultLambda;
-    float clip_eps      = kDefaultClipEps;
-    float entropy_coef  = kDefaultEntropyCoef;
-    float value_coef    = kDefaultValueCoef;
+    float gamma = kDefaultGamma;
+    float lambda = kDefaultLambda;
+    float clip_eps = kDefaultClipEps;
+    float entropy_coef = kDefaultEntropyCoef;
+    float value_coef = kDefaultValueCoef;
     float max_grad_norm = kDefaultMaxGradNorm;
-    float lr            = kDefaultLr;
-    int   num_epochs    = kDefaultNumEpochs;
-    int   minibatch     = kDefaultMinibatch;
+    float lr = kDefaultLr;
+    int num_epochs = kDefaultNumEpochs;
+    int minibatch = kDefaultMinibatch;
 };
 
 /**
@@ -48,7 +47,7 @@ struct PPOConfig {
  * @brief Full PPO training loop in native C++.
  */
 class CppPPOTrainer {
-public:
+  public:
     /**
      * @brief Constructor
      * @param num_envs     Number of parallel environments.
@@ -58,7 +57,7 @@ public:
      * @param base_seed    Base RNG seed for environments.
      * @param cfg          PPO hyperparameters.
      */
-    CppPPOTrainer(int num_envs  = kDefaultNumEnvs,
+    CppPPOTrainer(int num_envs = kDefaultNumEnvs,
                   int num_steps = kDefaultNumSteps,
                   const std::string& arch = "mlp",
                   int hidden_dim = kDefaultHidden,
@@ -94,15 +93,17 @@ public:
      * @brief Access to environment for configuration.
      * @return Reference to the vector match environment.
      */
-    PuyotanVectorMatch& env() { return env_; }
+    PuyotanVectorMatch& env() {
+        return env_;
+    }
 
-private:
-    PuyotanVectorMatch          env_;
-    std::unique_ptr<IPolicy>    policy_;
-    std::unique_ptr<IPolicy>    opp_policy_;
+  private:
+    PuyotanVectorMatch env_;
+    std::unique_ptr<IPolicy> policy_;
+    std::unique_ptr<IPolicy> opp_policy_;
     std::unique_ptr<torch::optim::Adam> optimizer_;
-    RolloutBuffer               buffer_;
-    PPOConfig                   cfg_;
+    RolloutBuffer buffer_;
+    PPOConfig cfg_;
 
     int num_envs_;
     int num_steps_;
@@ -110,16 +111,17 @@ private:
     int hidden_dim_;
 
     torch::Tensor curr_obs_;
-    torch::Tensor episode_scores_;
+    torch::Tensor episode_scores_;      ///< Accumulated RL reward per env (for avg_reward)
+    torch::Tensor episode_game_scores_; ///< Accumulated raw game score per env (for avg_game_score)
 
     // --- Pre-allocated native I/O buffers (reused every step, no per-step allocs)
-    std::vector<int>      act_p1_buf_;
-    std::vector<int>      act_p2_buf_;
-    std::vector<float>    rew_buf_;
-    std::vector<float>    done_buf_;
-    std::vector<int32_t>  chain_buf_;
-    std::vector<int32_t>  score_buf_;
-    std::vector<uint8_t>  obs_buf_;   ///< [N * kBytesPerObservation] flat
+    std::vector<int> act_p1_buf_;
+    std::vector<int> act_p2_buf_;
+    std::vector<float> rew_buf_;
+    std::vector<float> done_buf_;
+    std::vector<int32_t> chain_buf_;
+    std::vector<int32_t> score_buf_;
+    std::vector<uint8_t> obs_buf_; ///< [N * kBytesPerObservation] flat
 
     /**
      * @brief Collect rollouts from environments.
@@ -146,5 +148,4 @@ private:
      */
     static torch::Tensor obsToFloat(const torch::Tensor& obs_uint8);
 };
-
 } // namespace puyotan::rl

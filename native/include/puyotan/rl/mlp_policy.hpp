@@ -3,11 +3,10 @@
 #include <string>
 #include <torch/torch.h>
 
-#include <puyotan/rl/policy.hpp>
 #include <puyotan/rl/constants.hpp>
+#include <puyotan/rl/policy.hpp>
 
 namespace puyotan::rl {
-
 /** @struct MLPBackboneImpl */
 struct MLPBackboneImpl : torch::nn::Module {
     torch::nn::Linear fc1{nullptr}, fc2{nullptr};
@@ -30,7 +29,7 @@ TORCH_MODULE(MLPPolicy);
 
 /** @class MLPPolicyWrapper */
 class MLPPolicyWrapper : public IPolicy {
-public:
+  public:
     explicit MLPPolicyWrapper(int hidden_dim = kDefaultHidden);
 
     PolicyOutput getActionAndValue(
@@ -42,10 +41,11 @@ public:
     void save(const std::string& path) override;
     void load(const std::string& path) override;
 
-    MLPPolicy& module() { return net_; }
+    MLPPolicy& module() {
+        return net_;
+    }
 
-private:
+  private:
     MLPPolicy net_;
 };
-
 } // namespace puyotan::rl

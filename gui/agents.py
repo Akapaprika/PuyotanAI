@@ -64,18 +64,16 @@ class AIPlayerAgent(BasePlayerAgent):
     # Observation size constants (must match ObservationBuilder in C++)
     OBS_SIZE = 2 * 5 * 6 * 14  # kBytesPerObservation
 
-    # All 22 possible PUT actions  (x ∈ [0,5], rot ∈ Up/Right/Down/Left)
-    _ACTIONS: list[p.Action] = [
-        p.Action(p.ActionType.PUT, x, rot)
-        for x in range(6)
-        for rot in [p.Rotation.Up, p.Rotation.Right,
-                    p.Rotation.Down, p.Rotation.Left]
-    ]
-    # Remove invalid placements (Left requires x>=1, Right requires x<=4)
+    # All 22 PUT actions, in exactly the same order as the C++ training loop.
+    # Built from p.get_rl_action() so this is always in sync with the engine.
+    #
+    # Layout (w=6):
+    #   [ 0.. 5]  Up,    col 0-5
+    #   [ 6..10]  Right, col 0-4
+    #   [11..16]  Down,  col 0-5
+    #   [17..21]  Left,  col 0-4
     _VALID_ACTIONS: list[p.Action] = [
-        a for a in _ACTIONS
-        if not (a.rotation == p.Rotation.Left  and a.x == 0)
-        and not (a.rotation == p.Rotation.Right and a.x == 5)
+        p.get_rl_action(i) for i in range(p.kNumRLActions)
     ]
 
     def __init__(self, model_path: str) -> None:

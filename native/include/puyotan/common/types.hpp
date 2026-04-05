@@ -1,10 +1,9 @@
 #pragma once
 
-#include <cstdint>
 #include <array>
+#include <cstdint>
 
 namespace puyotan {
-
 /**
  * @enum Cell
  * @brief Represents the type of a single grid cell on the Puyo Puyo board.
@@ -87,21 +86,20 @@ enum class MatchStatus : uint8_t {
 /**
  * @brief Y-axis offset for the Axis puyo placement based on rotation.
  */
-inline constexpr std::array<int8_t, 4> kAxisDy = { 0,  0,  1,  0 };
+inline constexpr std::array<int8_t, 4> kAxisDy = {0, 0, 1, 0};
 
 /**
  * @brief X-axis offset for the Sub puyo placement relative to the Axis.
  */
-inline constexpr std::array<int8_t, 4> kSubDx  = { 0,  1,  0, -1 };
+inline constexpr std::array<int8_t, 4> kSubDx = {0, 1, 0, -1};
 
 /**
  * @brief Y-axis offset for the Sub puyo placement relative to the Axis.
  */
-inline constexpr std::array<int8_t, 4> kSubDy  = { 1,  0, -1,  0 };
+inline constexpr std::array<int8_t, 4> kSubDy = {1, 0, -1, 0};
 
 /**
  * @brief Simplified Y-axis offset for Sub puyo (legacy/simple placement rules).
  */
-inline constexpr std::array<int8_t, 4> kSubDySimple = { 1,  0,  0,  0 };
-
+inline constexpr std::array<int8_t, 4> kSubDySimple = {1, 0, 0, 0};
 } // namespace puyotan

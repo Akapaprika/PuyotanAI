@@ -23,6 +23,7 @@ class PuyotanViewModel(QObject):
     """
     state_changed = pyqtSignal()
     game_over = pyqtSignal(str)
+    all_clear = pyqtSignal(int)
 
     def __init__(self, model):
         super().__init__()
@@ -106,7 +107,9 @@ class PuyotanViewModel(QObject):
             piece = self.model.get_piece(pid, 0)
             pres.ghost_color_axis = self._blend_ghost(self.p_colors.get(piece.axis, (255,255,255)))
             pres.ghost_color_sub = self._blend_ghost(self.p_colors.get(piece.sub, (255,255,255)))
-            
+            if player_state.last_all_clear:
+                self.all_clear.emit(pid)
+                
         self.state_changed.emit()
 
     # ------------------------------------------------------------------

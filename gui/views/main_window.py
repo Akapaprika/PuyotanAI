@@ -99,6 +99,7 @@ class MainWindow(QMainWindow):
         # ── Wire ViewModel signals ──────────────────────────────────────
         self.vm.state_changed.connect(self._refresh)
         self.vm.game_over.connect(self._on_game_over)
+        self.vm.all_clear.connect(self._on_all_clear)
 
         # ── QTimer for game loop (starts only when game begins) ─────────
         self._timer = QTimer(self)
@@ -204,6 +205,10 @@ class MainWindow(QMainWindow):
         self._timer.stop()
         QMessageBox.information(self, "Game Over", f"Match ended!\n\n{status_text}")
         self._stack.setCurrentIndex(self._PAGE_SETUP)
+
+    def _on_all_clear(self, pid: int) -> None:
+        if 0 <= pid < len(self._panels):
+            self._panels[pid].trigger_all_clear()
 
     def _on_restart(self) -> None:
         """Return to setup screen instead of immediately restarting."""

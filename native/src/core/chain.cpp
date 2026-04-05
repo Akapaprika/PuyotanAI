@@ -1,7 +1,6 @@
 #include <puyotan/core/chain.hpp>
 
 namespace puyotan {
-
 // -----------------------------------------------------------------------
 // Internal BFS kernel shared by both findGroups and the legacy canFire path.
 // Fills data.erased_per_color[i], data.total_erased, group_sizes, and counts.
@@ -11,13 +10,15 @@ static void scanGroups(const Board& board, uint32_t color_mask, ErasureData& dat
     uint32_t erased_color_bits = 0; // Bit i is set if color i was erased
 
     for (int i = 0; i < config::Rule::kColors; ++i) {
-        if (!((color_mask >> i) & 1)) continue;
+        if (!((color_mask >> i) & 1))
+            continue;
         const Cell c = static_cast<Cell>(i);
-        
+
         // Mask ghost puyos (y >= 12) so they don't participate in connectivity or erasure.
         static const __m128i kGhostMask = _mm_set_epi64x(config::Board::kChainableHiMask, config::Board::kChainableLoMask);
         const BitBoard color_board(_mm_and_si128(board.getBitboard(c).m128, kGhostMask));
-        if (color_board.empty()) continue;
+        if (color_board.empty())
+            continue;
 
         // Bitwise Connectivity Pruning ('has_2' filter):
         // Only puyos with >= 2 neighbors of the same color can be part of a 4+ group.
@@ -27,9 +28,9 @@ static void scanGroups(const Board& board, uint32_t color_mask, ErasureData& dat
         const BitBoard R = color_board.shiftRightRaw();
 
         const BitBoard ud_and = U & D;
-        const BitBoard ud_or  = U | D;
+        const BitBoard ud_or = U | D;
         const BitBoard lr_and = L & R;
-        const BitBoard lr_or  = L | R;
+        const BitBoard lr_or = L | R;
         BitBoard has_2 = color_board & (ud_and | lr_and | (ud_or & lr_or));
 
         BitBoard color_erased;
@@ -93,7 +94,8 @@ void Chain::applyErasure(Board& board, const ErasureData& data) noexcept {
     // Apply per-color erasures using cached BitBoard masks (no re-scan)
     for (int i = 0; i < config::Board::kNumColors; ++i) {
         const BitBoard& erased = data.erased_per_color[i];
-        if (erased.empty()) continue;
+        if (erased.empty())
+            continue;
         const Cell c = static_cast<Cell>(i);
         board.setBitboard(c, BitBoard::andNot(board.getBitboard(c), erased));
     }
@@ -114,5 +116,4 @@ ErasureData Chain::execute(Board& board, uint32_t color_mask) noexcept {
 bool Chain::canFire(const Board& board, uint32_t color_mask) noexcept {
     return findGroups(board, color_mask).num_erased > 0;
 }
-
 } // namespace puyotan

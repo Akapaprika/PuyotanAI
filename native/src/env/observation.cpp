@@ -1,14 +1,13 @@
-#include <puyotan/env/observation.hpp>
+#include <algorithm>
 #include <cstring>
 #include <immintrin.h>
-#include <algorithm>
+#include <puyotan/env/observation.hpp>
 
 namespace puyotan {
-
 namespace {
 // SSE4.1 bit expansion table (0-255 -> 64-bit sparse)
 #include "expand_table_data.inc"
-}
+} // namespace
 
 void ObservationBuilder::computeColorMap(const PuyotanMatch& m, int p_idx, uint8_t color_map[5]) {
     memset(color_map, 0, 5);
@@ -19,13 +18,17 @@ void ObservationBuilder::computeColorMap(const PuyotanMatch& m, int p_idx, uint8
         PuyoPiece p = const_cast<Tsumo&>(tsumo).get(i);
         auto map_one = [&](Cell c) {
             int ci = static_cast<int>(c);
-            if (ci < 0 || ci >= 4) return; // Only Normal Colors (0-3)
-            if (color_map[ci] == 0) color_map[ci] = next_id++;
+            if (ci < 0 || ci >= 4)
+                return; // Only Normal Colors (0-3)
+            if (color_map[ci] == 0)
+                color_map[ci] = next_id++;
         };
         map_one(p.axis);
-        if (next_id > 4) break;
+        if (next_id > 4)
+            break;
         map_one(p.sub);
-        if (next_id > 4) break;
+        if (next_id > 4)
+            break;
     }
 }
 
@@ -42,7 +45,8 @@ void ObservationBuilder::renderField(const Board& field, const uint8_t color_map
 
     for (int c = 0; c < 4; ++c) {
         uint8_t mapped_idx = color_map[c];
-        if (mapped_idx == 0) continue;
+        if (mapped_idx == 0)
+            continue;
         uint8_t* color_base = dst_player_obs + mapped_idx * kBytesPerColor;
         const BitBoard& bb = field.getBitboard(static_cast<Cell>(c));
         for (int x = 0; x < 6; ++x) {
@@ -71,13 +75,14 @@ void ObservationBuilder::buildObservation(const PuyotanMatch& m, uint8_t* obs_pt
     renderField(p1.field, color_map, obs_ptr + 1 * kBytesPerField, true);
 
     auto write_meta = [&](uint8_t* f_ptr, int x, uint8_t mapped_val, uint8_t value = 1) {
-        if (mapped_val == 0) return;
+        if (mapped_val == 0)
+            return;
         f_ptr[mapped_val * kBytesPerColor + x * kBytesPerCol + 13] = value;
     };
 
     for (int off = 0; off < 3; ++off) {
         PuyoPiece next = m.getPiece(0, off);
-        write_meta(obs_ptr, off * 2,     color_map[static_cast<int>(next.axis)]);
+        write_meta(obs_ptr, off * 2, color_map[static_cast<int>(next.axis)]);
         write_meta(obs_ptr, off * 2 + 1, color_map[static_cast<int>(next.sub)]);
     }
 
@@ -88,5 +93,4 @@ void ObservationBuilder::buildObservation(const PuyotanMatch& m, uint8_t* obs_pt
     opp_ojama_meta[0 * kBytesPerCol] = (uint8_t)std::min((int)p1.active_ojama, 255);
     opp_ojama_meta[1 * kBytesPerCol] = (uint8_t)std::min((int)p1.non_active_ojama, 255);
 }
-
 } // namespace puyotan

@@ -1,20 +1,19 @@
 #pragma once
-#include <string>
-#include <vector>
 #include <memory>
 #include <onnxruntime_cxx_api.h>
+#include <string>
+#include <vector>
 
 namespace puyotan {
-
 /**
  * @class OnnxPolicy
  * @brief High-performance AI inference engine using ONNX Runtime.
- * 
- * Manages an ONNX session and provides thread-safe batch inference for 
+ *
+ * Manages an ONNX session and provides thread-safe batch inference for
  * Puyo Puyo observation tensors.
  */
 class OnnxPolicy {
-public:
+  public:
     /**
      * @param model_path Path to the .onnx file.
      * @param use_cpu    true: CPU inference, false: DirectML (GPU) inference.
@@ -31,24 +30,25 @@ public:
     std::vector<int64_t> infer(const uint8_t* obs_data, int64_t num_envs) const;
 
     /** Whether the model is successfully loaded. */
-    bool isLoaded() const { return session_ != nullptr; }
+    bool isLoaded() const {
+        return session_ != nullptr;
+    }
 
-private:
+  private:
     Ort::Env env_;
     Ort::SessionOptions session_options_;
     std::unique_ptr<Ort::Session> session_;
     Ort::AllocatorWithDefaultOptions allocator_;
 
-    // 入力/出力名（推論時に使用）
+    // Input/output names (used during inference)
     std::string input_name_{"obs"};
     std::string output_name_{"logits"};
 
-    // 観測テンソルの形状: [N, 2, 5, 6, 14]
+    // Observation tensor shape: [N, 2, 5, 6, 14]
     static constexpr int64_t kPlayers = 2;
-    static constexpr int64_t kColors  = 5;
-    static constexpr int64_t kWidth   = 6;
-    static constexpr int64_t kHeight  = 14;
+    static constexpr int64_t kColors = 5;
+    static constexpr int64_t kWidth = 6;
+    static constexpr int64_t kHeight = 14;
     static constexpr int64_t kObsPerEnv = kPlayers * kColors * kWidth * kHeight;
 };
-
 } // namespace puyotan

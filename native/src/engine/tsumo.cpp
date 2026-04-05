@@ -1,9 +1,8 @@
-#include <puyotan/engine/tsumo.hpp>
-#include <puyotan/common/config.hpp>
 #include <cstdlib>
+#include <puyotan/common/config.hpp>
+#include <puyotan/engine/tsumo.hpp>
 
 namespace puyotan {
-
 Tsumo::Tsumo(uint32_t seed) noexcept {
     setSeed(seed);
 }
@@ -17,7 +16,7 @@ void Tsumo::setSeed(uint32_t seed) noexcept {
 
 void Tsumo::generateMore() noexcept {
     // Optimization: Since ChunkSize (64) is a power of 2 and a factor of PoolSize (256),
-    // and generated_count_ always starts at 0 and increments by 64, 
+    // and generated_count_ always starts at 0 and increments by 64,
     // we never cross the wrap-around boundary within a single generateMore() call.
     static_assert((config::Rule::kTsumoPoolSize % config::Rule::kTsumoChunkSize) == 0,
                   "ChunkSize must be a factor of PoolSize for fast contiguous writes");
@@ -50,5 +49,4 @@ void Tsumo::generateMore() noexcept {
     seed_ = s;
     generated_count_ += config::Rule::kTsumoChunkSize;
 }
-
 } // namespace puyotan
