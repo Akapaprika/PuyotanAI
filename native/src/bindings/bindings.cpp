@@ -254,16 +254,6 @@ PYBIND11_MODULE(puyotan_native, m) {
                  return self.infer(obs.data(), static_cast<int64_t>(obs.shape(0))); }, pybind11::arg("obs"))
         .def("is_loaded", &OnnxPolicy::isLoaded);
 
-    // =========================================================================
-    // LibTorch sanity check
-    // =========================================================================
-    m.def("test_libtorch", []() {
-        torch::Tensor t = torch::rand({2, 3});
-        std::ostringstream oss;
-        oss << "LibTorch OK! tensor:\n"
-            << t;
-        return oss.str();
-    });
 
     // =========================================================================
     // C++ PPO Trainer

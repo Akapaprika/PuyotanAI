@@ -15,6 +15,11 @@ import time
 import argparse
 from pathlib import Path
 
+try:
+    from orchestrator import config
+except ImportError:
+    import config
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
 
@@ -30,16 +35,6 @@ except ImportError as e:
     print(f"Failed to import puyotan_native: {e}")
     sys.exit(1)
 
-# ---------------------------------------------------------------------------
-# Solo training configuration
-# ---------------------------------------------------------------------------
-NUM_ENVS       = 256
-STEPS_PER_ITER = 128
-TOTAL_ITERS    = 500
-LOG_INTERVAL   = 10
-SAVE_INTERVAL  = 10
-HIDDEN_DIM     = 128
-
 MODELS_DIR = BASE_DIR / "models"
 TIMESTAMP  = time.strftime("%Y%m%d_%H%M%S")
 
@@ -51,8 +46,8 @@ def solo_training_loop(
     print(f"=== PuyotanAI Solo Training (C++ LibTorch) session={TIMESTAMP} ===")
     print(f"  reward config : {config_name}")
     print(f"  backbone      : {arch.upper()}")
-    print(f"  envs          : {NUM_ENVS}")
-    print(f"  steps/iter    : {STEPS_PER_ITER}")
+    print(f"  envs          : {config.NUM_ENVS}")
+    print(f"  steps/iter    : {config.STEPS_PER_ITER}")
 
     arch_dir   = MODELS_DIR / arch
     latest_pt  = arch_dir / "puyotan_solo_latest.pt"
@@ -61,15 +56,17 @@ def solo_training_loop(
     arch_dir.mkdir(parents=True, exist_ok=True)
 
     cfg = puyotan_native.PPOConfig()
-    cfg.lr = 3e-4
-    cfg.num_epochs = 4
-    cfg.minibatch = 8192
+    cfg.lr = config.LEARNING_RATE
+    cfg.num_epochs = config.NUM_EPOCHS
+    cfg.minibatch = config.MINIBATCH
+    cfg.gamma = config.GAE_GAMMA
+    cfg.lambda_ = config.GAE_LAMBDA
 
     trainer = puyotan_native.CppPPOTrainer(
-        num_envs=NUM_ENVS,
-        num_steps=STEPS_PER_ITER,
+        num_envs=config.NUM_ENVS,
+        num_steps=config.STEPS_PER_ITER,
         arch=arch,
-        hidden_dim=HIDDEN_DIM,
+        hidden_dim=config.HIDDEN_DIM,
         base_seed=1,
         cfg=cfg,
     )
@@ -88,14 +85,14 @@ def solo_training_loop(
     acc_loss = acc_sps = acc_avg_max = acc_reward = acc_score = 0.0
     acc_max_chain = 0.0
 
-    for i in range(TOTAL_ITERS):
+    for i in range(config.TOTAL_ITERS):
         iteration = i + 1
         t0 = time.perf_counter()
 
         metrics = trainer.trainStep(p2_random=False)
 
         elapsed = time.perf_counter() - t0
-        sps     = (NUM_ENVS * STEPS_PER_ITER) / elapsed
+        sps     = (config.NUM_ENVS * config.STEPS_PER_ITER) / elapsed
 
         acc_loss      += metrics.loss
         acc_sps       += sps
@@ -104,10 +101,10 @@ def solo_training_loop(
         acc_score     += metrics.avg_game_score
         acc_max_chain  = max(acc_max_chain, metrics.max_chain)
 
-        if iteration % LOG_INTERVAL == 0 or iteration == 1:
-            div = min(iteration, LOG_INTERVAL)
+        if iteration % config.LOG_INTERVAL == 0 or iteration == 1:
+            div = min(iteration, config.LOG_INTERVAL)
             print(
-                f"[Iter {iteration:4d}/{TOTAL_ITERS}]"
+                f"[Iter {iteration:4d}/{config.TOTAL_ITERS}]"
                 f"  Loss={acc_loss/div:6.3f}"
                 f"  AvgRew={acc_reward/div:6.3f}"
                 f"  AvgScore={acc_score/div:6.1f}"
@@ -117,7 +114,7 @@ def solo_training_loop(
             )
             acc_loss = acc_sps = acc_max_chain = acc_avg_max = acc_reward = acc_score = 0.0
 
-        if iteration % SAVE_INTERVAL == 0 or iteration == TOTAL_ITERS:
+        if iteration % config.SAVE_INTERVAL == 0 or iteration == config.TOTAL_ITERS:
             trainer.save(str(session_pt))
             import shutil
             shutil.copy2(str(session_pt), str(latest_pt))
@@ -128,7 +125,7 @@ def solo_training_loop(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="PuyotanAI Solo Training (C++)")
     parser.add_argument("--config", type=str, default="reward_solo.json", help="Reward weights JSON name")
-    parser.add_argument("--arch", type=str, default="mlp", choices=["mlp", "cnn", "attention", "resnet"], help="Model backbone architecture")
+    parser.add_argument("--arch", type=str, default="mlp", choices=["mlp", "cnn", "resnet"], help="Model backbone architecture")
     args = parser.parse_args()
 
     solo_training_loop(config_name=args.config, arch=args.arch)

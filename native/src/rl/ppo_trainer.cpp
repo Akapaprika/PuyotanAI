@@ -9,6 +9,7 @@
 #include <span>
 #include <stdexcept>
 #include <torch/torch.h>
+
 namespace py = pybind11;
 namespace puyotan::rl {
 // Bytes per environment observation: [kObsPlayers * kObsColors * kObsCols * kObsRows]
@@ -48,10 +49,6 @@ CppPPOTrainer::CppPPOTrainer(int num_envs, int num_steps,
                     {num_envs, kObsPlayers, kObsColors, kObsCols, kObsRows},
                     torch::kUInt8)
                     .clone();
-    std::cout << "[CppPPOTrainer] arch=" << arch
-              << "  hidden=" << hidden_dim
-              << "  envs=" << num_envs
-              << "  steps=" << num_steps << "\n";
 }
 // ---------------------------------------------------------------------------
 // Public: trainStep

@@ -17,6 +17,11 @@ import argparse
 import traceback
 from pathlib import Path
 
+try:
+    from orchestrator import config
+except ImportError:
+    import config
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
 
@@ -31,17 +36,6 @@ try:
 except ImportError as e:
     print(f"Failed to import puyotan_native: {e}")
     sys.exit(1)
-
-# ---------------------------------------------------------------------------
-# Self-play training configuration
-# ---------------------------------------------------------------------------
-NUM_ENVS          = 256
-STEPS_PER_ITER    = 128
-TOTAL_ITERS       = 1000
-LOG_INTERVAL      = 10
-SAVE_INTERVAL     = 10
-SNAPSHOT_INTERVAL = 10   # Refresh opponent as we save now
-HIDDEN_DIM        = 128
 
 MODELS_DIR = BASE_DIR / "models"
 TIMESTAMP  = time.strftime("%Y%m%d_%H%M%S")
@@ -63,15 +57,17 @@ def selfplay_loop(
 
     try:
         cfg = puyotan_native.PPOConfig()
-        cfg.lr = 3e-4
-        cfg.num_epochs = 4
-        cfg.minibatch = 8192
+        cfg.lr = config.LEARNING_RATE
+        cfg.num_epochs = config.NUM_EPOCHS
+        cfg.minibatch = config.MINIBATCH
+        cfg.gamma = config.GAE_GAMMA
+        cfg.lambda_ = config.GAE_LAMBDA
 
         trainer = puyotan_native.CppPPOTrainer(
-            num_envs=NUM_ENVS,
-            num_steps=STEPS_PER_ITER,
+            num_envs=config.NUM_ENVS,
+            num_steps=config.STEPS_PER_ITER,
             arch=arch,
-            hidden_dim=HIDDEN_DIM,
+            hidden_dim=config.HIDDEN_DIM,
             base_seed=1,
             cfg=cfg,
         )
@@ -84,7 +80,7 @@ def selfplay_loop(
             print(f"Resuming from checkpoint: {latest_pt}")
             trainer.load(str(latest_pt))
 
-        print(f"Config: envs={NUM_ENVS}  steps={STEPS_PER_ITER}  log_every={LOG_INTERVAL}")
+        print(f"Config: envs={config.NUM_ENVS}  steps={config.STEPS_PER_ITER}  log_every={config.LOG_INTERVAL}")
 
         def _reset_accumulators():
             return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
@@ -92,11 +88,11 @@ def selfplay_loop(
         acc_loss, acc_sps, acc_mean_chain, acc_avg_max, acc_reward, acc_score = _reset_accumulators()
         acc_max_chain = 0
 
-        for i in range(TOTAL_ITERS):
+        for i in range(config.TOTAL_ITERS):
             iteration = i + 1
 
             # Refresh frozen opponent snapshot periodically.
-            if iteration % SNAPSHOT_INTERVAL == 1:
+            if iteration % config.SNAPSHOT_INTERVAL == 1:
                 trainer.save(str(latest_pt))
                 trainer.loadP2(str(latest_pt))
 
@@ -106,7 +102,7 @@ def selfplay_loop(
             metrics = trainer.trainStep(p2_random=not latest_pt.exists())
 
             elapsed = time.perf_counter() - t0
-            sps     = (NUM_ENVS * STEPS_PER_ITER) / elapsed
+            sps     = (config.NUM_ENVS * config.STEPS_PER_ITER) / elapsed
 
             acc_loss      += metrics.loss
             acc_sps       += sps
@@ -115,10 +111,10 @@ def selfplay_loop(
             acc_score     += metrics.avg_game_score
             acc_max_chain  = max(acc_max_chain, metrics.max_chain)
 
-            if iteration % LOG_INTERVAL == 0 or iteration == 1:
-                div = min(iteration, LOG_INTERVAL)
+            if iteration % config.LOG_INTERVAL == 0 or iteration == 1:
+                div = min(iteration, config.LOG_INTERVAL)
                 print(
-                    f"[Iter {iteration:4d}/{TOTAL_ITERS}]"
+                    f"[Iter {iteration:4d}/{config.TOTAL_ITERS}]"
                     f"  Loss={acc_loss/div:6.3f}"
                     f"  AvgRew={acc_reward/div:6.3f}"
                     f"  AvgScore={acc_score/div:6.1f}"
@@ -129,7 +125,7 @@ def selfplay_loop(
                 acc_loss, acc_sps, acc_mean_chain, acc_avg_max, acc_reward, acc_score = _reset_accumulators()
                 acc_max_chain = 0
 
-            if iteration % SAVE_INTERVAL == 0:
+            if iteration % config.SAVE_INTERVAL == 0:
                 trainer.save(str(session_pt))
                 shutil.copy2(str(session_pt), str(latest_pt))
                 print(f"Saved: {session_pt.name}")
