@@ -69,28 +69,38 @@ ResNetBackboneImpl::ResNetBackboneImpl(int hidden_dim, int channels, int num_blo
         blocks->push_back(ResNetBlock(channels));
     }
 
-    // GAP collapses [B, channels, H, W] -> [B, channels].
-    // FC input is just `channels` — independent of board dimensions.
-    fc = register_module("fc", torch::nn::Linear(channels, hidden_dim));
+    // Two pooling streams concatenated:
+    //   1. GAP:              [B, channels]        — global shape features (chain awareness)
+    //   2. Column max pool:  [B, channels * Cols] — per-column features (where to place)
+    // Combined: channels + channels * kObsCols = channels * (1 + kObsCols)
+    const int fc_in = channels * (1 + kObsCols);
+    fc = register_module("fc", torch::nn::Linear(fc_in, hidden_dim));
 
     std::cout << "[ResNetBackbone] channels=" << channels
               << "  num_blocks=" << num_blocks
-              << "  GAP enabled  fc_in=" << channels << "\n";
+              << "  GAP+ColMax  fc_in=" << fc_in << "\n";
 }
 
 torch::Tensor ResNetBackboneImpl::forward(torch::Tensor x) {
     // x: [B, 2, 5, 6, 14] float32 — guaranteed by caller
     const int64_t b = x.size(0);
     x = x.reshape({b, kCnnInChannels, kObsCols, kObsRows}); // [B, 10, 6, 14]
-    x = x.transpose(2, 3).contiguous();                     // -> [B, 10, 14, 6] (Conv2d expects H,W)
+    x = x.transpose(2, 3).contiguous();                     // -> [B, 10, 14, 6]
 
     x = torch::relu(bn_in->forward(conv_in->forward(x)));   // [B, channels, 14, 6]
     x = blocks->forward(x);                                  // [B, channels, 14, 6]
 
-    // Global Average Pooling: [B, channels, H, W] -> [B, channels]
-    x = torch::adaptive_avg_pool2d(x, {1, 1}).squeeze(-1).squeeze(-1);
+    // Stream 1: GAP — global shape understanding [B, channels]
+    auto gap = torch::adaptive_avg_pool2d(x, {1, 1}).squeeze(-1).squeeze(-1);
 
-    return torch::relu(fc->forward(x)); // [B, hidden_dim]
+    // Stream 2: Column max pool — per-column features for precise placement [B, channels, 6]
+    //           max over Height dimension (dim=2), reshape to [B, channels * kObsCols]
+    auto col = std::get<0>(x.max(2)).flatten(1); // [B, channels * kObsCols]
+
+    // Concatenate both streams: [B, channels * (1 + kObsCols)]
+    auto combined = torch::cat({gap, col}, 1);
+
+    return torch::relu(fc->forward(combined)); // [B, hidden_dim]
 }
 
 // ---------------------------------------------------------------------------
