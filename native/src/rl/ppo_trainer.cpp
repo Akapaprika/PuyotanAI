@@ -32,7 +32,9 @@ CppPPOTrainer::CppPPOTrainer(int num_envs, int num_steps,
       episode_game_scores_(torch::zeros({num_envs}, torch::kFloat32)),
       act_p1_buf_(num_envs), act_p2_buf_(num_envs), rew_buf_(num_envs), done_buf_(num_envs),
       chain_buf_(num_envs), score_buf_(num_envs),
-      obs_buf_(static_cast<std::size_t>(num_envs) * kObsBytesPerEnv) {
+      obs_buf_(static_cast<std::size_t>(num_envs) * kObsBytesPerEnv),
+      indices_buf_(torch::zeros({num_steps * num_envs}, torch::kInt64)),
+      completed_scores_(), max_per_env_(num_envs, 0) {
     // Build policy
     if (arch == "mlp") {
         policy_ = std::make_unique<MLPPolicyWrapper>(hidden_dim);
@@ -53,11 +55,11 @@ CppPPOTrainer::CppPPOTrainer(int num_envs, int num_steps,
     at::set_num_interop_threads(1);
     // Get initial observations via native path.
     env_.getObservationsNative(std::span<uint8_t>(obs_buf_));
+    // [OPTIMIZATION] ZERO-COPY initialization: from_blob refers to obs_buf_ directly.
     curr_obs_ = torch::from_blob(
                     obs_buf_.data(),
                     {num_envs, kObsPlayers, kObsColors, kObsCols, kObsRows},
-                    torch::kUInt8)
-                    .clone();
+                    torch::kUInt8);
 }
 // ---------------------------------------------------------------------------
 // Public: trainStep
@@ -96,21 +98,32 @@ void CppPPOTrainer::loadP2(const std::string& path) {
 std::tuple<int, float, float, float> CppPPOTrainer::collectRollouts_(bool p2_random) {
     policy_->train(false);
     int max_chain = 0;
-    float sum_max_chain = 0.0f;
     float sum_reward = 0.0f;
-    std::vector<float> completed_scores;
-    std::vector<int> max_per_env(num_envs_, 0);
+    
+    // [OPTIMIZATION] Re-use pre-allocated vectors to avoid heap allocation.
+    completed_scores_.clear();
+    std::fill(max_per_env_.begin(), max_per_env_.end(), 0);
+
     // Span views over the pre-allocated buffers.
-    std::span<int> sp_p1(act_p1_buf_);
-    std::span<int> sp_p2(act_p2_buf_);
+    std::span<int8_t> sp_p1(act_p1_buf_);
+    std::span<int8_t> sp_p2(act_p2_buf_);
     std::span<float> sp_rew(rew_buf_);
     std::span<float> sp_done(done_buf_);
-    std::span<int32_t> sp_chain(chain_buf_);
+    std::span<int8_t> sp_chain(chain_buf_);
     std::span<int32_t> sp_score(score_buf_);
     std::span<uint8_t> sp_obs(obs_buf_);
+
+    // Fast PRNG state for P2 random wrapper (avoids global lock of std::rand())
+    uint64_t prng_state = env_.getMatch(0).getTsumo().getSeed() + 0x123456789ULL;
+    auto fast_rand = [&]() -> int8_t {
+        prng_state ^= prng_state >> 12;
+        prng_state ^= prng_state << 25;
+        prng_state ^= prng_state >> 27;
+        return (prng_state * 0x2545F4914F6CDD1DULL) % kNumActions;
+    };
+
     for (int t = 0; t < num_steps_; ++t) {
         buffer_.storeObs(t, curr_obs_); // stored as uint8
-        // Convert once to float32 for inference - reused for storeObs and policy
         torch::Tensor obs_f = curr_obs_.to(torch::kFloat32);
         PolicyOutput out;
         {
@@ -119,68 +132,73 @@ std::tuple<int, float, float, float> CppPPOTrainer::collectRollouts_(bool p2_ran
             if (opp_policy_) {
                 torch::Tensor opp_obs = obs_f.flip({1}).contiguous();
                 PolicyOutput opp_out = opp_policy_->getActionAndValue(opp_obs);
-                // Copy opponent actions into p2 buffer.
-                auto opp_acc = opp_out.actions.accessor<int64_t, 1>();
-                for (int i = 0; i < num_envs_; ++i)
-                    sp_p2[i] = static_cast<int>(opp_acc[i]);
+                // [OPTIMIZATION] Raw pointer loop over actions tensor.
+                const int64_t* opp_ptr = opp_out.actions.data_ptr<int64_t>();
+                for (int i = 0; i < num_envs_; ++i) {
+                    sp_p2[i] = static_cast<int8_t>(opp_ptr[i]);
+                }
             }
         }
+        
         // Copy P1 actions into native buffer.
         {
-            auto acc = out.actions.accessor<int64_t, 1>();
-            for (int i = 0; i < num_envs_; ++i)
-                sp_p1[i] = static_cast<int>(acc[i]);
+            // [OPTIMIZATION] Raw pointer action copy.
+            const int64_t* p1_ptr = out.actions.data_ptr<int64_t>();
+            for (int i = 0; i < num_envs_; ++i) {
+                sp_p1[i] = static_cast<int8_t>(p1_ptr[i]);
+            }
         }
+
         // P2 fallback (solo / random)
         if (!opp_policy_) {
             if (p2_random) {
                 for (int i = 0; i < num_envs_; ++i)
-                    sp_p2[i] = std::rand() % kNumActions;
+                    sp_p2[i] = fast_rand(); // Lock-free PRNG
             } else {
-                // Mirror P1
                 std::ranges::copy(sp_p1, sp_p2.begin());
             }
         }
+
         // ----- Native step -- OpenMP threads can run freely -----
         env_.stepNative(sp_p1, sp_p2, sp_rew, sp_done, sp_chain, sp_score, sp_obs);
-        // Build reward and done tensors directly from the native buffers (no copy).
-        auto rewards_t = torch::from_blob(sp_rew.data(), {num_envs_}, torch::kFloat32).clone();
-        auto dones_t = torch::from_blob(sp_done.data(), {num_envs_}, torch::kFloat32).clone();
-        buffer_.storeStep(t,
-                          out.actions.to(torch::kInt64),
-                          out.log_probs,
-                          out.values,
-                          rewards_t,
-                          dones_t);
-        // Chain stats
-        for (int i = 0; i < num_envs_; ++i) {
-            int c = sp_chain[i];
-            max_per_env[i] = std::max(max_per_env[i], c);
-            max_chain = std::max(max_chain, c);
-        }
-        // Episode score accumulation (RL reward) + game score (raw points)
+
+        // [OPTIMIZATION] ZERO-COPY: from_blob without clone() allows RolloutBuffer to copy directly.
+        auto rewards_t = torch::from_blob(sp_rew.data(), {num_envs_}, torch::kFloat32);
+        auto dones_t   = torch::from_blob(sp_done.data(), {num_envs_}, torch::kFloat32);
+
+        buffer_.storeStep(t, out.actions, out.log_probs, out.values, rewards_t, dones_t);
+        // [OPTIMIZATION] Unified single loop + Raw Pointers for maximum Cache Line efficiency.
         {
-            auto racc = rewards_t.accessor<float, 1>();
-            auto dacc = dones_t.accessor<float, 1>();
-            auto sacc = episode_scores_.accessor<float, 1>();
-            auto gsacc = episode_game_scores_.accessor<float, 1>();
+            const float*   racc = sp_rew.data();
+            const float*   dacc = sp_done.data();
+            const int8_t*  cacc = sp_chain.data();
+            const int32_t* gacc = sp_score.data();
+            float*         sacc = episode_scores_.data_ptr<float>();
+            float*         gsacc = episode_game_scores_.data_ptr<float>();
+            int8_t*        macc = max_per_env_.data();
+
             for (int i = 0; i < num_envs_; ++i) {
-                sacc[i] += racc[i];
-                gsacc[i] += static_cast<float>(sp_score[i]); // raw Puyo points
+                // 1. Accumulate stats
+                sacc[i]    += racc[i];
+                gsacc[i]   += static_cast<float>(gacc[i]);
                 sum_reward += racc[i];
+                macc[i]     = std::max(macc[i], cacc[i]);
+                max_chain   = std::max(max_chain, static_cast<int>(macc[i]));
+
+                // 2. Check done
                 if (dacc[i] > 0.5f) {
-                    completed_scores.push_back(gsacc[i]); // report game score
+                    completed_scores_.push_back(gsacc[i]); // report game score
                     sacc[i] = 0.0f;
                     gsacc[i] = 0.0f;
                 }
             }
         }
         // Next observation is already in obs_buf_ (written by stepNative).
+        // [OPTIMIZATION] ZERO-COPY view for the next step.
         curr_obs_ = torch::from_blob(
                         sp_obs.data(),
                         {num_envs_, kObsPlayers, kObsColors, kObsCols, kObsRows},
-                        torch::kUInt8)
-                        .clone();
+                        torch::kUInt8);
     }
     // Bootstrap value for GAE
     {
@@ -189,13 +207,14 @@ std::tuple<int, float, float, float> CppPPOTrainer::collectRollouts_(bool p2_ran
         auto boot = policy_->getActionAndValue(obs_f);
         buffer_.computeGae(boot.values, cfg_.gamma, cfg_.lambda);
     }
-    sum_max_chain = std::accumulate(max_per_env.begin(), max_per_env.end(), 0.0f) / static_cast<float>(num_envs_);
+    // [OPTIMIZATION] Int accumulation prevents N float casts.
+    int sum_max_int = std::accumulate(max_per_env_.begin(), max_per_env_.end(), 0);
+    float sum_max_chain = static_cast<float>(sum_max_int) / static_cast<float>(num_envs_);
     float avg_reward = sum_reward / static_cast<float>(num_steps_ * num_envs_);
-    // avg_game_score: use completed episode game scores;
-    // fall back to current running sum mean if no episode finished this rollout.
-    float avg_game_score = completed_scores.empty()
+    
+    float avg_game_score = completed_scores_.empty()
                                ? episode_game_scores_.mean().item<float>()
-                               : std::accumulate(completed_scores.begin(), completed_scores.end(), 0.0f) / static_cast<float>(completed_scores.size());
+                               : std::accumulate(completed_scores_.begin(), completed_scores_.end(), 0.0f) / static_cast<float>(completed_scores_.size());
     return {max_chain, sum_max_chain, avg_reward, avg_game_score};
 }
 // ---------------------------------------------------------------------------
@@ -210,12 +229,17 @@ float CppPPOTrainer::ppoUpdate_() {
     auto b_returns = buffer_.flatReturns();
     b_advantages = (b_advantages - b_advantages.mean()) / (b_advantages.std() + 1e-8f);
     int total = buffer_.totalSteps();
+    // [OPTIMIZATION] Reuse indices_buf_ to avoid allocating a [total] tensor on the heap every epoch.
+    torch::randperm_out(indices_buf_, total);
+
     float total_loss = 0.0f;
     for (int epoch = 0; epoch < cfg_.num_epochs; ++epoch) {
-        auto indices = torch::randperm(total, torch::kInt64);
+        if (epoch > 0) {
+            torch::randperm_out(indices_buf_, total); // Reshuffle for next epochs
+        }
         for (int start = 0; start < total; start += cfg_.minibatch) {
             int end = std::min(start + cfg_.minibatch, total);
-            auto idx = indices.slice(0, start, end);
+            auto idx = indices_buf_.slice(0, start, end);
             total_loss += updateMinibatch_(
                 b_obs.index({idx}),
                 b_actions.index({idx}),

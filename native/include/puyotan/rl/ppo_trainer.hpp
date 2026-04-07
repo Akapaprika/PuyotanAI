@@ -121,15 +121,20 @@ class CppPPOTrainer {
     torch::Tensor curr_obs_;
     torch::Tensor episode_scores_;      ///< Accumulated RL reward per env (for avg_reward)
     torch::Tensor episode_game_scores_; ///< Accumulated raw game score per env (for avg_game_score)
+    torch::Tensor indices_buf_;         ///< Pre-allocated tensor for PPO mini-batch shuffling
 
     // --- Pre-allocated native I/O buffers (reused every step, no per-step allocs)
-    std::vector<int> act_p1_buf_;
-    std::vector<int> act_p2_buf_;
+    std::vector<int8_t> act_p1_buf_;
+    std::vector<int8_t> act_p2_buf_;
     std::vector<float> rew_buf_;
     std::vector<float> done_buf_;
-    std::vector<int32_t> chain_buf_;
+    std::vector<int8_t> chain_buf_;
     std::vector<int32_t> score_buf_;
     std::vector<uint8_t> obs_buf_; ///< [N * kBytesPerObservation] flat
+
+    // --- Stat tracking buffers (Pre-allocated)
+    std::vector<float> completed_scores_;
+    std::vector<int8_t> max_per_env_;
 
     /**
      * @brief Collect rollouts from environments.

@@ -46,26 +46,43 @@ void RolloutBuffer::storeStep(int step,
 
 void RolloutBuffer::computeGae(const torch::Tensor& next_value,
                                float gamma, float lambda) {
-    // next_value is already a [num_envs] tensor from bootstrap.
-    // We process all envs simultaneously per timestep (vectorized).
-    torch::Tensor gae = torch::zeros({num_envs_}, values_buf_.options().dtype(torch::kFloat32));
-    const auto rewards_f = rewards_buf_.to(torch::kFloat32);
-    const auto values_f  = values_buf_.to(torch::kFloat32);
-    const auto dones_f   = dones_buf_.to(torch::kFloat32);
+    // [OPTIMIZATION] Avoid redundant .to(kFloat32) and tensor slicing.
+    // Use raw pointer access for maximum vectorization efficiency.
+    
+    // Ensure all tensors are contiguous before taking data_ptr
+    auto rew_c = rewards_buf_.contiguous();
+    auto val_c = values_buf_.contiguous();
+    auto done_c = dones_buf_.contiguous();
+    auto adv_c = advantages_buf_.contiguous();
+    auto next_val_c = next_value.contiguous(); // [num_envs_]
+    
+    const float* rew_ptr = rew_c.data_ptr<float>();
+    const float* val_ptr = val_c.data_ptr<float>();
+    const float* done_ptr = done_c.data_ptr<float>();
+    const float* next_v_ptr = next_val_c.data_ptr<float>();
+    float*       adv_ptr = adv_c.data_ptr<float>();
+    
+    // We need a small buffer to hold 'gae' for the current state (num_envs).
+    // Using a std::vector avoids allocating a torch::Tensor inside the rollout collection.
+    std::vector<float> curr_gae(num_envs_, 0.0f);
 
     for (int t = num_steps_ - 1; t >= 0; --t) {
-        const torch::Tensor next_val = (t == num_steps_ - 1)
-                                           ? next_value
-                                           : values_f[t + 1];
-
-        const torch::Tensor non_terminal = 1.0f - dones_f[t];
-        const torch::Tensor delta = rewards_f[t] + gamma * next_val * non_terminal - values_f[t];
-
-        gae = delta + gamma * lambda * non_terminal * gae;
-        advantages_buf_[t] = gae;
+        int offset = t * num_envs_;
+        int next_offset = (t + 1) * num_envs_;
+        
+        for (int i = 0; i < num_envs_; ++i) {
+            float nv = (t == num_steps_ - 1) ? next_v_ptr[i] : val_ptr[next_offset + i];
+            float non_terminal = 1.0f - done_ptr[offset + i];
+            float delta = rew_ptr[offset + i] + gamma * nv * non_terminal - val_ptr[offset + i];
+            
+            curr_gae[i] = delta + gamma * lambda * non_terminal * curr_gae[i];
+            adv_ptr[offset + i] = curr_gae[i];
+        }
     }
 
-    returns_buf_ = advantages_buf_ + values_f;
+    // Since we called .contiguous() we must assign it back if it's a new tensor, 
+    // but the underlying storage is contiguous by default for buf_.
+    returns_buf_ = advantages_buf_ + values_buf_;
 }
 
 torch::Tensor RolloutBuffer::flatObs() const {
