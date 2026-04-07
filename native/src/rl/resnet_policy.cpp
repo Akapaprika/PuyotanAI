@@ -81,7 +81,8 @@ ResNetBackboneImpl::ResNetBackboneImpl(int hidden_dim, int channels, int num_blo
 torch::Tensor ResNetBackboneImpl::forward(torch::Tensor x) {
     // x: [B, 2, 5, 6, 14] float32 — guaranteed by caller
     const int64_t b = x.size(0);
-    x = x.reshape({b, kCnnInChannels, kObsRows, kObsCols}); // [B, 10, 14, 6]
+    x = x.reshape({b, kCnnInChannels, kObsCols, kObsRows}); // [B, 10, 6, 14]
+    x = x.transpose(2, 3).contiguous();                     // -> [B, 10, 14, 6] (Conv2d expects H,W)
 
     x = torch::relu(bn_in->forward(conv_in->forward(x)));   // [B, channels, 14, 6]
     x = blocks->forward(x);                                  // [B, channels, 14, 6]
