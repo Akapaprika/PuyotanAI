@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <string>
 #include <tuple>
@@ -57,12 +58,18 @@ class CppPPOTrainer {
      * @param base_seed    Base RNG seed for environments.
      * @param cfg          PPO hyperparameters.
      */
+    /**
+     * @param arch_params  Architecture-specific tuning (e.g. {"channels",32},{"num_blocks",2}).
+     *                     Keys depend on arch: CNN uses "channels"; ResNet uses "channels" and
+     *                     "num_blocks". Ignored for MLP. Defaults produce a 2-core-friendly net.
+     */
     CppPPOTrainer(int num_envs = kDefaultNumEnvs,
                   int num_steps = kDefaultNumSteps,
                   const std::string& arch = "mlp",
                   int hidden_dim = kDefaultHidden,
                   uint32_t base_seed = 1u,
-                  PPOConfig cfg = {});
+                  PPOConfig cfg = {},
+                  const std::map<std::string, int>& arch_params = {});
 
     /**
      * @brief Run one rollout + PPO update, return metrics.
@@ -109,19 +116,25 @@ class CppPPOTrainer {
     int num_steps_;
     std::string arch_;
     int hidden_dim_;
+    std::map<std::string, int> arch_params_; ///< Forwarded to policy constructors
 
     torch::Tensor curr_obs_;
     torch::Tensor episode_scores_;      ///< Accumulated RL reward per env (for avg_reward)
     torch::Tensor episode_game_scores_; ///< Accumulated raw game score per env (for avg_game_score)
+    torch::Tensor indices_buf_;         ///< Pre-allocated tensor for PPO mini-batch shuffling
 
     // --- Pre-allocated native I/O buffers (reused every step, no per-step allocs)
-    std::vector<int> act_p1_buf_;
-    std::vector<int> act_p2_buf_;
+    std::vector<int8_t> act_p1_buf_;
+    std::vector<int8_t> act_p2_buf_;
     std::vector<float> rew_buf_;
     std::vector<float> done_buf_;
-    std::vector<int32_t> chain_buf_;
+    std::vector<int8_t> chain_buf_;
     std::vector<int32_t> score_buf_;
     std::vector<uint8_t> obs_buf_; ///< [N * kBytesPerObservation] flat
+
+    // --- Stat tracking buffers (Pre-allocated)
+    std::vector<float> completed_scores_;
+    std::vector<int8_t> max_per_env_;
 
     /**
      * @brief Collect rollouts from environments.

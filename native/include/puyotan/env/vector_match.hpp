@@ -73,19 +73,19 @@ class PuyotanVectorMatch {
      * @param out_scores  Output int32 delta scores [n]
      * @param out_obs     Output uint8 observations [n * obs_bytes]
      */
-    void stepNative(std::span<const int> p1_actions,
-                    std::span<const int> p2_actions,
+    void stepNative(std::span<const int8_t> p1_actions,
+                    std::span<const int8_t> p2_actions,
                     std::span<float> out_rewards,
                     std::span<float> out_dones,
-                    std::span<int32_t> out_chains,
+                    std::span<int8_t> out_chains,
                     std::span<int32_t> out_scores,
-                    std::span<uint8_t> out_obs);
+                    std::span<uint8_t> out_obs) noexcept;
 
     /**
      * @brief Write observations to a pre-allocated uint8 buffer (no Python objects).
      * @param out_obs Buffer of size [n * kBytesPerObservation].
      */
-    void getObservationsNative(std::span<uint8_t> out_obs) const;
+    void getObservationsNative(std::span<uint8_t> out_obs) const noexcept;
 
     size_t size() const {
         return matches_.size();
@@ -101,6 +101,7 @@ class PuyotanVectorMatch {
 
   private:
     std::vector<PuyotanMatch> matches_;
+    std::vector<uint32_t> env_seeds_;
     uint32_t base_seed_;
 };
 } // namespace puyotan

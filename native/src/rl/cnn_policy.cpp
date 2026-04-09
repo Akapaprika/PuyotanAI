@@ -2,7 +2,9 @@
 
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <stdexcept>
+#include <string>
 
 #include <torch/torch.h>
 
@@ -10,32 +12,33 @@
 
 namespace puyotan::rl {
 // ---------------------------------------------------------------------------
-// CNNBackbone
+// CNNBackbone  (Conv -> Conv -> GAP -> FC)
 // ---------------------------------------------------------------------------
-CNNBackboneImpl::CNNBackboneImpl(int hidden_dim)
+CNNBackboneImpl::CNNBackboneImpl(int hidden_dim, int channels)
     : out_dim(hidden_dim) {
     // Layer 1: detect local adjacency patterns (3x3)
     conv1 = register_module("conv1",
-                            torch::nn::Conv2d(torch::nn::Conv2dOptions(kCnnInChannels, 32, 3).padding(1)));
+                            torch::nn::Conv2d(torch::nn::Conv2dOptions(kCnnInChannels, channels, 3).padding(1)));
     // Layer 2: detect larger chain shapes
     conv2 = register_module("conv2",
-                            torch::nn::Conv2d(torch::nn::Conv2dOptions(32, 64, 3).padding(1)));
+                            torch::nn::Conv2d(torch::nn::Conv2dOptions(channels, channels, 3).padding(1)));
 
-    // After two conv layers, spatial dims unchanged (padding=1)
-    // Feature map: [B, 64, kObsRows, kObsCols]
-    const int conv_out = 64 * kObsRows * kObsCols; // 64 * 14 * 6 = 5376
-    fc = register_module("fc", torch::nn::Linear(conv_out, hidden_dim));
+    // GAP collapses [B, channels, H, W] -> [B, channels] — replaces flat 5376-dim FC input.
+    // Input to fc is just `channels` regardless of board size.
+    fc = register_module("fc", torch::nn::Linear(channels, hidden_dim));
 }
 
 torch::Tensor CNNBackboneImpl::forward(torch::Tensor x) {
-    // x: [B, 2, 5, 6, 14] float32
-    // Reshape to [B, kCnnInChannels, kObsRows, kObsCols] = [B, 10, 14, 6]
+    // x: [B, 2, 5, 6, 14] float32 — already converted by caller
     const int64_t b = x.size(0);
-    x = x.reshape({b, kCnnInChannels, kObsRows, kObsCols});
+    x = x.reshape({b, kCnnInChannels, kObsRows, kObsCols}); // [B, 10, 14, 6]
 
-    x = torch::relu(conv1->forward(x)); // [B, 32, 14, 6]
-    x = torch::relu(conv2->forward(x)); // [B, 64, 14, 6]
-    x = x.reshape({b, -1});             // [B, 64*14*6]
+    x = torch::relu(conv1->forward(x)); // [B, channels, 14, 6]
+    x = torch::relu(conv2->forward(x)); // [B, channels, 14, 6]
+
+    // Global Average Pooling: [B, channels, H, W] -> [B, channels]
+    x = torch::adaptive_avg_pool2d(x, {1, 1}).squeeze(-1).squeeze(-1);
+
     x = torch::relu(fc->forward(x));    // [B, hidden_dim]
     return x;
 }
@@ -43,29 +46,39 @@ torch::Tensor CNNBackboneImpl::forward(torch::Tensor x) {
 // ---------------------------------------------------------------------------
 // CNNPolicy (Actor-Critic wrapper module)
 // ---------------------------------------------------------------------------
-CNNPolicyImpl::CNNPolicyImpl(int hidden_dim)
-    : backbone(register_module("backbone", CNNBackbone(hidden_dim))) {
-    actor = register_module("actor", torch::nn::Linear(hidden_dim, kNumActions));
+CNNPolicyImpl::CNNPolicyImpl(int hidden_dim, int channels)
+    : backbone(register_module("backbone", CNNBackbone(hidden_dim, channels))) {
+    actor  = register_module("actor",  torch::nn::Linear(hidden_dim, kNumActions));
     critic = register_module("critic", torch::nn::Linear(hidden_dim, 1));
 }
 
 std::pair<torch::Tensor, torch::Tensor> CNNPolicyImpl::forward(const torch::Tensor& obs) {
-    auto features = backbone->forward(obs.to(torch::kFloat32));
+    // obs is guaranteed float32 by the trainer — no redundant cast needed.
+    auto features = backbone->forward(obs);
     return {actor->forward(features), critic->forward(features).squeeze(-1)};
 }
 
 // ---------------------------------------------------------------------------
 // CNNPolicyWrapper (IPolicy adapter)
 // ---------------------------------------------------------------------------
-CNNPolicyWrapper::CNNPolicyWrapper(int hidden_dim)
-    : net_(hidden_dim) {}
+CNNPolicyWrapper::CNNPolicyWrapper(int hidden_dim,
+                                   const std::map<std::string, int>& arch_params) {
+    auto get = [&](const std::string& key, int def) -> int {
+        auto it = arch_params.find(key);
+        return (it != arch_params.end()) ? it->second : def;
+    };
+    const int channels = get("channels", 64);
+    net_ = CNNPolicy(hidden_dim, channels);
+    std::cout << "[CNNPolicy] channels=" << channels
+              << "  GAP enabled  fc_in=" << channels << "\n";
+}
 
 PolicyOutput CNNPolicyWrapper::getActionAndValue(
     const torch::Tensor& obs,
     const torch::Tensor* provided_action) {
     auto [logits, value] = net_->forward(obs);
 
-    auto probs = torch::softmax(logits, -1);
+    auto probs        = torch::softmax(logits, -1);
     auto log_probs_all = torch::log_softmax(logits, -1);
 
     torch::Tensor action;
@@ -76,7 +89,7 @@ PolicyOutput CNNPolicyWrapper::getActionAndValue(
     }
 
     auto log_prob = log_probs_all.gather(1, action.unsqueeze(-1)).squeeze(-1);
-    auto entropy = -(probs * log_probs_all).sum(-1);
+    auto entropy  = -(probs * log_probs_all).sum(-1);
 
     return PolicyOutput{action, log_prob, entropy, value};
 }

@@ -20,26 +20,35 @@ static constexpr bool kTermTable[] = {
 };
 } // anonymous namespace
 PuyotanVectorMatch::PuyotanVectorMatch(int num_matches, uint32_t base_seed)
-    : base_seed_(base_seed) {
+    : base_seed_(base_seed), env_seeds_(num_matches) {
     matches_.reserve(num_matches);
     for (int i = 0; i < num_matches; ++i) {
-        matches_.emplace_back(base_seed + i);
+        env_seeds_[i] = base_seed + i;
+        matches_.emplace_back(env_seeds_[i]);
         matches_.back().start();
         matches_.back().stepUntilDecision();
     }
 }
 void PuyotanVectorMatch::reset(int id) noexcept {
     if (id == -1) {
-#pragma omp parallel for
+#pragma omp parallel for schedule(static)
         for (int i = 0; i < (int)matches_.size(); ++i) {
-            matches_[i] = PuyotanMatch(base_seed_ + i);
-            matches_[i].start();             // Fixed: Must call start()
-            matches_[i].stepUntilDecision(); // Fixed: Advance to decision state
+            uint32_t seed = env_seeds_[i];
+            seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
+            if (seed == 0) seed = base_seed_ + i + 1; // fallback
+            env_seeds_[i] = seed;
+            matches_[i] = PuyotanMatch(seed);
+            matches_[i].start();
+            matches_[i].stepUntilDecision();
         }
     } else {
-        matches_[id] = PuyotanMatch(base_seed_ + id);
-        matches_[id].start();             // Fixed: Must call start()
-        matches_[id].stepUntilDecision(); // Fixed: Advance to decision state
+        uint32_t seed = env_seeds_[id];
+        seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
+        if (seed == 0) seed = base_seed_ + id + 1; // fallback
+        env_seeds_[id] = seed;
+        matches_[id] = PuyotanMatch(seed);
+        matches_[id].start();
+        matches_[id].stepUntilDecision();
     }
 }
 std::vector<int> PuyotanVectorMatch::stepUntilDecision() {
@@ -58,13 +67,13 @@ void PuyotanVectorMatch::setActions(const std::vector<int>& match_indices,
     }
 }
 void PuyotanVectorMatch::stepNative(
-    std::span<const int> p1_actions,
-    std::span<const int> p2_actions,
+    std::span<const int8_t> p1_actions,
+    std::span<const int8_t> p2_actions,
     std::span<float> out_rewards,
     std::span<float> out_dones,
-    std::span<int32_t> out_chains,
+    std::span<int8_t> out_chains,
     std::span<int32_t> out_scores,
-    std::span<uint8_t> out_obs) {
+    std::span<uint8_t> out_obs) noexcept {
     const int n = static_cast<int>(matches_.size());
 // Parallel simulation -- no GIL, no Python objects.
 #pragma omp parallel for schedule(static)
@@ -87,7 +96,11 @@ void PuyotanVectorMatch::stepNative(
         bool is_term = kTermTable[static_cast<uint8_t>(ctx.status)];
         out_dones[i] = is_term ? 1.0f : 0.0f;
         if (is_term) {
-            m = PuyotanMatch(base_seed_ + i);
+            uint32_t seed = env_seeds_[i];
+            seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
+            if (seed == 0) seed = base_seed_ + i + 1;
+            env_seeds_[i] = seed;
+            m = PuyotanMatch(seed);
             m.start();
             m.stepUntilDecision();
         }
@@ -96,7 +109,7 @@ void PuyotanVectorMatch::stepNative(
         ObservationBuilder::buildObservation(m, obs_ptr);
     }
 }
-void PuyotanVectorMatch::getObservationsNative(std::span<uint8_t> out_obs) const {
+void PuyotanVectorMatch::getObservationsNative(std::span<uint8_t> out_obs) const noexcept {
     const int n = static_cast<int>(matches_.size());
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < n; ++i) {

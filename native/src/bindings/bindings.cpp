@@ -11,6 +11,7 @@
 #include <puyotan/policy/onnx_policy.hpp>
 #include <puyotan/rl/constants.hpp>
 #include <puyotan/rl/ppo_trainer.hpp>
+#include <map>
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -254,16 +255,6 @@ PYBIND11_MODULE(puyotan_native, m) {
                  return self.infer(obs.data(), static_cast<int64_t>(obs.shape(0))); }, pybind11::arg("obs"))
         .def("is_loaded", &OnnxPolicy::isLoaded);
 
-    // =========================================================================
-    // LibTorch sanity check
-    // =========================================================================
-    m.def("test_libtorch", []() {
-        torch::Tensor t = torch::rand({2, 3});
-        std::ostringstream oss;
-        oss << "LibTorch OK! tensor:\n"
-            << t;
-        return oss.str();
-    });
 
     // =========================================================================
     // C++ PPO Trainer
@@ -288,13 +279,15 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readonly("avg_game_score", &rl::TrainMetrics::avg_game_score);
 
     pybind11::class_<rl::CppPPOTrainer>(m, "CppPPOTrainer")
-        .def(pybind11::init<int, int, const std::string&, int, uint32_t, rl::PPOConfig>(),
-             pybind11::arg("num_envs") = rl::kDefaultNumEnvs,
-             pybind11::arg("num_steps") = rl::kDefaultNumSteps,
-             pybind11::arg("arch") = "mlp",
-             pybind11::arg("hidden_dim") = rl::kDefaultHidden,
-             pybind11::arg("base_seed") = 1u,
-             pybind11::arg("cfg") = rl::PPOConfig{})
+        .def(pybind11::init<int, int, const std::string&, int, uint32_t, rl::PPOConfig,
+                            const std::map<std::string, int>&>(),
+             pybind11::arg("num_envs")     = rl::kDefaultNumEnvs,
+             pybind11::arg("num_steps")    = rl::kDefaultNumSteps,
+             pybind11::arg("arch")         = "mlp",
+             pybind11::arg("hidden_dim")   = rl::kDefaultHidden,
+             pybind11::arg("base_seed")    = 1u,
+             pybind11::arg("cfg")          = rl::PPOConfig{},
+             pybind11::arg("arch_params")  = std::map<std::string, int>{})
         .def("trainStep", &rl::CppPPOTrainer::trainStep,
              pybind11::call_guard<pybind11::gil_scoped_release>(),
              pybind11::arg("p2_random") = false,

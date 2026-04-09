@@ -28,12 +28,12 @@
         "buried_puyo_penalty": -0.1,
         "ojama_drop_penalty": -0.2,
         "pending_ojama_penalty": -0.2,
-        "potential_chain_bonus_scale": 0.3
+        "potential_chain_bonus_scale": 0.0
     },
     "opponent": {
         "field_pressure_reward": 0.02,
         "connectivity_penalty": -0.02,
         "ojama_diff_scale": 0.0,
-        "initiative_bonus": 1.5
+        "initiative_bonus": 0.0
     }
 }
