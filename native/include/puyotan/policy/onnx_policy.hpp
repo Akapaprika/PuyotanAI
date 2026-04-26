@@ -1,6 +1,7 @@
 #pragma once
 #include <memory>
 #include <onnxruntime_cxx_api.h>
+#include <array>
 #include <string>
 #include <vector>
 
@@ -38,11 +39,15 @@ class OnnxPolicy {
     Ort::Env env_;
     Ort::SessionOptions session_options_;
     std::unique_ptr<Ort::Session> session_;
-    Ort::AllocatorWithDefaultOptions allocator_;
+    Ort::MemoryInfo memory_info_;
+    Ort::RunOptions run_options_{nullptr};
 
     // Input/output names (used during inference)
     std::string input_name_{"obs"};
     std::string output_name_{"logits"};
+    std::array<const char*, 1> input_names_{};
+    std::array<const char*, 1> output_names_{};
+    int64_t num_actions_{22};
 
     // Observation tensor shape: [N, 2, 5, 6, 14]
     static constexpr int64_t kPlayers = 2;

@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Dict
 
 @dataclass
@@ -36,7 +36,8 @@ class TrainingProfile:
     
     # 割引率（Gamma, γ）: 将来の報酬をどれくらい割引いて現在の価値とするか (0.0〜1.0)
     # 0.99 の場合、100手先の連鎖報酬もある程度考慮して現在の積み手を選ぶようになる。
-    GAE_GAMMA: float     = 0.1
+    # 連鎖を作るには中長期の見通しが必要なため、短期報酬寄り(0.1)ではなく標準的な 0.99 を採用。
+    GAE_GAMMA: float     = 0.99
     
     # 汎化アドバンテージ推定（Lambda, λ）: どれくらい遠い未来の予測を信用するか (0.0〜1.0)
     # 値が高いほど実際の報酬に引っ張られ（バリアンス高）、低いほど予測に頼る（バイアス高）。
@@ -109,6 +110,11 @@ def get_config(arch: str, is_selfplay: bool = False) -> TrainingProfile:
         cfg = CNN_CONFIG
     else:
         cfg = MLP_CONFIG  # デフォルトは MLP
+
+    # グローバルな設定テンプレートを直接変更しないよう、呼び出しごとに複製を返す。
+    # （以前は self-play 呼び出しで SNAPSHOT_INTERVAL を変更すると、
+    #   同一プロセス内の後続呼び出しにも副作用が残る可能性があった）
+    cfg = replace(cfg)
 
     # セルフプレイ時のみスナップショットを有効化
     if is_selfplay:
