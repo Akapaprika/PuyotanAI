@@ -35,6 +35,11 @@ class PuyotanViewModel(QObject):
         self.timer.start()
         self.last_step_time = self.timer.elapsed()
         
+        # Self-managed game stats/events decoupled from C++ engine
+        self.last_chains = [0, 0]
+        self.current_max_chains = [0, 0]
+        self.was_field_empty = [True, True]
+        
         self.p_colors = {
             p.Cell.Red: config.COLORS["Red"],
             p.Cell.Green: config.COLORS["Green"],
@@ -104,11 +109,27 @@ class PuyotanViewModel(QObject):
             if not pres.has_decision:
                 pres.confirmed = False
 
+            # Track chain counts autonomously
+            curr_chain = player_state.chain_count
+            if curr_chain > 0:
+                self.current_max_chains[pid] = max(self.current_max_chains[pid], curr_chain)
+            elif self.current_max_chains[pid] > 0:
+                self.last_chains[pid] = self.current_max_chains[pid]
+                self.current_max_chains[pid] = 0
+
+            if pres.has_decision and self.current_max_chains[pid] > 0:
+                self.last_chains[pid] = self.current_max_chains[pid]
+                self.current_max_chains[pid] = 0
+
+            # Track all clears autonomously
+            is_empty = player_state.field.getOccupied().empty()
+            if is_empty and not self.was_field_empty[pid] and (self.current_max_chains[pid] > 0 or curr_chain > 0):
+                self.all_clear.emit(pid)
+            self.was_field_empty[pid] = is_empty
+
             piece = self.model.get_piece(pid, 0)
             pres.ghost_color_axis = self._blend_ghost(self.p_colors.get(piece.axis, (255,255,255)))
             pres.ghost_color_sub = self._blend_ghost(self.p_colors.get(piece.sub, (255,255,255)))
-            if player_state.last_all_clear:
-                self.all_clear.emit(pid)
                 
         self.state_changed.emit()
 
@@ -169,6 +190,9 @@ class PuyotanViewModel(QObject):
 
     def restart(self):
         self.model.restart()
+        self.last_chains = [0, 0]
+        self.current_max_chains = [0, 0]
+        self.was_field_empty = [True, True]
         for pid in [0, 1]:
             self.reset_player_input(pid)
         self.last_step_time = self.timer.elapsed()
@@ -198,6 +222,6 @@ class PuyotanViewModel(QObject):
         last_chain is the result of the last completed chain (0 if no chain yet).
         """
         s = self.model.get_player_state(pid)
-        return s.chain_count, s.last_chain_count
+        return s.chain_count, self.last_chains[pid]
     
     def get_next_piece(self, pid, offset): return self.model.get_piece(pid, offset)

@@ -25,7 +25,6 @@ void PuyotanPlayer::fallOjama(int num, uint32_t& seed) noexcept {
             }
             field.setRowMask(config::Board::kSpawnRow, Cell::Ojama, mask);
             Gravity::execute(field);
-            total_ojama_dropped += static_cast<uint16_t>(num);
             break;
         }
     }
@@ -84,9 +83,6 @@ void PuyotanMatch::stepNextFrame() noexcept {
             case ActionType::Pass:
                 break;
             case ActionType::Put: {
-                p.last_chain_count = 0;   // Reset for the new turn
-                p.last_all_clear = false; // Reset per-turn event flags
-                p.last_erased_count = 0;
                 const PuyoPiece tumo = tsumo_.get(p.active_next_pos);
                 const int r = static_cast<int>(action.rotation);
                 const int x_axis = action.x;
@@ -117,7 +113,6 @@ void PuyotanMatch::stepNextFrame() noexcept {
                 Chain::applyErasure(p.field, pending_erasure_[id]);
                 const ErasureData& info = pending_erasure_[id];
                 ++p.chain_count;
-                p.last_erased_count += static_cast<uint16_t>(info.num_erased); // [EVENT] accumulate
                 int step_score = Scorer::calculateStepScore(info, p.chain_count);
                 p.score += step_score;
                 int ojama = (p.score - p.used_score) / config::Score::kTargetScore;
@@ -134,13 +129,11 @@ void PuyotanMatch::stepNextFrame() noexcept {
                 // All Clear check (branchless + event flag):
                 bool field_empty = p.field.getOccupied().empty();
                 p.score += static_cast<int>(field_empty) * config::Score::kAllClearBonus;
-                p.last_all_clear |= field_empty; // [EVENT] set flag
                 if (Gravity::canFall(p.field)) {
                     // After erasure, if puyos are floating, start falling phase.
                     p.next_action = {Action{ActionType::ChainFall}, 0};
                 } else {
                     // Chain finished. Reset state and allow Ojama to fall if pending.
-                    p.last_chain_count = p.chain_count;
                     p.chain_count = 0;
                     activateOjama(id);
                 }
@@ -152,7 +145,6 @@ void PuyotanMatch::stepNextFrame() noexcept {
                 if (pending_erasure_[id].num_erased > 0) {
                     p.next_action = {Action{ActionType::Chain}, 1};
                 } else {
-                    p.last_chain_count = p.chain_count; // Store final result
                     p.chain_count = 0;                  // Clear the active chain count now that it has finished
                     activateOjama(id);
                 }

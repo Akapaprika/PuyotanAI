@@ -79,17 +79,46 @@ void PuyotanVectorMatch::stepNative(
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < n; ++i) {
         auto& m = matches_[i];
-        const auto& p1_pre = m.getPlayer(0);
-        const auto& p2_pre = m.getPlayer(1);
-        int start_score_p1 = p1_pre.score;
-        int start_score_p2 = p2_pre.score;
-        int pre_ojama_p1 = p1_pre.total_ojama_dropped;
-        int pre_ojama_p2 = p2_pre.total_ojama_dropped;
+        
+        // Take copies of pre-step player states
+        PuyotanPlayer p1_pre = m.getPlayer(0);
+        PuyotanPlayer p2_pre = m.getPlayer(1);
+
         m.setAction(0, getRLAction(p1_actions[i]));
         m.setAction(1, getRLAction(p2_actions[i]));
-        m.stepUntilDecision();
+
+        int p1_max_chain = 0;
+        int p2_max_chain = 0;
+        int p1_ojama_dropped = 0;
+        int p2_ojama_dropped = 0;
+
+        // Drive stepNextFrame manually to inspect state transitions for metrics
+        while (m.getStatus() == MatchStatus::Playing) {
+            // Check if we reached decision point
+            if (m.getPlayer(0).current_action.action.type == ActionType::None ||
+                m.getPlayer(1).current_action.action.type == ActionType::None) {
+                break;
+            }
+
+            // Track ojama drops right before they execute
+            const auto& p1_curr = m.getPlayer(0);
+            if (p1_curr.current_action.action.type == ActionType::Ojama && p1_curr.current_action.remaining_frame == 0) {
+                p1_ojama_dropped += std::min(static_cast<int>(p1_curr.active_ojama), config::Rule::kMaxOjamaPerFall);
+            }
+            const auto& p2_curr = m.getPlayer(1);
+            if (p2_curr.current_action.action.type == ActionType::Ojama && p2_curr.current_action.remaining_frame == 0) {
+                p2_ojama_dropped += std::min(static_cast<int>(p2_curr.active_ojama), config::Rule::kMaxOjamaPerFall);
+            }
+
+            m.stepNextFrame();
+
+            // Track max chain achieved during the step sequence
+            p1_max_chain = std::max(p1_max_chain, static_cast<int>(m.getPlayer(0).chain_count));
+            p2_max_chain = std::max(p2_max_chain, static_cast<int>(m.getPlayer(1).chain_count));
+        }
+
         RewardContext ctx = reward_calc.extractContext(
-            m, start_score_p1, start_score_p2, pre_ojama_p1, pre_ojama_p2);
+            m, p1_pre, p2_pre, p1_ojama_dropped, p2_ojama_dropped, p1_max_chain, p2_max_chain);
         out_rewards[i] = reward_calc.calculate(ctx, 0);
         out_chains[i] = ctx.p1_chain_count;
         out_scores[i] = ctx.p1_delta_score;

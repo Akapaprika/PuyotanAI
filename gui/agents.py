@@ -15,6 +15,13 @@ from abc import ABC, abstractmethod
 import numpy as np
 import puyotan_native as p
 
+try:
+    from vision.obs_builder import build_observation_vs
+    from vision.board_reader import OpponentBoardReader
+    VISION_AVAILABLE = True
+except ImportError:
+    VISION_AVAILABLE = False
+
 
 class BasePlayerAgent(ABC):
     """Abstract interface for a player controller."""
@@ -100,6 +107,46 @@ class AIPlayerAgent(BasePlayerAgent):
         """Hot-swap the underlying ONNX model."""
         self.policy = p.OnnxPolicy(model_path, use_cpu=True)
 
+
+# ---------------------------------------------------------------------------
+# Online VS AI
+# ---------------------------------------------------------------------------
+class OnlineVsAIAgent(BasePlayerAgent):
+    """
+    AI Player for Online Versus mode.
+    Reads the opponent's board via a screen scraper instead of the internal engine.
+    """
+    def __init__(self, model_path: str, board_reader=None) -> None:
+        if not VISION_AVAILABLE:
+            raise RuntimeError("Vision module is required for OnlineVsAIAgent")
+            
+        self.policy = p.OnnxPolicy(model_path, use_cpu=True)
+        self.board_reader = board_reader
+        self._VALID_ACTIONS = AIPlayerAgent._VALID_ACTIONS
+
+    def get_action(self, match, player_id: int, pres) -> p.Action:
+        opp_state = None
+        if self.board_reader:
+            opp_state = self.board_reader.get_latest_state()
+
+        if opp_state is None or opp_state.field is None:
+            # Fallback: Treat as Solo / Offline if no scraped data available
+            obs_flat = p.build_observation(match.match)
+            if player_id == 1:
+                half = len(obs_flat) // 2
+                obs_flat = np.concatenate([obs_flat[half:], obs_flat[:half]])
+        else:
+            # Use scraped data for opponent half
+            obs_flat = build_observation_vs(match.match, player_id, opp_state)
+
+        obs_batch = obs_flat.reshape(1, -1)
+        action_indices = self.policy.infer(obs_batch)
+        idx = int(action_indices[0])
+        idx = max(0, min(idx, len(self._VALID_ACTIONS) - 1))
+        return self._VALID_ACTIONS[idx]
+
+    def reload(self, model_path: str) -> None:
+        self.policy = p.OnnxPolicy(model_path, use_cpu=True)
 
 # ---------------------------------------------------------------------------
 # Empty (Solo / Pass-through)

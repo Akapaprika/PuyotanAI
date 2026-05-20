@@ -190,8 +190,9 @@ class RewardCalculator {
     }
 
     RewardContext extractContext(const PuyotanMatch& m,
-                                 int start_score_p1, int start_score_p2,
-                                 int pre_ojama_p1, int pre_ojama_p2) const;
+                                 const PuyotanPlayer& p1_pre, const PuyotanPlayer& p2_pre,
+                                 int p1_ojama_dropped, int p2_ojama_dropped,
+                                 int p1_max_chain, int p2_max_chain) const;
 
     float calculate(const RewardContext& ctx, int player_id) const {
         const bool is_p1 = (player_id == 0);

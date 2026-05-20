@@ -142,16 +142,37 @@ int get_max_potential_chain(const Board& board) {
 // extractContext
 // ---------------------------------------------------------------------------
 RewardContext RewardCalculator::extractContext(const PuyotanMatch& m,
-                                               int start_score_p1, int start_score_p2,
-                                               int pre_ojama_p1, int pre_ojama_p2) const {
+                                               const PuyotanPlayer& p1_pre, const PuyotanPlayer& p2_pre,
+                                               int p1_ojama_dropped, int p2_ojama_dropped,
+                                               int p1_max_chain, int p2_max_chain) const {
     RewardContext ctx;
     ctx.status = m.getStatus();
 
+    auto get_colored_count = [](const Board& b) {
+        return b.getBitboard(Cell::Red).popcount() +
+               b.getBitboard(Cell::Green).popcount() +
+               b.getBitboard(Cell::Blue).popcount() +
+               b.getBitboard(Cell::Yellow).popcount();
+    };
+
+    // ---------------------------------------------------------------------------
+    // Player 1
+    // ---------------------------------------------------------------------------
     const auto& p1 = m.getPlayer(0);
-    ctx.p1_delta_score = p1.score - start_score_p1;
-    ctx.p1_chain_count = p1.last_chain_count;
-    ctx.p1_total_erased = p1.last_erased_count; // [ENGINE EVENT]
-    ctx.p1_all_clear = p1.last_all_clear;       // [ENGINE EVENT]
+    ctx.p1_delta_score = p1.score - p1_pre.score;
+    ctx.p1_chain_count = p1_max_chain;
+    
+    // Calculate total erased via puyo count differences
+    int p1_pre_colored = get_colored_count(p1_pre.field);
+    int p1_post_colored = get_colored_count(p1.field);
+    int p1_pre_ojama = p1_pre.field.getBitboard(Cell::Ojama).popcount();
+    int p1_post_ojama = p1.field.getBitboard(Cell::Ojama).popcount();
+    int p1_placed = (p1.active_next_pos > p1_pre.active_next_pos) ? 2 : 0;
+    int p1_erased_colored = std::max(0, p1_pre_colored + p1_placed - p1_post_colored);
+    int p1_erased_ojama = std::max(0, p1_pre_ojama + p1_ojama_dropped - p1_post_ojama);
+    
+    ctx.p1_total_erased = p1_erased_colored + p1_erased_ojama;
+    ctx.p1_all_clear = (p1_max_chain > 0) && p1.field.getOccupied().empty();
     ctx.p1_ojama_sent = ctx.p1_delta_score / config::Score::kTargetScore;
 
     ctx.p1_puyo_count = p1.field.getOccupied().popcount();
@@ -163,16 +184,26 @@ RewardContext RewardCalculator::extractContext(const PuyotanMatch& m,
     ctx.p1_height_variance = get_height_variance(p1.field);
     ctx.p1_death_col_height = p1.field.getColumnHeight(config::Rule::kDeathCol);
     ctx.p1_buried_puyo_count = get_buried_count(p1.field);
-    ctx.p1_ojama_dropped = p1.total_ojama_dropped - pre_ojama_p1;
+    ctx.p1_ojama_dropped = p1_ojama_dropped;
     ctx.p1_pending_ojama = p1.active_ojama + p1.non_active_ojama;
-    // ctx.p1_potential_chain = get_max_potential_chain(p1.field);
     ctx.p1_potential_chain = 0; // Disabled for performance (Phase 2 investigation)
 
+    // ---------------------------------------------------------------------------
+    // Player 2
+    // ---------------------------------------------------------------------------
     const auto& p2 = m.getPlayer(1);
-    ctx.p2_delta_score = p2.score - start_score_p2;
-    ctx.p2_chain_count = p2.last_chain_count;
-    ctx.p2_total_erased = p2.last_erased_count;
-    ctx.p2_all_clear = p2.last_all_clear;
+    ctx.p2_delta_score = p2.score - p2_pre.score;
+    ctx.p2_chain_count = p2_max_chain;
+    
+    int p2_pre_colored = get_colored_count(p2_pre.field);
+    int p2_post_colored = get_colored_count(p2.field);
+    int p2_pre_ojama = p2_pre.field.getBitboard(Cell::Ojama).popcount();
+    int p2_post_ojama = p2.field.getBitboard(Cell::Ojama).popcount();
+    int p2_placed = (p2.active_next_pos > p2_pre.active_next_pos) ? 2 : 0;
+    int p2_erased_colored = std::max(0, p2_pre_colored + p2_placed - p2_post_colored);
+    int p2_erased_ojama = std::max(0, p2_pre_ojama + p2_ojama_dropped - p2_post_ojama);
+    ctx.p2_total_erased = p2_erased_colored + p2_erased_ojama;
+    ctx.p2_all_clear = (p2_max_chain > 0) && p2.field.getOccupied().empty();
     ctx.p2_ojama_sent = ctx.p2_delta_score / config::Score::kTargetScore;
 
     ctx.p2_puyo_count = p2.field.getOccupied().popcount();
@@ -184,9 +215,8 @@ RewardContext RewardCalculator::extractContext(const PuyotanMatch& m,
     ctx.p2_height_variance = get_height_variance(p2.field);
     ctx.p2_death_col_height = p2.field.getColumnHeight(config::Rule::kDeathCol);
     ctx.p2_buried_puyo_count = get_buried_count(p2.field);
-    ctx.p2_ojama_dropped = p2.total_ojama_dropped - pre_ojama_p2;
+    ctx.p2_ojama_dropped = p2_ojama_dropped;
     ctx.p2_pending_ojama = p2.active_ojama + p2.non_active_ojama;
-    // ctx.p2_potential_chain = get_max_potential_chain(p2.field);
     ctx.p2_potential_chain = 0; // Disabled for performance
 
     return ctx;

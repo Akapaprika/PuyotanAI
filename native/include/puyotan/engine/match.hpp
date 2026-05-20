@@ -21,14 +21,6 @@ struct PuyotanPlayer {
     uint16_t non_active_ojama = 0;    ///< Incoming Ojama not yet "active" (can be offset)
     uint16_t active_ojama = 0;        ///< Ojama puyos ready to fall on the board
     uint8_t chain_count = 0;          ///< current active chain length (0 if not chaining)
-    uint8_t last_chain_count = 0;     ///< Result of the most recently finished chain
-    uint16_t total_ojama_dropped = 0; ///< Total ojama puyos that have ever fallen on this field
-    // -----------------------------------------------------------------------
-    // Per-turn event flags (set by engine, consumed by reward layer / GUI)
-    // Reset at the start of each PUT action.
-    // -----------------------------------------------------------------------
-    bool last_all_clear = false;    ///< True if the field was fully cleared this chain sequence
-    uint16_t last_erased_count = 0; ///< Total puyos erased in the last completed chain sequence
     PuyotanPlayer() = default;
     /**
      * @brief Drops a specific number of Ojama puyos onto the player's board.

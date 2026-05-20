@@ -126,9 +126,6 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("non_active_ojama", &PuyotanPlayer::non_active_ojama)
         .def_readwrite("active_ojama", &PuyotanPlayer::active_ojama)
         .def_readwrite("chain_count", &PuyotanPlayer::chain_count)
-        .def_readwrite("last_chain_count", &PuyotanPlayer::last_chain_count)
-        .def_readwrite("last_all_clear", &PuyotanPlayer::last_all_clear)
-        .def_readwrite("last_erased_count", &PuyotanPlayer::last_erased_count)
         .def_readwrite("current_action", &PuyotanPlayer::current_action)
         .def_readwrite("next_action", &PuyotanPlayer::next_action);
 
