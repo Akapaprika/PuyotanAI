@@ -100,6 +100,22 @@ RESNET_CONFIG = TrainingProfile(
     },
 )
 
+# ---------------------------------------------------------------------------
+# 4. 超軽量 MLP プロファイル (2コア / 省電力CPU向け)
+#    物理コア数に合わせた環境数に絞り、大渋滞とスレッド競合を解消して爆速化
+# ---------------------------------------------------------------------------
+LIGHT_MLP_CONFIG = TrainingProfile(
+    NUM_ENVS       = 16,        # スレッド競合を防ぎ、メモリ帯域とアロケーションを抑える
+    STEPS_PER_ITER = 128,       # 1イテレーションに必要なデータ収集の深さをカバー
+    LOG_INTERVAL   = 1,
+    SAVE_INTERVAL  = 50,
+    TOTAL_ITERS    = 2000,
+    MINIBATCH      = 512,       # 総バッチサイズ（16*128=2048）に最適なミニバッチ
+    HIDDEN_DIM     = 64,        # 隠れ層の次元を 64 にし、行列演算負荷を4分の1に削減！
+    LEARNING_RATE  = 2e-4,
+    ARCH_PARAMS    = {},
+)
+
 def get_config(arch: str, is_selfplay: bool = False) -> TrainingProfile:
     """指定アーキテクチャとモードに最適なプロファイルを返す。"""
     _arch = arch.lower()
@@ -107,6 +123,8 @@ def get_config(arch: str, is_selfplay: bool = False) -> TrainingProfile:
         cfg = RESNET_CONFIG
     elif _arch == "cnn":
         cfg = CNN_CONFIG
+    elif _arch == "light_mlp":
+        cfg = LIGHT_MLP_CONFIG
     else:
         cfg = MLP_CONFIG  # デフォルトは MLP
 

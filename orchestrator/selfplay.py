@@ -1,3 +1,12 @@
+import os
+# OS-level thread management to prevent CPU pipeline starvation and context-switching overhead on 2-core systems.
+# Must be declared BEFORE any scientific/learning frameworks are imported.
+os.environ["OMP_NUM_THREADS"] = "2"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 """
 Self-play training orchestrator.
 
@@ -10,7 +19,6 @@ Usage:
     python orchestrator/selfplay.py --arch cnn
 """
 import sys
-import os
 import time
 import shutil
 import argparse
@@ -67,7 +75,7 @@ def selfplay_loop(
         trainer = puyotan_native.CppPPOTrainer(
             num_envs    = cfg_inst.NUM_ENVS,
             num_steps   = cfg_inst.STEPS_PER_ITER,
-            arch        = arch,
+            arch        = "mlp" if arch == "light_mlp" else arch,
             hidden_dim  = cfg_inst.HIDDEN_DIM,
             base_seed   = 1,
             cfg         = cfg,
@@ -139,7 +147,7 @@ def selfplay_loop(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="PuyotanAI self-play training (C++)")
-    parser.add_argument("--arch",   default="mlp", choices=["mlp", "cnn", "resnet"],
+    parser.add_argument("--arch",   default="mlp", choices=["mlp", "cnn", "resnet", "light_mlp"],
                         help="Backbone architecture (default: mlp)")
     parser.add_argument("--reward", default="reward_match.json",
                         help="Reward config filename under native/resources/")
