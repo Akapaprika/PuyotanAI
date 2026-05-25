@@ -34,7 +34,7 @@ CppPPOTrainer::CppPPOTrainer(int num_envs, int num_steps,
       chain_buf_(num_envs), score_buf_(num_envs),
       obs_buf_(static_cast<std::size_t>(num_envs) * kObsBytesPerEnv),
       indices_buf_(torch::zeros({num_steps * num_envs}, torch::kInt64)),
-      completed_scores_(), max_per_env_(num_envs, 0) {
+      completed_scores_(), completed_max_chains_(), max_per_env_(num_envs, 0) {
     // Build policy
     if (arch == "mlp") {
         policy_ = std::make_unique<MLPPolicyWrapper>(hidden_dim);
@@ -65,9 +65,9 @@ CppPPOTrainer::CppPPOTrainer(int num_envs, int num_steps,
 // Public: trainStep
 // ---------------------------------------------------------------------------
 TrainMetrics CppPPOTrainer::trainStep(bool p2_random) {
-    auto [max_chain, avg_max_chain, avg_reward, avg_game_score] = collectRollouts_(p2_random);
+    auto [max_chain, avg_max_chain, chain_rate, avg_reward, avg_game_score] = collectRollouts_(p2_random);
     float loss = ppoUpdate_();
-    return TrainMetrics{loss, avg_reward, max_chain, avg_max_chain, avg_game_score};
+    return TrainMetrics{loss, avg_reward, max_chain, avg_max_chain, chain_rate, avg_game_score};
 }
 // ---------------------------------------------------------------------------
 // Public: save / load
@@ -95,14 +95,14 @@ void CppPPOTrainer::loadP2(const std::string& path) {
 // ---------------------------------------------------------------------------
 // Private: collectRollouts_
 // ---------------------------------------------------------------------------
-std::tuple<int, float, float, float> CppPPOTrainer::collectRollouts_(bool p2_random) {
+std::tuple<int, float, float, float, float> CppPPOTrainer::collectRollouts_(bool p2_random) {
     policy_->train(false);
     int max_chain = 0;
     float sum_reward = 0.0f;
     
     // [OPTIMIZATION] Re-use pre-allocated vectors to avoid heap allocation.
     completed_scores_.clear();
-    std::fill(max_per_env_.begin(), max_per_env_.end(), 0);
+    completed_max_chains_.clear();
 
     // Span views over the pre-allocated buffers.
     std::span<int8_t> sp_p1(act_p1_buf_);
@@ -185,11 +185,13 @@ std::tuple<int, float, float, float> CppPPOTrainer::collectRollouts_(bool p2_ran
                 macc[i]     = std::max(macc[i], cacc[i]);
                 max_chain   = std::max(max_chain, static_cast<int>(macc[i]));
 
-                // 2. Check done
+                // 2. Check done: record per-episode stats then reset accumulators
                 if (dacc[i] > 0.5f) {
-                    completed_scores_.push_back(gsacc[i]); // report game score
-                    sacc[i] = 0.0f;
+                    completed_scores_.push_back(gsacc[i]);
+                    completed_max_chains_.push_back(static_cast<int>(macc[i]));
+                    sacc[i]  = 0.0f;
                     gsacc[i] = 0.0f;
+                    macc[i]  = 0; // reset per-env max for next episode
                 }
             }
         }
@@ -207,15 +209,44 @@ std::tuple<int, float, float, float> CppPPOTrainer::collectRollouts_(bool p2_ran
         auto boot = policy_->getActionAndValue(obs_f);
         buffer_.computeGae(boot.values, cfg_.gamma, cfg_.lambda);
     }
-    // [OPTIMIZATION] Int accumulation prevents N float casts.
-    int sum_max_int = std::accumulate(max_per_env_.begin(), max_per_env_.end(), 0);
-    float sum_max_chain = static_cast<float>(sum_max_int) / static_cast<float>(num_envs_);
-    float avg_reward = sum_reward / static_cast<float>(num_steps_ * num_envs_);
+    float avg_max_chain = 0.0f;
+    float chain_rate = 0.0f;
     
+    if (!completed_max_chains_.empty()) {
+        int chained_episodes = 0;
+        int sum_chains = 0;
+        for (int c : completed_max_chains_) {
+            if (c > 0) {
+                chained_episodes++;
+                sum_chains += c;
+            }
+        }
+        chain_rate = static_cast<float>(chained_episodes) / static_cast<float>(completed_max_chains_.size());
+        if (chained_episodes > 0) {
+            avg_max_chain = static_cast<float>(sum_chains) / static_cast<float>(chained_episodes);
+        }
+    } else {
+        int chained_envs = 0;
+        int sum_chains = 0;
+        for (int c : max_per_env_) {
+            if (c > 0) {
+                chained_envs++;
+                sum_chains += c;
+            }
+        }
+        chain_rate = static_cast<float>(chained_envs) / static_cast<float>(num_envs_);
+        if (chained_envs > 0) {
+            avg_max_chain = static_cast<float>(sum_chains) / static_cast<float>(chained_envs);
+        }
+    }
+
+    float avg_reward = sum_reward / static_cast<float>(num_steps_ * num_envs_);
+
     float avg_game_score = completed_scores_.empty()
                                ? episode_game_scores_.mean().item<float>()
-                               : std::accumulate(completed_scores_.begin(), completed_scores_.end(), 0.0f) / static_cast<float>(completed_scores_.size());
-    return {max_chain, sum_max_chain, avg_reward, avg_game_score};
+                               : std::accumulate(completed_scores_.begin(), completed_scores_.end(), 0.0f)
+                                 / static_cast<float>(completed_scores_.size());
+    return {max_chain, avg_max_chain, chain_rate, avg_reward, avg_game_score};
 }
 // ---------------------------------------------------------------------------
 // Private: ppoUpdate_

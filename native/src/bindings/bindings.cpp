@@ -273,6 +273,7 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readonly("avg_reward", &rl::TrainMetrics::avg_reward)
         .def_readonly("max_chain", &rl::TrainMetrics::max_chain)
         .def_readonly("avg_max_chain", &rl::TrainMetrics::avg_max_chain)
+        .def_readonly("chain_rate", &rl::TrainMetrics::chain_rate)
         .def_readonly("avg_game_score", &rl::TrainMetrics::avg_game_score);
 
     pybind11::class_<rl::CppPPOTrainer>(m, "CppPPOTrainer")

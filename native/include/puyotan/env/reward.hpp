@@ -257,7 +257,7 @@ class RewardCalculator {
         r += static_cast<float>(s_conn) * weights.board.connectivity_bonus;
         r += static_cast<float>(s_iso) * weights.board.isolated_puyo_penalty;
         r += static_cast<float>(s_near) * weights.board.near_group_bonus;
-        r -= s_hvar * weights.board.height_variance_penalty;
+        r += s_hvar * weights.board.height_variance_penalty;
         r += static_cast<float>(s_death) * weights.board.death_col_height_penalty;
         r += static_cast<float>(s_div) * weights.board.color_diversity_reward;
         r += static_cast<float>(s_buried) * weights.board.buried_puyo_penalty;

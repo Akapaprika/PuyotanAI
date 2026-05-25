@@ -92,7 +92,7 @@ def solo_training_loop(
     # ---------------------------------------------------------------------------
     # Training loop
     # ---------------------------------------------------------------------------
-    acc_loss = acc_sps = acc_avg_max = acc_reward = acc_score = 0.0
+    acc_loss = acc_sps = acc_avg_max = acc_rate = acc_reward = acc_score = 0.0
     acc_max_chain = 0.0
 
     for i in range(cfg_inst.TOTAL_ITERS):
@@ -107,6 +107,7 @@ def solo_training_loop(
         acc_loss      += metrics.loss
         acc_sps       += sps
         acc_avg_max   += metrics.avg_max_chain
+        acc_rate      += metrics.chain_rate
         acc_reward    += metrics.avg_reward
         acc_score     += metrics.avg_game_score
         acc_max_chain  = max(acc_max_chain, metrics.max_chain)
@@ -119,10 +120,11 @@ def solo_training_loop(
                 f"  AvgRew={acc_reward/div:6.3f}"
                 f"  AvgScore={acc_score/div:6.1f}"
                 f"  AvgMax={acc_avg_max/div:4.2f}"
+                f"  Rate={acc_rate/div:4.2f}"
                 f"  Max={acc_max_chain:2d}"
                 f"  SPS={acc_sps/div:.0f}"
             )
-            acc_loss = acc_sps = acc_max_chain = acc_avg_max = acc_reward = acc_score = 0.0
+            acc_loss = acc_sps = acc_max_chain = acc_avg_max = acc_rate = acc_reward = acc_score = 0.0
 
         if iteration % cfg_inst.SAVE_INTERVAL == 0 or iteration == cfg_inst.TOTAL_ITERS:
             trainer.save(str(session_pt))
