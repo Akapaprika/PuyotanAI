@@ -42,6 +42,10 @@ class TrainingProfile:
     # 値が高いほど実際の報酬に引っ張られ（バリアンス高）、低いほど予測に頼る（バイアス高）。
     GAE_LAMBDA: float    = 0.95
 
+    # エントロピー係数 (Entropy Coefficient): ポリシーの多様性（でたらめさ）に対するボーナス重み。
+    # この値が高いほど、AIが特定の置き方に早く収束するのを防ぎ、多様な手順を探索し続けます。
+    ENTROPY_COEF: float  = 0.05
+
     # --- アーキテクチャ固有パラメータ (C++ 側に辞書で渡す) ---
     # MLP は不要。CNN/ResNet で有効。
     # クラウド/GPUで学習する場合はここを拡張する。
@@ -61,6 +65,9 @@ MLP_CONFIG = TrainingProfile(
     SAVE_INTERVAL  = 50,
     TOTAL_ITERS    = 2000,
     MINIBATCH      = 8192,
+    LEARNING_RATE  = 1e-4,    # 報酬スケール強化に伴う勾配爆発を防ぐため学習率を抑える
+    GAE_GAMMA      = 0.85,    # 短期ツモ地平（2手先）に合わせた割引率の最適化
+    ENTROPY_COEF   = 0.08,    # 探索のランダム性を強制し、早期収束・偏りを防止
     ARCH_PARAMS    = {},      # MLP は構造変更不要
 )
 
@@ -117,6 +124,8 @@ LIGHT_MLP_CONFIG = TrainingProfile(
     # gamma=0.85 の場合 gamma^5≈0.44, gamma^10≈0.20 なので、
     # 5手先でほぼ半減、10手先で8割引きとなり、近距離連鎖の構築に集中できる。
     GAE_GAMMA      = 0.85,
+    # 探索の度合いを引き上げ、早期の局所最適（ワンパターン）収束を防ぐ
+    ENTROPY_COEF   = 0.08,
     ARCH_PARAMS    = {},
 )
 

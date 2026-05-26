@@ -186,7 +186,7 @@ RewardContext RewardCalculator::extractContext(const PuyotanMatch& m,
     ctx.p1_buried_puyo_count = get_buried_count(p1.field);
     ctx.p1_ojama_dropped = p1_ojama_dropped;
     ctx.p1_pending_ojama = p1.active_ojama + p1.non_active_ojama;
-    ctx.p1_potential_chain = 0; // Disabled for performance (Phase 2 investigation)
+    ctx.p1_potential_chain = get_max_potential_chain(p1.field);
 
     // ---------------------------------------------------------------------------
     // Player 2
@@ -217,7 +217,7 @@ RewardContext RewardCalculator::extractContext(const PuyotanMatch& m,
     ctx.p2_buried_puyo_count = get_buried_count(p2.field);
     ctx.p2_ojama_dropped = p2_ojama_dropped;
     ctx.p2_pending_ojama = p2.active_ojama + p2.non_active_ojama;
-    ctx.p2_potential_chain = 0; // Disabled for performance
+    ctx.p2_potential_chain = get_max_potential_chain(p2.field);
 
     return ctx;
 }

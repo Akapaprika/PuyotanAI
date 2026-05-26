@@ -20,6 +20,7 @@ Usage:
 """
 import sys
 import time
+import random
 import shutil
 import argparse
 import traceback
@@ -72,12 +73,15 @@ def selfplay_loop(
         cfg.gamma = cfg_inst.GAE_GAMMA
         cfg.lambda_ = cfg_inst.GAE_LAMBDA
 
+        # ランダムシードで多様なツモ配列を保証（毎回同じシーケンスに収束するバグを回避）
+        run_seed = random.randint(1, 0x7FFFFFFF) ^ (int(time.time()) & 0xFFFFFF)
+        print(f"  base_seed     : {run_seed} (randomized)")
         trainer = puyotan_native.CppPPOTrainer(
             num_envs    = cfg_inst.NUM_ENVS,
             num_steps   = cfg_inst.STEPS_PER_ITER,
             arch        = "mlp" if arch == "light_mlp" else arch,
             hidden_dim  = cfg_inst.HIDDEN_DIM,
-            base_seed   = 1,
+            base_seed   = run_seed,
             cfg         = cfg,
             arch_params = cfg_inst.ARCH_PARAMS,
         )
