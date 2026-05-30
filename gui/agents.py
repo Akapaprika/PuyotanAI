@@ -15,13 +15,6 @@ from abc import ABC, abstractmethod
 import numpy as np
 import puyotan_native as p
 
-try:
-    from vision.obs_builder import build_observation_vs
-    from vision.board_reader import OpponentBoardReader
-    VISION_AVAILABLE = True
-except ImportError:
-    VISION_AVAILABLE = False
-
 
 class BasePlayerAgent(ABC):
     """Abstract interface for a player controller."""
@@ -56,29 +49,18 @@ class HumanPlayerAgent(BasePlayerAgent):
 
 
 # ---------------------------------------------------------------------------
-# AI (ONNX)
+# Base AI Agent (ONNX Wrapper)
 # ---------------------------------------------------------------------------
-class AIPlayerAgent(BasePlayerAgent):
+class BaseAIAgent(BasePlayerAgent):
     """
-    Runs ONNX inference on every decision point.
-    The action is chosen immediately — no human latency.
-
-    Parameters
-    ----------
-    model_path : str  Path to the .onnx model file.
+    Base class for AI agents running ONNX policy inference.
+    Handles loading, reloading, and executing the ONNX policy.
     """
 
     # Observation size constants (must match ObservationBuilder in C++)
     OBS_SIZE = 2 * 5 * 6 * 14  # kBytesPerObservation
 
     # All 22 PUT actions, in exactly the same order as the C++ training loop.
-    # Built from p.get_rl_action() so this is always in sync with the engine.
-    #
-    # Layout (w=6):
-    #   [ 0.. 5]  Up,    col 0-5
-    #   [ 6..10]  Right, col 0-4
-    #   [11..16]  Down,  col 0-5
-    #   [17..21]  Left,  col 0-4
     _VALID_ACTIONS: list[p.Action] = [
         p.get_rl_action(i) for i in range(p.kNumRLActions)
     ]
@@ -87,66 +69,41 @@ class AIPlayerAgent(BasePlayerAgent):
         self.policy = p.OnnxPolicy(model_path, use_cpu=True)
         self._obs_buf = np.zeros(self.OBS_SIZE, dtype=np.uint8)
 
-    def get_action(self, match, player_id: int, pres) -> p.Action:
-        # Build observation tensor
-        obs_flat = p.build_observation(match.match)  # shape (OBS_SIZE,)
+    def reload(self, model_path: str) -> None:
+        """Hot-swap the underlying ONNX model."""
+        self.policy = p.OnnxPolicy(model_path, use_cpu=True)
 
-        # Flip perspective for P2: swap the two player halves of the obs
-        half = self.OBS_SIZE // 2
-        if player_id == 1:
-            obs_flat = np.concatenate([obs_flat[half:], obs_flat[:half]])
-
-        # Run inference — infer() expects a batch, so add batch dim
+    def _infer_action(self, obs_flat: np.ndarray) -> p.Action:
+        """Runs the ONNX model inference on a flat observation tensor."""
         obs_batch = obs_flat.reshape(1, -1)
         action_indices = self.policy.infer(obs_batch)  # list of int
         idx = int(action_indices[0])
         idx = max(0, min(idx, len(self._VALID_ACTIONS) - 1))
         return self._VALID_ACTIONS[idx]
 
-    def reload(self, model_path: str) -> None:
-        """Hot-swap the underlying ONNX model."""
-        self.policy = p.OnnxPolicy(model_path, use_cpu=True)
+    def _flip_observation_if_needed(self, obs_flat: np.ndarray, player_id: int) -> np.ndarray:
+        """Flips the observation perspective if the player is P2 (index 1)."""
+        if player_id == 1:
+            half = self.OBS_SIZE // 2
+            return np.concatenate([obs_flat[half:], obs_flat[:half]])
+        return obs_flat
 
 
 # ---------------------------------------------------------------------------
-# Online VS AI
+# AI (ONNX)
 # ---------------------------------------------------------------------------
-class OnlineVsAIAgent(BasePlayerAgent):
+class AIPlayerAgent(BaseAIAgent):
     """
-    AI Player for Online Versus mode.
-    Reads the opponent's board via a screen scraper instead of the internal engine.
+    Runs ONNX inference on every decision point.
+    The action is chosen immediately — no human latency.
     """
-    def __init__(self, model_path: str, board_reader=None) -> None:
-        if not VISION_AVAILABLE:
-            raise RuntimeError("Vision module is required for OnlineVsAIAgent")
-            
-        self.policy = p.OnnxPolicy(model_path, use_cpu=True)
-        self.board_reader = board_reader
-        self._VALID_ACTIONS = AIPlayerAgent._VALID_ACTIONS
 
     def get_action(self, match, player_id: int, pres) -> p.Action:
-        opp_state = None
-        if self.board_reader:
-            opp_state = self.board_reader.get_latest_state()
+        # Build observation tensor from the engine state
+        obs_flat = p.build_observation(match.match)  # shape (OBS_SIZE,)
+        obs_flat = self._flip_observation_if_needed(obs_flat, player_id)
+        return self._infer_action(obs_flat)
 
-        if opp_state is None or opp_state.field is None:
-            # Fallback: Treat as Solo / Offline if no scraped data available
-            obs_flat = p.build_observation(match.match)
-            if player_id == 1:
-                half = len(obs_flat) // 2
-                obs_flat = np.concatenate([obs_flat[half:], obs_flat[:half]])
-        else:
-            # Use scraped data for opponent half
-            obs_flat = build_observation_vs(match.match, player_id, opp_state)
-
-        obs_batch = obs_flat.reshape(1, -1)
-        action_indices = self.policy.infer(obs_batch)
-        idx = int(action_indices[0])
-        idx = max(0, min(idx, len(self._VALID_ACTIONS) - 1))
-        return self._VALID_ACTIONS[idx]
-
-    def reload(self, model_path: str) -> None:
-        self.policy = p.OnnxPolicy(model_path, use_cpu=True)
 
 # ---------------------------------------------------------------------------
 # Empty (Solo / Pass-through)
