@@ -158,10 +158,25 @@ class PolicyForExport(nn.Module):
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-def export(arch: str, hidden_dim: int, channels: int, num_blocks: int) -> None:
+def export(
+    arch: str,
+    hidden_dim: int,
+    channels: int,
+    num_blocks: int,
+    pt_path: Path = None,
+    onnx_path: Path = None,
+) -> None:
     arch_dir  = BASE_DIR / "models" / arch
-    pt_path   = arch_dir / "puyotan_solo_latest.pt"
-    onnx_path = arch_dir / f"puyotan_{arch}.onnx"
+    
+    if pt_path is None:
+        pt_path = arch_dir / "puyotan_solo_latest.pt"
+        if not pt_path.exists():
+            fallback_pt = arch_dir / "puyotan_latest.pt"
+            if fallback_pt.exists():
+                pt_path = fallback_pt
+
+    if onnx_path is None:
+        onnx_path = arch_dir / f"puyotan_{arch}.onnx"
 
     if not pt_path.exists():
         print(f"[ERROR] Checkpoint not found: {pt_path}")
@@ -227,6 +242,20 @@ if __name__ == "__main__":
                         help="CNN/ResNet channel count (ignored for MLP)")
     parser.add_argument("--num_blocks", type=int, default=2,
                         help="ResNet block count (ignored for CNN/MLP)")
+    parser.add_argument("--pt_path",    type=str, default=None,
+                        help="Path to input .pt file (optional)")
+    parser.add_argument("--onnx_path",  type=str, default=None,
+                        help="Path to output .onnx file (optional)")
     args = parser.parse_args()
 
-    export(args.arch, args.hidden_dim, args.channels, args.num_blocks)
+    pt_path_obj = Path(args.pt_path) if args.pt_path else None
+    onnx_path_obj = Path(args.onnx_path) if args.onnx_path else None
+
+    export(
+        arch=args.arch,
+        hidden_dim=args.hidden_dim,
+        channels=args.channels,
+        num_blocks=args.num_blocks,
+        pt_path=pt_path_obj,
+        onnx_path=onnx_path_obj,
+    )
