@@ -186,7 +186,10 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("getMatch", static_cast<PuyotanMatch& (PuyotanVectorMatch::*)(int)>(&PuyotanVectorMatch::getMatch),
              pybind11::return_value_policy::reference_internal)
         .def_property_readonly("size", &PuyotanVectorMatch::size)
-        .def_readwrite("reward_calc", &PuyotanVectorMatch::reward_calc);
+        .def_readwrite("reward_calc", &PuyotanVectorMatch::reward_calc)
+        .def("setMaxEpisodeSteps", &PuyotanVectorMatch::setMaxEpisodeSteps, pybind11::arg("n"),
+             "Set max steps per episode (0 = unlimited). Episodes exceeding this are force-reset with done=true.")
+        .def("getMaxEpisodeSteps", &PuyotanVectorMatch::getMaxEpisodeSteps);
 
     // =========================================================================
     // Reward system
@@ -220,7 +223,7 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("buried_puyo_penalty", &RewardWeights::Board::buried_puyo_penalty)
         .def_readwrite("ojama_drop_penalty", &RewardWeights::Board::ojama_drop_penalty)
         .def_readwrite("pending_ojama_penalty", &RewardWeights::Board::pending_ojama_penalty)
-        .def_readwrite("potential_chain_bonus_scale", &RewardWeights::Board::potential_chain_bonus_scale);
+        .def_readwrite("potential_score_bonus_scale", &RewardWeights::Board::potential_score_bonus_scale);
 
     pybind11::class_<RewardWeights::Opponent>(m, "OpponentWeights")
         .def_readwrite("field_pressure_reward", &RewardWeights::Opponent::field_pressure_reward)
@@ -274,7 +277,9 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readonly("max_chain", &rl::TrainMetrics::max_chain)
         .def_readonly("avg_max_chain", &rl::TrainMetrics::avg_max_chain)
         .def_readonly("chain_rate", &rl::TrainMetrics::chain_rate)
-        .def_readonly("avg_game_score", &rl::TrainMetrics::avg_game_score);
+        .def_readonly("avg_game_score", &rl::TrainMetrics::avg_game_score)
+        .def_readonly("avg_game_len", &rl::TrainMetrics::avg_game_len)
+        .def_readonly("avg_max_potential", &rl::TrainMetrics::avg_max_potential);
 
     pybind11::class_<rl::CppPPOTrainer>(m, "CppPPOTrainer")
         .def(pybind11::init<int, int, const std::string&, int, uint32_t, rl::PPOConfig,

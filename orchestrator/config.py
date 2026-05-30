@@ -55,6 +55,12 @@ class TrainingProfile:
     # --- セルフプレイ専用（デフォルト無効） ---
     SNAPSHOT_INTERVAL: int = 0
 
+    # --- エピソード最大手数 (0=無制限) ---
+    # ぷよぷよの実戦では1000手を超える試合はほぼ存在しない。
+    # 上限を設けることでPPOのロールアウトが不自然に截断されるのを防ぎ
+    # 「Len=64.0, Pot=0.00」の異常値を抑制できる。
+    MAX_EPISODE_STEPS: int = 0
+
 # ---------------------------------------------------------------------------
 # 1. MLP プロファイル
 #    並列環境数を最大化できる爆速アーキテクチャ向け
@@ -67,24 +73,25 @@ MLP_CONFIG = TrainingProfile(
     TOTAL_ITERS    = 2000,
     MINIBATCH      = 8192,
     LEARNING_RATE  = 1e-4,    # 報酬スケール強化に伴う勾配爆発を防ぐため学習率を抑える
-    GAE_GAMMA      = 0.85,    # 短期ツモ地平（2手先）に合わせた割引率の最適化
+    GAE_GAMMA      = 0.98,    # 0.85 から引き上げ（大連鎖構築の功績評価・長期視野の獲得）
     ENTROPY_COEF   = 0.08,    # 探索のランダム性を強制し、早期収束・偏りを防止
     ARCH_PARAMS    = {},      # MLP は構造変更不要
 )
 
 # ---------------------------------------------------------------------------
 # 2. CNN プロファイル
-#    GAP 最適化済み。channels=64 は 2コア CPU でも快適に動作する。
-#    クラウドで使うなら channels=128 以上に変更するだけ。
+#    GAP廃止・超高速化カスタムモデル。2コア CPU でも快適（1500〜2500 SPS以上）に動作。
+#    クラウド/GPUで使うなら channels=64 以上に変更可能。
 # ---------------------------------------------------------------------------
 CNN_CONFIG = TrainingProfile(
-    NUM_ENVS       = 128,
+    NUM_ENVS       = 64,        # 128から削減（2コアCPUでのスレッド・キャッシュ競合を抑えメインメモリ遅延を解消）
     STEPS_PER_ITER = 64,
     LOG_INTERVAL   = 1,
     SAVE_INTERVAL  = 20,
     TOTAL_ITERS    = 1500,
-    MINIBATCH      = 2048,
-    ARCH_PARAMS    = {"channels": 64},
+    MINIBATCH      = 1024,      # 2048から削減
+    GAE_GAMMA      = 0.98,      # 長期視点
+    ARCH_PARAMS    = {"channels": 24}, # 64から24に縮小（畳み込み演算負荷を約7分の1に劇的削減）
 )
 
 # ---------------------------------------------------------------------------
@@ -99,6 +106,7 @@ RESNET_CONFIG = TrainingProfile(
     SAVE_INTERVAL  = 10,
     TOTAL_ITERS    = 1000,
     MINIBATCH      = 1024,
+    MAX_EPISODE_STEPS = 128,   # 実戦的な上限。自殺ループと異常な長寿エピソードを同時に防ぐ。
     ARCH_PARAMS    = {
         "channels":   32,   # 軽量: 2コア CPU 向け (GAP後 fc_in=32)
         "num_blocks": 2,    # 軽量: ResNetブロック数

@@ -74,6 +74,12 @@ class PuyotanViewModel(QObject):
         if mask == 0:
             # All players are in auto-frames (chain, ojama, etc.) — just tick.
             if current_time - self.last_step_time >= config.VIRTUAL_FRAME_INTERVAL_MS:
+                # Track max chains BEFORE step() clears chain_count on termination
+                for pid in [0, 1]:
+                    player_state = self.model.get_player_state(pid)
+                    if player_state.current_action.action.type == p.ActionType.CHAIN:
+                        self.current_max_chains[pid] = max(self.current_max_chains[pid], player_state.chain_count + 1)
+
                 if self.model.step():
                     self.last_step_time = current_time
                     state_was_changed = True
@@ -111,6 +117,8 @@ class PuyotanViewModel(QObject):
 
             # Track chain counts autonomously
             curr_chain = player_state.chain_count
+            chain_for_all_clear = max(curr_chain, self.current_max_chains[pid])
+
             if curr_chain > 0:
                 self.current_max_chains[pid] = max(self.current_max_chains[pid], curr_chain)
             elif self.current_max_chains[pid] > 0:
@@ -123,7 +131,7 @@ class PuyotanViewModel(QObject):
 
             # Track all clears autonomously
             is_empty = player_state.field.getOccupied().empty()
-            if is_empty and not self.was_field_empty[pid] and (self.current_max_chains[pid] > 0 or curr_chain > 0):
+            if is_empty and not self.was_field_empty[pid] and chain_for_all_clear > 0:
                 self.all_clear.emit(pid)
             self.was_field_empty[pid] = is_empty
 

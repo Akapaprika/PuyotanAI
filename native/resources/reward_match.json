@@ -8,27 +8,27 @@
         "step_penalty": -0.05
     },
     "performance": {
-        "chain_scale": 0.5,
-        "chain_power": 2.0,
+        "chain_scale": 0.0,
+        "chain_power": 1.0,
         "min_chain_threshold": 0.0,
         "premature_chain_penalty": 0.0,
         "all_clear_bonus": 20.0,
-        "erasure_count_scale": 0.005,
-        "score_scale": 0.05,
-        "ojama_sent_scale": 0.3
+        "erasure_count_scale": 0.0,
+        "score_scale": 0.001,
+        "ojama_sent_scale": 0.0
     },
     "board": {
         "puyo_count_penalty": -0.005,
         "connectivity_bonus": 0.03,
         "isolated_puyo_penalty": -0.02,
         "near_group_bonus": 0.02,
-        "height_variance_penalty": 0.05,
+        "height_variance_penalty": -0.05,
         "death_col_height_penalty": -0.5,
         "color_diversity_reward": 0.02,
         "buried_puyo_penalty": -0.1,
         "ojama_drop_penalty": -0.2,
         "pending_ojama_penalty": -0.2,
-        "potential_chain_bonus_scale": 0.0
+        "potential_score_bonus_scale": 0.0
     },
     "opponent": {
         "field_pressure_reward": 0.02,

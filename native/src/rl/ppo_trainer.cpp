@@ -34,7 +34,10 @@ CppPPOTrainer::CppPPOTrainer(int num_envs, int num_steps,
       chain_buf_(num_envs), score_buf_(num_envs),
       obs_buf_(static_cast<std::size_t>(num_envs) * kObsBytesPerEnv),
       indices_buf_(torch::zeros({num_steps * num_envs}, torch::kInt64)),
-      completed_scores_(), completed_max_chains_(), max_per_env_(num_envs, 0) {
+      completed_scores_(), completed_max_chains_(), max_per_env_(num_envs, 0),
+      episode_lengths_(num_envs, 0), completed_lengths_(),
+      max_potential_per_env_(num_envs, 0), completed_max_potentials_(),
+      potential_buf_(num_envs) {
     // Build policy
     if (arch == "mlp") {
         policy_ = std::make_unique<MLPPolicyWrapper>(hidden_dim);
@@ -65,9 +68,9 @@ CppPPOTrainer::CppPPOTrainer(int num_envs, int num_steps,
 // Public: trainStep
 // ---------------------------------------------------------------------------
 TrainMetrics CppPPOTrainer::trainStep(bool p2_random) {
-    auto [max_chain, avg_max_chain, chain_rate, avg_reward, avg_game_score] = collectRollouts_(p2_random);
+    auto [max_chain, avg_max_chain, chain_rate, avg_reward, avg_game_score, avg_game_len, avg_max_potential] = collectRollouts_(p2_random);
     float loss = ppoUpdate_();
-    return TrainMetrics{loss, avg_reward, max_chain, avg_max_chain, chain_rate, avg_game_score};
+    return TrainMetrics{loss, avg_reward, max_chain, avg_max_chain, chain_rate, avg_game_score, avg_game_len, avg_max_potential};
 }
 // ---------------------------------------------------------------------------
 // Public: save / load
@@ -95,7 +98,7 @@ void CppPPOTrainer::loadP2(const std::string& path) {
 // ---------------------------------------------------------------------------
 // Private: collectRollouts_
 // ---------------------------------------------------------------------------
-std::tuple<int, float, float, float, float> CppPPOTrainer::collectRollouts_(bool p2_random) {
+std::tuple<int, float, float, float, float, float, float> CppPPOTrainer::collectRollouts_(bool p2_random) {
     policy_->train(false);
     int max_chain = 0;
     float sum_reward = 0.0f;
@@ -103,6 +106,8 @@ std::tuple<int, float, float, float, float> CppPPOTrainer::collectRollouts_(bool
     // [OPTIMIZATION] Re-use pre-allocated vectors to avoid heap allocation.
     completed_scores_.clear();
     completed_max_chains_.clear();
+    completed_lengths_.clear();
+    completed_max_potentials_.clear();
 
     // Span views over the pre-allocated buffers.
     std::span<int8_t> sp_p1(act_p1_buf_);
@@ -111,6 +116,7 @@ std::tuple<int, float, float, float, float> CppPPOTrainer::collectRollouts_(bool
     std::span<float> sp_done(done_buf_);
     std::span<int8_t> sp_chain(chain_buf_);
     std::span<int32_t> sp_score(score_buf_);
+    std::span<int8_t> sp_pot(potential_buf_);
     std::span<uint8_t> sp_obs(obs_buf_);
 
     // Fast PRNG state for P2 random wrapper (avoids global lock of std::rand())
@@ -160,7 +166,7 @@ std::tuple<int, float, float, float, float> CppPPOTrainer::collectRollouts_(bool
         }
 
         // ----- Native step -- OpenMP threads can run freely -----
-        env_.stepNative(sp_p1, sp_p2, sp_rew, sp_done, sp_chain, sp_score, sp_obs);
+        env_.stepNative(sp_p1, sp_p2, sp_rew, sp_done, sp_chain, sp_score, sp_pot, sp_obs);
 
         // [OPTIMIZATION] ZERO-COPY: from_blob without clone() allows RolloutBuffer to copy directly.
         auto rewards_t = torch::from_blob(sp_rew.data(), {num_envs_}, torch::kFloat32);
@@ -173,6 +179,7 @@ std::tuple<int, float, float, float, float> CppPPOTrainer::collectRollouts_(bool
             const float*   dacc = sp_done.data();
             const int8_t*  cacc = sp_chain.data();
             const int32_t* gacc = sp_score.data();
+            const int8_t*  pacc = sp_pot.data();
             float*         sacc = episode_scores_.data_ptr<float>();
             float*         gsacc = episode_game_scores_.data_ptr<float>();
             int8_t*        macc = max_per_env_.data();
@@ -184,14 +191,20 @@ std::tuple<int, float, float, float, float> CppPPOTrainer::collectRollouts_(bool
                 sum_reward += racc[i];
                 macc[i]     = std::max(macc[i], cacc[i]);
                 max_chain   = std::max(max_chain, static_cast<int>(macc[i]));
+                episode_lengths_[i]++;
+                max_potential_per_env_[i] = std::max(max_potential_per_env_[i], static_cast<int>(pacc[i]));
 
                 // 2. Check done: record per-episode stats then reset accumulators
                 if (dacc[i] > 0.5f) {
                     completed_scores_.push_back(gsacc[i]);
                     completed_max_chains_.push_back(static_cast<int>(macc[i]));
+                    completed_lengths_.push_back(episode_lengths_[i]);
+                    completed_max_potentials_.push_back(max_potential_per_env_[i]);
                     sacc[i]  = 0.0f;
                     gsacc[i] = 0.0f;
                     macc[i]  = 0; // reset per-env max for next episode
+                    episode_lengths_[i] = 0;
+                    max_potential_per_env_[i] = 0;
                 }
             }
         }
@@ -246,7 +259,18 @@ std::tuple<int, float, float, float, float> CppPPOTrainer::collectRollouts_(bool
                                ? episode_game_scores_.mean().item<float>()
                                : std::accumulate(completed_scores_.begin(), completed_scores_.end(), 0.0f)
                                  / static_cast<float>(completed_scores_.size());
-    return {max_chain, avg_max_chain, chain_rate, avg_reward, avg_game_score};
+
+    float avg_game_len = completed_lengths_.empty()
+                             ? static_cast<float>(num_steps_)
+                             : static_cast<float>(std::accumulate(completed_lengths_.begin(), completed_lengths_.end(), 0))
+                               / static_cast<float>(completed_lengths_.size());
+
+    float avg_max_potential = completed_max_potentials_.empty()
+                                  ? 0.0f
+                                  : static_cast<float>(std::accumulate(completed_max_potentials_.begin(), completed_max_potentials_.end(), 0))
+                                    / static_cast<float>(completed_max_potentials_.size());
+
+    return {max_chain, avg_max_chain, chain_rate, avg_reward, avg_game_score, avg_game_len, avg_max_potential};
 }
 // ---------------------------------------------------------------------------
 // Private: ppoUpdate_

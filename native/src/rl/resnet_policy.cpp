@@ -10,26 +10,6 @@
 namespace puyotan::rl {
 
 // ---------------------------------------------------------------------------
-// SEBlock (Squeeze-and-Excitation)
-// ---------------------------------------------------------------------------
-SEBlockImpl::SEBlockImpl(int channels, int reduction) {
-    int reduced = std::max(1, channels / reduction);
-    fc1 = register_module("fc1", torch::nn::Linear(channels, reduced));
-    fc2 = register_module("fc2", torch::nn::Linear(reduced, channels));
-}
-
-torch::Tensor SEBlockImpl::forward(torch::Tensor x) {
-    // x: [B, C, H, W]
-    auto b = x.size(0);
-    auto c = x.size(1);
-    // Global Average Pool for channel descriptor: [B, C]
-    auto y = torch::adaptive_avg_pool2d(x, {1, 1}).view({b, c});
-    y = torch::relu(fc1->forward(y));
-    y = torch::sigmoid(fc2->forward(y)).view({b, c, 1, 1});
-    return x * y; // channel-wise recalibration
-}
-
-// ---------------------------------------------------------------------------
 // ResNetBlock
 // ---------------------------------------------------------------------------
 ResNetBlockImpl::ResNetBlockImpl(int channels) {
@@ -40,8 +20,6 @@ ResNetBlockImpl::ResNetBlockImpl(int channels) {
     conv2 = register_module("conv2", torch::nn::Conv2d(
         torch::nn::Conv2dOptions(channels, channels, 3).padding(1).bias(false)));
     bn2   = register_module("bn2", torch::nn::BatchNorm2d(channels));
-
-    se    = register_module("se", SEBlock(channels, 16));
 }
 
 torch::Tensor ResNetBlockImpl::forward(torch::Tensor x) {
@@ -49,7 +27,6 @@ torch::Tensor ResNetBlockImpl::forward(torch::Tensor x) {
 
     x = torch::relu(bn1->forward(conv1->forward(x)));
     x = bn2->forward(conv2->forward(x));
-    x = se->forward(x);
 
     x += residual;
     return torch::relu(x);

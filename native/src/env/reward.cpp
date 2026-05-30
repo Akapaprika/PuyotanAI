@@ -2,6 +2,7 @@
 #include <puyotan/core/chain.hpp>
 #include <puyotan/core/gravity.hpp>
 #include <puyotan/engine/match.hpp>
+#include <puyotan/engine/scorer.hpp>
 #include <puyotan/env/reward.hpp>
 
 namespace puyotan {
@@ -109,8 +110,9 @@ int get_buried_count(const Board& board) {
 // ---------------------------------------------------------------------------
 // Potential chain (max chain achievable by adding exactly one puyo)
 // ---------------------------------------------------------------------------
-int get_max_potential_chain(const Board& board) {
+std::pair<int, int> get_max_potential_chain_and_score(const Board& board) {
     int max_chain = 0;
+    int max_score = 0;
     for (int x = 0; x < config::Board::kWidth; ++x) {
         int h = board.getColumnHeight(x);
         if (h >= config::Board::kChainableRows)
@@ -123,18 +125,27 @@ int get_max_potential_chain(const Board& board) {
             ErasureData ed = Chain::findGroups(temp, 1u << c);
             if (ed.num_erased > 0) {
                 int chain = 0;
+                int score = 0;
                 while (ed.num_erased > 0) {
                     ++chain;
+                    score += Scorer::calculateStepScore(ed, chain);
                     Chain::applyErasure(temp, ed);
                     uint32_t fallen_mask = Gravity::execute(temp);
                     ed = Chain::findGroups(temp, fallen_mask);
+                    if (chain >= 10) {
+                        return {chain, score};
+                    }
                 }
-                if (chain > max_chain)
+                if (chain > max_chain) {
                     max_chain = chain;
+                }
+                if (score > max_score) {
+                    max_score = score;
+                }
             }
         }
     }
-    return max_chain;
+    return {max_chain, max_score};
 }
 } // namespace
 
@@ -186,7 +197,12 @@ RewardContext RewardCalculator::extractContext(const PuyotanMatch& m,
     ctx.p1_buried_puyo_count = get_buried_count(p1.field);
     ctx.p1_ojama_dropped = p1_ojama_dropped;
     ctx.p1_pending_ojama = p1.active_ojama + p1.non_active_ojama;
-    ctx.p1_potential_chain = get_max_potential_chain(p1.field);
+    
+    {
+        auto [p1_pot_chain, p1_pot_score] = get_max_potential_chain_and_score(p1.field);
+        ctx.p1_potential_chain = p1_pot_chain;
+        ctx.p1_potential_score = p1_pot_score;
+    }
 
     // ---------------------------------------------------------------------------
     // Player 2
@@ -195,29 +211,55 @@ RewardContext RewardCalculator::extractContext(const PuyotanMatch& m,
     ctx.p2_delta_score = p2.score - p2_pre.score;
     ctx.p2_chain_count = p2_max_chain;
     
-    int p2_pre_colored = get_colored_count(p2_pre.field);
-    int p2_post_colored = get_colored_count(p2.field);
-    int p2_pre_ojama = p2_pre.field.getBitboard(Cell::Ojama).popcount();
-    int p2_post_ojama = p2.field.getBitboard(Cell::Ojama).popcount();
-    int p2_placed = (p2.active_next_pos > p2_pre.active_next_pos) ? 2 : 0;
-    int p2_erased_colored = std::max(0, p2_pre_colored + p2_placed - p2_post_colored);
-    int p2_erased_ojama = std::max(0, p2_pre_ojama + p2_ojama_dropped - p2_post_ojama);
-    ctx.p2_total_erased = p2_erased_colored + p2_erased_ojama;
-    ctx.p2_all_clear = (p2_max_chain > 0) && p2.field.getOccupied().empty();
-    ctx.p2_ojama_sent = ctx.p2_delta_score / config::Score::kTargetScore;
+    if (skip_opponent_metrics_) {
+        // Skip expensive opponent metrics when opponent rewards are all zero.
+        // We only extract what is trivial and fast.
+        ctx.p2_total_erased = 0;
+        ctx.p2_all_clear = false;
+        ctx.p2_ojama_sent = ctx.p2_delta_score / config::Score::kTargetScore;
 
-    ctx.p2_puyo_count = p2.field.getOccupied().popcount();
-    get_board_metrics(p2.field,
-                      ctx.p2_connectivity_score,
-                      ctx.p2_isolated_puyo_count,
-                      ctx.p2_near_group_count,
-                      ctx.p2_color_diversity);
-    ctx.p2_height_variance = get_height_variance(p2.field);
-    ctx.p2_death_col_height = p2.field.getColumnHeight(config::Rule::kDeathCol);
-    ctx.p2_buried_puyo_count = get_buried_count(p2.field);
-    ctx.p2_ojama_dropped = p2_ojama_dropped;
-    ctx.p2_pending_ojama = p2.active_ojama + p2.non_active_ojama;
-    ctx.p2_potential_chain = get_max_potential_chain(p2.field);
+        ctx.p2_puyo_count = p2.field.getOccupied().popcount();
+        ctx.p2_connectivity_score = 0;
+        ctx.p2_isolated_puyo_count = 0;
+        ctx.p2_near_group_count = 0;
+        ctx.p2_color_diversity = 0;
+        ctx.p2_height_variance = 0.0f;
+        ctx.p2_death_col_height = 0;
+        ctx.p2_buried_puyo_count = 0;
+        ctx.p2_ojama_dropped = p2_ojama_dropped;
+        ctx.p2_pending_ojama = p2.active_ojama + p2.non_active_ojama;
+        ctx.p2_potential_chain = 0;
+        ctx.p2_potential_score = 0;
+    } else {
+        int p2_pre_colored = get_colored_count(p2_pre.field);
+        int p2_post_colored = get_colored_count(p2.field);
+        int p2_pre_ojama = p2_pre.field.getBitboard(Cell::Ojama).popcount();
+        int p2_post_ojama = p2.field.getBitboard(Cell::Ojama).popcount();
+        int p2_placed = (p2.active_next_pos > p2_pre.active_next_pos) ? 2 : 0;
+        int p2_erased_colored = std::max(0, p2_pre_colored + p2_placed - p2_post_colored);
+        int p2_erased_ojama = std::max(0, p2_pre_ojama + p2_ojama_dropped - p2_post_ojama);
+        ctx.p2_total_erased = p2_erased_colored + p2_erased_ojama;
+        ctx.p2_all_clear = (p2_max_chain > 0) && p2.field.getOccupied().empty();
+        ctx.p2_ojama_sent = ctx.p2_delta_score / config::Score::kTargetScore;
+
+        ctx.p2_puyo_count = p2.field.getOccupied().popcount();
+        get_board_metrics(p2.field,
+                          ctx.p2_connectivity_score,
+                          ctx.p2_isolated_puyo_count,
+                          ctx.p2_near_group_count,
+                          ctx.p2_color_diversity);
+        ctx.p2_height_variance = get_height_variance(p2.field);
+        ctx.p2_death_col_height = p2.field.getColumnHeight(config::Rule::kDeathCol);
+        ctx.p2_buried_puyo_count = get_buried_count(p2.field);
+        ctx.p2_ojama_dropped = p2_ojama_dropped;
+        ctx.p2_pending_ojama = p2.active_ojama + p2.non_active_ojama;
+        
+        {
+            auto [p2_pot_chain, p2_pot_score] = get_max_potential_chain_and_score(p2.field);
+            ctx.p2_potential_chain = p2_pot_chain;
+            ctx.p2_potential_score = p2_pot_score;
+        }
+    }
 
     return ctx;
 }

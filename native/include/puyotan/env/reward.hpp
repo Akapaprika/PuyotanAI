@@ -38,6 +38,7 @@ struct RewardContext {
     int p1_ojama_dropped = 0;
     int p1_pending_ojama = 0;
     int p1_potential_chain = 0;
+    int p1_potential_score = 0;
 
     // -----------------------------------------------------------------------
     // Player 2 (opponent)
@@ -58,6 +59,7 @@ struct RewardContext {
     int p2_ojama_dropped = 0;
     int p2_pending_ojama = 0;
     int p2_potential_chain = 0;
+    int p2_potential_score = 0;
 
     MatchStatus status = MatchStatus::Playing;
 };
@@ -99,7 +101,7 @@ struct RewardWeights {
         float buried_puyo_penalty = 0.0f;
         float ojama_drop_penalty = 0.0f;
         float pending_ojama_penalty = 0.0f;
-        float potential_chain_bonus_scale = 0.0f;
+        float potential_score_bonus_scale = 0.0f;
     } board;
 
     struct Opponent {
@@ -148,7 +150,7 @@ struct RewardWeights {
             get(b, "buried_puyo_penalty", board.buried_puyo_penalty);
             get(b, "ojama_drop_penalty", board.ojama_drop_penalty);
             get(b, "pending_ojama_penalty", board.pending_ojama_penalty);
-            get(b, "potential_chain_bonus_scale", board.potential_chain_bonus_scale);
+            get(b, "potential_score_bonus_scale", board.potential_score_bonus_scale);
         }
         if (j.contains("opponent")) {
             const auto& o = j["opponent"];
@@ -158,11 +160,21 @@ struct RewardWeights {
             get(o, "initiative_bonus", opponent.initiative_bonus);
         }
     }
+
+    bool has_opponent_rewards() const noexcept {
+        return opponent.field_pressure_reward != 0.0f ||
+               opponent.connectivity_penalty  != 0.0f ||
+               opponent.ojama_diff_scale      != 0.0f ||
+               opponent.initiative_bonus      != 0.0f;
+    }
 };
 
 class RewardCalculator {
   public:
     RewardWeights weights;
+    /// True when all opponent reward weights are 0.0: skips expensive P2 board
+    /// metric computation inside extractContext() (saves ~40% of hot-path cost).
+    bool skip_opponent_metrics_ = true;
 
     void load_from_json(const std::string& path_str) {
         try {
@@ -174,7 +186,9 @@ class RewardCalculator {
             }
             json j = json::parse(f);
             weights.from_json(j);
-            std::cout << "[RewardCalculator] Loaded reward config from: " << path_str << std::endl;
+            skip_opponent_metrics_ = !weights.has_opponent_rewards();
+            std::cout << "[RewardCalculator] Loaded reward config from: " << path_str
+                      << (skip_opponent_metrics_ ? " (opponent metrics skipped)" : "") << std::endl;
         } catch (const std::exception& e) {
             std::cerr << "[ERROR] Failed to load/parse reward JSON: " << e.what()
                       << " (Path: " << path_str << ")" << std::endl;
@@ -185,6 +199,7 @@ class RewardCalculator {
         try {
             json j = json::parse(json_str);
             weights.from_json(j);
+            skip_opponent_metrics_ = !weights.has_opponent_rewards();
         } catch (...) {
         }
     }
@@ -213,6 +228,7 @@ class RewardCalculator {
         const int s_oj_drop = is_p1 ? ctx.p1_ojama_dropped : ctx.p2_ojama_dropped;
         const int s_pending = is_p1 ? ctx.p1_pending_ojama : ctx.p2_pending_ojama;
         const int s_potential = is_p1 ? ctx.p1_potential_chain : ctx.p2_potential_chain;
+        const float s_potential_score = static_cast<float>(is_p1 ? ctx.p1_potential_score : ctx.p2_potential_score);
         // ---- Opponent ----
         const int o_puyo = is_p1 ? ctx.p2_puyo_count : ctx.p1_puyo_count;
         const int o_conn = is_p1 ? ctx.p2_connectivity_score : ctx.p1_connectivity_score;
@@ -263,8 +279,8 @@ class RewardCalculator {
         r += static_cast<float>(s_buried) * weights.board.buried_puyo_penalty;
         r += static_cast<float>(s_oj_drop) * weights.board.ojama_drop_penalty;
         r += static_cast<float>(s_pending) * weights.board.pending_ojama_penalty;
-        if (s_potential > 0) {
-            r += static_cast<float>(s_potential * s_potential) * weights.board.potential_chain_bonus_scale;
+        if (s_potential_score > 0.0f) {
+            r += s_potential_score * weights.board.potential_score_bonus_scale;
         }
 
         // Opponent
