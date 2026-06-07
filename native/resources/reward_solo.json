@@ -1,34 +1,34 @@
 {
     "match": {
         "win": 0.0,
-        "loss": -5.0,
+        "loss": -8.0,
         "draw": 0.0
     },
     "turn": {
-        "step_penalty": -0.01
+        "step_penalty": -0.001
     },
     "performance": {
-        "chain_scale": 0.0,
-        "chain_power": 1.0,
-        "min_chain_threshold": 0.0,
-        "premature_chain_penalty": 0.0,
-        "all_clear_bonus": 50.0,
+        "chain_scale": 0.2,
+        "chain_power": 2.0,
+        "min_chain_threshold": 2.0,
+        "premature_chain_penalty": -0.1,
+        "all_clear_bonus": 20.0,
         "erasure_count_scale": 0.0,
-        "score_scale": 0.05,
+        "score_scale": 0.1,
         "ojama_sent_scale": 0.0
     },
     "board": {
         "puyo_count_penalty": 0.0,
-        "connectivity_bonus": 0.05,
-        "isolated_puyo_penalty": -0.05,
-        "near_group_bonus": 0.1,
-        "height_variance_penalty": -0.03,
-        "death_col_height_penalty": -0.3,
-        "color_diversity_reward": 0.01,
-        "buried_puyo_penalty": -0.1,
+        "connectivity_bonus": 0.07,
+        "isolated_puyo_penalty": -0.08,
+        "near_group_bonus": 0.15,
+        "height_variance_penalty": -0.01,
+        "death_col_height_penalty": -0.05,
+        "color_diversity_reward": 0.0,
+        "buried_puyo_penalty": -0.12,
         "ojama_drop_penalty": -0.2,
         "pending_ojama_penalty": -0.2,
-        "potential_score_bonus_scale": 0.005
+        "potential_score_bonus_scale": 0.2
     },
     "opponent": {
         "field_pressure_reward": 0.0,

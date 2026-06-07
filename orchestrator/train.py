@@ -1,4 +1,5 @@
 import os
+
 # OS-level thread management to prevent CPU pipeline starvation and context-switching overhead on 2-core systems.
 # Must be declared BEFORE any scientific/learning frameworks are imported.
 os.environ["OMP_NUM_THREADS"] = "2"
@@ -15,13 +16,13 @@ Usage:
     python -m orchestrator.train --mode solo --arch resnet
     python -m orchestrator.train --mode selfplay --arch resnet
 """
-import sys
-import time
+import argparse
 import random
 import shutil
-import argparse
-import traceback
 import subprocess
+import sys
+import time
+import traceback
 from pathlib import Path
 
 try:
@@ -50,11 +51,30 @@ TIMESTAMP  = time.strftime("%Y%m%d_%H%M%S")
 
 def run_training(
     mode: str = "solo",
-    config_name: str = None,
+    config_name: str | None = None,
     arch: str = "mlp",
+    channels: int | None = None,
+    num_blocks: int | None = None,
+    lr: float | None = None,
+    envs: int | None = None,
+    steps: int | None = None,
+    load: str | None = None,
+    fresh: bool = False,
 ) -> None:
     is_selfplay = (mode == "selfplay")
     cfg_inst = config.get_config(arch, is_selfplay=is_selfplay)
+
+    # CLI parameter overrides
+    if channels is not None:
+        cfg_inst.ARCH_PARAMS["channels"] = channels
+    if num_blocks is not None:
+        cfg_inst.ARCH_PARAMS["num_blocks"] = num_blocks
+    if lr is not None:
+        cfg_inst.LEARNING_RATE = lr
+    if envs is not None:
+        cfg_inst.NUM_ENVS = envs
+    if steps is not None:
+        cfg_inst.STEPS_PER_ITER = steps
 
     if config_name is None:
         config_name = "reward_match.json" if is_selfplay else "reward_solo.json"
@@ -64,6 +84,8 @@ def run_training(
     print(f"  backbone      : {arch.upper()}")
     print(f"  envs          : {cfg_inst.NUM_ENVS}")
     print(f"  steps/iter    : {cfg_inst.STEPS_PER_ITER}")
+    if len(cfg_inst.ARCH_PARAMS) > 0:
+        print(f"  arch_params   : {cfg_inst.ARCH_PARAMS}")
 
     arch_dir   = MODELS_DIR / arch
     arch_dir.mkdir(parents=True, exist_ok=True)
@@ -107,22 +129,49 @@ def run_training(
             print(f"  max_episode_steps : {cfg_inst.MAX_EPISODE_STEPS}")
 
         # Load checkpoint
-        if latest_pt.exists():
+        if fresh:
+            print("Starting a fresh training run (ignoring existing checkpoints).")
+        elif load is not None:
+            load_path = Path(load)
+            if load_path.exists():
+                print(f"Loading user-specified checkpoint: {load_path}")
+                try:
+                    trainer.load(str(load_path))
+                except RuntimeError as e:
+                    print(f"\n[ERROR] Failed to load checkpoint: {e}")
+                    print("This usually happens when the model architecture (--channels, --num_blocks) does not match the saved checkpoint.")
+                    sys.exit(1)
+            else:
+                print(f"[ERROR] User-specified checkpoint not found: {load_path}")
+                sys.exit(1)
+        elif latest_pt.exists():
             print(f"Resuming from checkpoint: {latest_pt}")
-            trainer.load(str(latest_pt))
+            try:
+                trainer.load(str(latest_pt))
+            except RuntimeError as e:
+                print(f"\n[ERROR] Failed to load checkpoint: {e}")
+                print("This usually happens when the model architecture (--channels, --num_blocks) does not match the saved checkpoint.")
+                print("To start a fresh training run with the new architecture, use the '--fresh' flag or delete/rename the old checkpoint file.\n")
+                sys.exit(1)
         elif is_selfplay:
             # For selfplay, if puyotan_latest.pt does not exist, try to load puyotan_solo_latest.pt to bootstrap
             solo_fallback = arch_dir / "puyotan_solo_latest.pt"
             if solo_fallback.exists():
                 print(f"Initializing self-play with solo checkpoint: {solo_fallback}")
-                trainer.load(str(solo_fallback))
+                try:
+                    trainer.load(str(solo_fallback))
+                except RuntimeError as e:
+                    print(f"\n[ERROR] Failed to load solo bootstrap checkpoint: {e}")
+                    print("This usually happens when the model architecture (--channels, --num_blocks) does not match the saved checkpoint.")
+                    print("To start a fresh training run with the new architecture, use the '--fresh' flag.\n")
+                    sys.exit(1)
 
         # ---------------------------------------------------------------------------
         # Training loop
         # ---------------------------------------------------------------------------
         acc_loss = acc_sps = acc_avg_max = acc_reward = acc_score = 0.0
         acc_max_chain = 0
-        acc_game_len = acc_max_potential = 0.0
+        acc_game_len = 0.0
 
         for i in range(cfg_inst.TOTAL_ITERS):
             iteration = i + 1
@@ -154,7 +203,6 @@ def run_training(
             acc_score     += metrics.avg_game_score
             acc_max_chain  = max(acc_max_chain, metrics.max_chain)
             acc_game_len  += metrics.avg_game_len
-            acc_max_potential += metrics.avg_max_potential
 
             if iteration % cfg_inst.LOG_INTERVAL == 0 or iteration == 1:
                 div = min(iteration, cfg_inst.LOG_INTERVAL)
@@ -165,12 +213,12 @@ def run_training(
                     f"  AvgScore={acc_score/div:6.1f}"
                     f"  AvgMax={acc_avg_max/div:4.2f}"
                     f"  Len={acc_game_len/div:5.1f}"
-                    f"  Pot={acc_max_potential/div:4.2f}"
                     f"  Max={acc_max_chain:2d}"
                     f"  SPS={acc_sps/div:.0f}"
                 )
-                acc_loss = acc_sps = acc_max_chain = acc_avg_max = acc_reward = acc_score = 0.0
-                acc_game_len = acc_max_potential = 0.0
+                acc_loss = acc_sps = acc_avg_max = acc_reward = acc_score = 0.0
+                acc_max_chain = 0
+                acc_game_len = 0.0
 
             if iteration % cfg_inst.SAVE_INTERVAL == 0 or iteration == cfg_inst.TOTAL_ITERS:
                 trainer.save(str(session_pt))
@@ -196,7 +244,7 @@ def run_training(
                 env["PYTHONUTF8"] = "1"
                 
                 try:
-                    result = subprocess.run(cmd, env=env, capture_output=True, text=True, check=True)
+                    result = subprocess.run(cmd, env=env, capture_output=True, encoding="utf-8", errors="replace", check=True)
                     print(result.stdout)
                 except subprocess.CalledProcessError as e:
                     print(f"Failed to export to ONNX: {e}")
@@ -219,10 +267,26 @@ if __name__ == "__main__":
                         help="Model backbone architecture (default: mlp)")
     parser.add_argument("--config", type=str, default=None,
                         help="Reward weights JSON file name (default: reward_solo.json for solo, reward_match.json for selfplay)")
+    # CLI hyperparameter overrides
+    parser.add_argument("--channels",   type=int, default=None, help="Backbone CNN/ResNet channels")
+    parser.add_argument("--num_blocks", type=int, default=None, help="ResNet backbones number of residual blocks")
+    parser.add_argument("--lr",         type=float, default=None, help="PPO policy network learning rate")
+    parser.add_argument("--envs",       type=int, default=None, help="Number of parallel game environments")
+    parser.add_argument("--steps",      type=int, default=None, help="Steps gathered per environment per training iteration")
+    parser.add_argument("--load",       type=str, default=None, help="Path to a custom checkpoint (.pt) to load/resume from")
+    parser.add_argument("--fresh",      action="store_true", help="Start training from scratch (ignore existing checkpoints)")
+    
     args = parser.parse_args()
 
     run_training(
         mode=args.mode,
         config_name=args.config,
         arch=args.arch,
+        channels=args.channels,
+        num_blocks=args.num_blocks,
+        lr=args.lr,
+        envs=args.envs,
+        steps=args.steps,
+        load=args.load,
+        fresh=args.fresh,
     )
