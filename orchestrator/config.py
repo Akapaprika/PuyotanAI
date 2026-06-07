@@ -154,6 +154,7 @@ def get_config(arch: str, is_selfplay: bool = False) -> TrainingProfile:
     # （以前は self-play 呼び出しで SNAPSHOT_INTERVAL を変更すると、
     #   同一プロセス内の後続呼び出しにも副作用が残る可能性があった）
     cfg = replace(cfg)
+    cfg.ARCH_PARAMS = cfg.ARCH_PARAMS.copy()
 
     # セルフプレイ時のみスナップショットを有効化
     if is_selfplay:
