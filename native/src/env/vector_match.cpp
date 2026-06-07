@@ -20,10 +20,14 @@ static constexpr bool kTermTable[] = {
 };
 } // anonymous namespace
 PuyotanVectorMatch::PuyotanVectorMatch(int num_matches, uint32_t base_seed)
-    : base_seed_(base_seed), env_seeds_(num_matches) {
+    : base_seed_(base_seed), env_seeds_(num_matches), episode_steps_(num_matches, 0) {
     matches_.reserve(num_matches);
+    uint32_t seed = base_seed;
     for (int i = 0; i < num_matches; ++i) {
-        env_seeds_[i] = base_seed + i;
+        // Xorshift32 to diversify initial seeds across environments
+        seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
+        if (seed == 0) seed = base_seed + i + 1;
+        env_seeds_[i] = seed;
         matches_.emplace_back(env_seeds_[i]);
         matches_.back().start();
         matches_.back().stepUntilDecision();
@@ -49,6 +53,7 @@ void PuyotanVectorMatch::reset(int id) noexcept {
         matches_[id] = PuyotanMatch(seed);
         matches_[id].start();
         matches_[id].stepUntilDecision();
+        episode_steps_[id] = 0;
     }
 }
 std::vector<int> PuyotanVectorMatch::stepUntilDecision() {
@@ -73,29 +78,71 @@ void PuyotanVectorMatch::stepNative(
     std::span<float> out_dones,
     std::span<int8_t> out_chains,
     std::span<int32_t> out_scores,
+    std::span<int8_t> out_potentials,
     std::span<uint8_t> out_obs) noexcept {
     const int n = static_cast<int>(matches_.size());
 // Parallel simulation -- no GIL, no Python objects.
 #pragma omp parallel for schedule(static)
     for (int i = 0; i < n; ++i) {
         auto& m = matches_[i];
-        const auto& p1_pre = m.getPlayer(0);
-        const auto& p2_pre = m.getPlayer(1);
-        int start_score_p1 = p1_pre.score;
-        int start_score_p2 = p2_pre.score;
-        int pre_ojama_p1 = p1_pre.total_ojama_dropped;
-        int pre_ojama_p2 = p2_pre.total_ojama_dropped;
+        
+        // Take copies of pre-step player states
+        PuyotanPlayer p1_pre = m.getPlayer(0);
+        PuyotanPlayer p2_pre = m.getPlayer(1);
+
         m.setAction(0, getRLAction(p1_actions[i]));
         m.setAction(1, getRLAction(p2_actions[i]));
-        m.stepUntilDecision();
+
+        int p1_max_chain = 0;
+        int p2_max_chain = 0;
+        int p1_ojama_dropped = 0;
+        int p2_ojama_dropped = 0;
+
+        // Drive stepNextFrame manually to inspect state transitions for metrics
+        while (m.getStatus() == MatchStatus::Playing) {
+            // Check if we reached decision point
+            if (m.getPlayer(0).current_action.action.type == ActionType::None ||
+                m.getPlayer(1).current_action.action.type == ActionType::None) {
+                break;
+            }
+
+            const auto& p1_curr = m.getPlayer(0);
+            const auto& p2_curr = m.getPlayer(1);
+
+            // Track max chain achieved: sample BEFORE stepNextFrame clears chain_count on termination
+            if (p1_curr.current_action.action.type == ActionType::Chain) {
+                p1_max_chain = std::max(p1_max_chain, static_cast<int>(p1_curr.chain_count + 1));
+            }
+            if (p2_curr.current_action.action.type == ActionType::Chain) {
+                p2_max_chain = std::max(p2_max_chain, static_cast<int>(p2_curr.chain_count + 1));
+            }
+
+            // Track ojama drops right before they execute
+            if (p1_curr.current_action.action.type == ActionType::Ojama && p1_curr.current_action.remaining_frame == 0) {
+                p1_ojama_dropped += std::min(static_cast<int>(p1_curr.active_ojama), config::Rule::kMaxOjamaPerFall);
+            }
+            if (p2_curr.current_action.action.type == ActionType::Ojama && p2_curr.current_action.remaining_frame == 0) {
+                p2_ojama_dropped += std::min(static_cast<int>(p2_curr.active_ojama), config::Rule::kMaxOjamaPerFall);
+            }
+
+            m.stepNextFrame();
+        }
+
         RewardContext ctx = reward_calc.extractContext(
-            m, start_score_p1, start_score_p2, pre_ojama_p1, pre_ojama_p2);
+            m, p1_pre, p2_pre, p1_ojama_dropped, p2_ojama_dropped, p1_max_chain, p2_max_chain);
         out_rewards[i] = reward_calc.calculate(ctx, 0);
         out_chains[i] = ctx.p1_chain_count;
         out_scores[i] = ctx.p1_delta_score;
+        out_potentials[i] = static_cast<int8_t>(ctx.p1_potential_chain);
         bool is_term = kTermTable[static_cast<uint8_t>(ctx.status)];
+        // Max episode steps: force truncation if limit is set and exceeded
+        episode_steps_[i]++;
+        if (!is_term && max_episode_steps_ > 0 && episode_steps_[i] >= max_episode_steps_) {
+            is_term = true;
+        }
         out_dones[i] = is_term ? 1.0f : 0.0f;
         if (is_term) {
+            episode_steps_[i] = 0;
             uint32_t seed = env_seeds_[i];
             seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
             if (seed == 0) seed = base_seed_ + i + 1;

@@ -9,20 +9,10 @@
 
 namespace puyotan::rl {
 
-/** @struct SEBlockImpl */
-struct SEBlockImpl : torch::nn::Module {
-    torch::nn::Linear fc1{nullptr}, fc2{nullptr};
-
-    explicit SEBlockImpl(int channels, int reduction = 16);
-    torch::Tensor forward(torch::Tensor x);
-};
-TORCH_MODULE(SEBlock);
-
 /** @struct ResNetBlockImpl */
 struct ResNetBlockImpl : torch::nn::Module {
     torch::nn::Conv2d conv1{nullptr}, conv2{nullptr};
     torch::nn::BatchNorm2d bn1{nullptr}, bn2{nullptr};
-    SEBlock se{nullptr};
 
     explicit ResNetBlockImpl(int channels);
     torch::Tensor forward(torch::Tensor x);

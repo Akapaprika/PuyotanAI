@@ -43,6 +43,10 @@ class TrainingProfile:
     # 値が高いほど実際の報酬に引っ張られ（バリアンス高）、低いほど予測に頼る（バイアス高）。
     GAE_LAMBDA: float    = 0.95
 
+    # エントロピー係数 (Entropy Coefficient): ポリシーの多様性（でたらめさ）に対するボーナス重み。
+    # この値が高いほど、AIが特定の置き方に早く収束するのを防ぎ、多様な手順を探索し続けます。
+    ENTROPY_COEF: float  = 0.05
+
     # --- アーキテクチャ固有パラメータ (C++ 側に辞書で渡す) ---
     # MLP は不要。CNN/ResNet で有効。
     # クラウド/GPUで学習する場合はここを拡張する。
@@ -50,6 +54,12 @@ class TrainingProfile:
 
     # --- セルフプレイ専用（デフォルト無効） ---
     SNAPSHOT_INTERVAL: int = 0
+
+    # --- エピソード最大手数 (0=無制限) ---
+    # ぷよぷよの実戦では1000手を超える試合はほぼ存在しない。
+    # 上限を設けることでPPOのロールアウトが不自然に截断されるのを防ぎ
+    # 「Len=64.0, Pot=0.00」の異常値を抑制できる。
+    MAX_EPISODE_STEPS: int = 0
 
 # ---------------------------------------------------------------------------
 # 1. MLP プロファイル
@@ -62,22 +72,26 @@ MLP_CONFIG = TrainingProfile(
     SAVE_INTERVAL  = 50,
     TOTAL_ITERS    = 2000,
     MINIBATCH      = 8192,
+    LEARNING_RATE  = 1e-4,    # 報酬スケール強化に伴う勾配爆発を防ぐため学習率を抑える
+    GAE_GAMMA      = 0.98,    # 0.85 から引き上げ（大連鎖構築の功績評価・長期視野の獲得）
+    ENTROPY_COEF   = 0.08,    # 探索のランダム性を強制し、早期収束・偏りを防止
     ARCH_PARAMS    = {},      # MLP は構造変更不要
 )
 
 # ---------------------------------------------------------------------------
 # 2. CNN プロファイル
-#    GAP 最適化済み。channels=64 は 2コア CPU でも快適に動作する。
-#    クラウドで使うなら channels=128 以上に変更するだけ。
+#    GAP廃止・超高速化カスタムモデル。2コア CPU でも快適（1500〜2500 SPS以上）に動作。
+#    クラウド/GPUで使うなら channels=64 以上に変更可能。
 # ---------------------------------------------------------------------------
 CNN_CONFIG = TrainingProfile(
-    NUM_ENVS       = 128,
+    NUM_ENVS       = 64,        # 128から削減（2コアCPUでのスレッド・キャッシュ競合を抑えメインメモリ遅延を解消）
     STEPS_PER_ITER = 64,
     LOG_INTERVAL   = 1,
     SAVE_INTERVAL  = 20,
     TOTAL_ITERS    = 1500,
-    MINIBATCH      = 2048,
-    ARCH_PARAMS    = {"channels": 64},
+    MINIBATCH      = 1024,      # 2048から削減
+    GAE_GAMMA      = 0.98,      # 長期視点
+    ARCH_PARAMS    = {"channels": 24}, # 64から24に縮小（畳み込み演算負荷を約7分の1に劇的削減）
 )
 
 # ---------------------------------------------------------------------------
@@ -92,6 +106,7 @@ RESNET_CONFIG = TrainingProfile(
     SAVE_INTERVAL  = 10,
     TOTAL_ITERS    = 1000,
     MINIBATCH      = 1024,
+    MAX_EPISODE_STEPS = 128,   # 実戦的な上限。自殺ループと異常な長寿エピソードを同時に防ぐ。
     ARCH_PARAMS    = {
         "channels":   32,   # 軽量: 2コア CPU 向け (GAP後 fc_in=32)
         "num_blocks": 2,    # 軽量: ResNetブロック数
@@ -101,6 +116,28 @@ RESNET_CONFIG = TrainingProfile(
     },
 )
 
+# ---------------------------------------------------------------------------
+# 4. 超軽量 MLP プロファイル (2コア / 省電力CPU向け)
+#    物理コア数に合わせた環境数に絞り、大渋滞とスレッド競合を解消して爆速化
+# ---------------------------------------------------------------------------
+LIGHT_MLP_CONFIG = TrainingProfile(
+    NUM_ENVS       = 16,        # スレッド競合を防ぎ、メモリ帯域とアロケーションを抑える
+    STEPS_PER_ITER = 128,       # 1イテレーションに必要なデータ収集の深さをカバー
+    LOG_INTERVAL   = 1,
+    SAVE_INTERVAL  = 50,
+    TOTAL_ITERS    = 2000,
+    MINIBATCH      = 512,       # 総バッチサイズ（16*128=2048）に最適なミニバッチ
+    HIDDEN_DIM     = 64,        # 隠れ層の次元を 64 にし、行列演算負荷を4分の1に削減！
+    LEARNING_RATE  = 2e-4,
+    # ぷよぷよは「ネクスト2手分しか見えない」ゲームのため、gammaを低く設定する。
+    # gamma=0.85 の場合 gamma^5≈0.44, gamma^10≈0.20 なので、
+    # 5手先でほぼ半減、10手先で8割引きとなり、近距離連鎖の構築に集中できる。
+    GAE_GAMMA      = 0.85,
+    # 探索の度合いを引き上げ、早期の局所最適（ワンパターン）収束を防ぐ
+    ENTROPY_COEF   = 0.08,
+    ARCH_PARAMS    = {},
+)
+
 def get_config(arch: str, is_selfplay: bool = False) -> TrainingProfile:
     """指定アーキテクチャとモードに最適なプロファイルを返す。"""
     _arch = arch.lower()
@@ -108,6 +145,8 @@ def get_config(arch: str, is_selfplay: bool = False) -> TrainingProfile:
         cfg = RESNET_CONFIG
     elif _arch == "cnn":
         cfg = CNN_CONFIG
+    elif _arch == "light_mlp":
+        cfg = LIGHT_MLP_CONFIG
     else:
         cfg = MLP_CONFIG  # デフォルトは MLP
 

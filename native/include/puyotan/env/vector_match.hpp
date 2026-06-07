@@ -79,6 +79,7 @@ class PuyotanVectorMatch {
                     std::span<float> out_dones,
                     std::span<int8_t> out_chains,
                     std::span<int32_t> out_scores,
+                    std::span<int8_t> out_potentials,
                     std::span<uint8_t> out_obs) noexcept;
 
     /**
@@ -99,9 +100,16 @@ class PuyotanVectorMatch {
 
     RewardCalculator reward_calc;
 
+    /// Set maximum steps per episode (0 = unlimited).
+    /// When an episode exceeds this limit it is force-reset with done=true.
+    void setMaxEpisodeSteps(int n) noexcept { max_episode_steps_ = n; }
+    int getMaxEpisodeSteps() const noexcept { return max_episode_steps_; }
+
   private:
     std::vector<PuyotanMatch> matches_;
     std::vector<uint32_t> env_seeds_;
     uint32_t base_seed_;
+    int max_episode_steps_ = 0;          // 0 = unlimited
+    std::vector<int> episode_steps_;     // per-env step counter
 };
 } // namespace puyotan

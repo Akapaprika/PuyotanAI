@@ -23,8 +23,11 @@ struct TrainMetrics {
     float loss;
     float avg_reward;     ///< Mean RL reward per step (scaled, shaped)
     int max_chain;        ///< Max chain achieved across all envs in this rollout
-    float avg_max_chain;  ///< Mean of per-env max chain counts
+    float avg_max_chain;  ///< Mean of per-env max chain counts (excluding games with 0 chains)
+    float chain_rate;     ///< Ratio of games where at least 1 chain occurred (0.0 to 1.0)
     float avg_game_score; ///< Mean completed-episode Puyo score (raw game points, NOT RL reward)
+    float avg_game_len;   ///< Mean survival steps per episode
+    float avg_max_potential; ///< Mean of per-episode maximum potential chain
 };
 
 /**
@@ -130,16 +133,23 @@ class CppPPOTrainer {
     std::vector<float> done_buf_;
     std::vector<int8_t> chain_buf_;
     std::vector<int32_t> score_buf_;
+    std::vector<int8_t> potential_buf_;
     std::vector<uint8_t> obs_buf_; ///< [N * kBytesPerObservation] flat
 
     // --- Stat tracking buffers (Pre-allocated)
     std::vector<float> completed_scores_;
-    std::vector<int8_t> max_per_env_;
+    std::vector<int> completed_max_chains_; ///< Per-completed-episode max chain counts
+    std::vector<int8_t> max_per_env_;       ///< Running max chain per env (reset on episode end)
+
+    std::vector<int> episode_lengths_;
+    std::vector<int> completed_lengths_;
+    std::vector<int> max_potential_per_env_;
+    std::vector<int> completed_max_potentials_;
 
     /**
      * @brief Collect rollouts from environments.
      */
-    std::tuple<int, float, float, float> collectRollouts_(bool p2_random);
+    std::tuple<int, float, float, float, float, float, float> collectRollouts_(bool p2_random);
 
     /**
      * @brief Compute PPO update.

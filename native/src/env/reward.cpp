@@ -2,6 +2,7 @@
 #include <puyotan/core/chain.hpp>
 #include <puyotan/core/gravity.hpp>
 #include <puyotan/engine/match.hpp>
+#include <puyotan/engine/scorer.hpp>
 #include <puyotan/env/reward.hpp>
 
 namespace puyotan {
@@ -109,8 +110,9 @@ int get_buried_count(const Board& board) {
 // ---------------------------------------------------------------------------
 // Potential chain (max chain achievable by adding exactly one puyo)
 // ---------------------------------------------------------------------------
-int get_max_potential_chain(const Board& board) {
+std::pair<int, int> get_max_potential_chain_and_score(const Board& board) {
     int max_chain = 0;
+    int max_score = 0;
     for (int x = 0; x < config::Board::kWidth; ++x) {
         int h = board.getColumnHeight(x);
         if (h >= config::Board::kChainableRows)
@@ -123,18 +125,91 @@ int get_max_potential_chain(const Board& board) {
             ErasureData ed = Chain::findGroups(temp, 1u << c);
             if (ed.num_erased > 0) {
                 int chain = 0;
+                int score = 0;
                 while (ed.num_erased > 0) {
                     ++chain;
+                    score += Scorer::calculateStepScore(ed, chain);
                     Chain::applyErasure(temp, ed);
                     uint32_t fallen_mask = Gravity::execute(temp);
                     ed = Chain::findGroups(temp, fallen_mask);
+                    if (chain >= 10) {
+                        return {chain, score};
+                    }
                 }
-                if (chain > max_chain)
+                if (chain > max_chain) {
                     max_chain = chain;
+                }
+                if (score > max_score) {
+                    max_score = score;
+                }
             }
         }
     }
-    return max_chain;
+    return {max_chain, max_score};
+}
+struct SinglePlayerRewardContext {
+    int delta_score = 0;
+    int chain_count = 0;
+    int total_erased = 0;
+    bool all_clear = false;
+    int ojama_sent = 0;
+    int puyo_count = 0;
+    int connectivity_score = 0;
+    int isolated_puyo_count = 0;
+    int near_group_count = 0;
+    int color_diversity = 0;
+    float height_variance = 0.0f;
+    int death_col_height = 0;
+    int buried_puyo_count = 0;
+    int ojama_dropped = 0;
+    int pending_ojama = 0;
+    int potential_chain = 0;
+    int potential_score = 0;
+};
+
+SinglePlayerRewardContext extractSinglePlayerMetrics(const PuyotanPlayer& p, const PuyotanPlayer& p_pre,
+                                                     int ojama_dropped, int max_chain) {
+    SinglePlayerRewardContext sp;
+    sp.delta_score = p.score - p_pre.score;
+    sp.chain_count = max_chain;
+
+    auto get_colored_count = [](const Board& b) {
+        return b.getBitboard(Cell::Red).popcount() +
+               b.getBitboard(Cell::Green).popcount() +
+               b.getBitboard(Cell::Blue).popcount() +
+               b.getBitboard(Cell::Yellow).popcount();
+    };
+
+    int pre_colored = get_colored_count(p_pre.field);
+    int post_colored = get_colored_count(p.field);
+    int pre_ojama = p_pre.field.getBitboard(Cell::Ojama).popcount();
+    int post_ojama = p.field.getBitboard(Cell::Ojama).popcount();
+    int placed = (p.active_next_pos > p_pre.active_next_pos) ? 2 : 0;
+    int erased_colored = std::max(0, pre_colored + placed - post_colored);
+    int erased_ojama = std::max(0, pre_ojama + ojama_dropped - post_ojama);
+
+    sp.total_erased = erased_colored + erased_ojama;
+    sp.all_clear = (max_chain > 0) && p.field.getOccupied().empty();
+    sp.ojama_sent = sp.delta_score / config::Score::kTargetScore;
+    sp.puyo_count = p.field.getOccupied().popcount();
+
+    get_board_metrics(p.field,
+                      sp.connectivity_score,
+                      sp.isolated_puyo_count,
+                      sp.near_group_count,
+                      sp.color_diversity);
+
+    sp.height_variance = get_height_variance(p.field);
+    sp.death_col_height = p.field.getColumnHeight(config::Rule::kDeathCol);
+    sp.buried_puyo_count = get_buried_count(p.field);
+    sp.ojama_dropped = ojama_dropped;
+    sp.pending_ojama = p.active_ojama + p.non_active_ojama;
+
+    auto [pot_chain, pot_score] = get_max_potential_chain_and_score(p.field);
+    sp.potential_chain = pot_chain;
+    sp.potential_score = pot_score;
+
+    return sp;
 }
 } // namespace
 
@@ -142,52 +217,79 @@ int get_max_potential_chain(const Board& board) {
 // extractContext
 // ---------------------------------------------------------------------------
 RewardContext RewardCalculator::extractContext(const PuyotanMatch& m,
-                                               int start_score_p1, int start_score_p2,
-                                               int pre_ojama_p1, int pre_ojama_p2) const {
+                                               const PuyotanPlayer& p1_pre, const PuyotanPlayer& p2_pre,
+                                               int p1_ojama_dropped, int p2_ojama_dropped,
+                                               int p1_max_chain, int p2_max_chain) const {
     RewardContext ctx;
     ctx.status = m.getStatus();
 
+    // ---------------------------------------------------------------------------
+    // Player 1
+    // ---------------------------------------------------------------------------
     const auto& p1 = m.getPlayer(0);
-    ctx.p1_delta_score = p1.score - start_score_p1;
-    ctx.p1_chain_count = p1.last_chain_count;
-    ctx.p1_total_erased = p1.last_erased_count; // [ENGINE EVENT]
-    ctx.p1_all_clear = p1.last_all_clear;       // [ENGINE EVENT]
-    ctx.p1_ojama_sent = ctx.p1_delta_score / config::Score::kTargetScore;
+    SinglePlayerRewardContext sp1 = extractSinglePlayerMetrics(p1, p1_pre, p1_ojama_dropped, p1_max_chain);
 
-    ctx.p1_puyo_count = p1.field.getOccupied().popcount();
-    get_board_metrics(p1.field,
-                      ctx.p1_connectivity_score,
-                      ctx.p1_isolated_puyo_count,
-                      ctx.p1_near_group_count,
-                      ctx.p1_color_diversity);
-    ctx.p1_height_variance = get_height_variance(p1.field);
-    ctx.p1_death_col_height = p1.field.getColumnHeight(config::Rule::kDeathCol);
-    ctx.p1_buried_puyo_count = get_buried_count(p1.field);
-    ctx.p1_ojama_dropped = p1.total_ojama_dropped - pre_ojama_p1;
-    ctx.p1_pending_ojama = p1.active_ojama + p1.non_active_ojama;
-    // ctx.p1_potential_chain = get_max_potential_chain(p1.field);
-    ctx.p1_potential_chain = 0; // Disabled for performance (Phase 2 investigation)
+    ctx.p1_delta_score         = sp1.delta_score;
+    ctx.p1_chain_count         = sp1.chain_count;
+    ctx.p1_total_erased        = sp1.total_erased;
+    ctx.p1_all_clear           = sp1.all_clear;
+    ctx.p1_ojama_sent          = sp1.ojama_sent;
+    ctx.p1_puyo_count          = sp1.puyo_count;
+    ctx.p1_connectivity_score  = sp1.connectivity_score;
+    ctx.p1_isolated_puyo_count = sp1.isolated_puyo_count;
+    ctx.p1_near_group_count    = sp1.near_group_count;
+    ctx.p1_color_diversity     = sp1.color_diversity;
+    ctx.p1_height_variance     = sp1.height_variance;
+    ctx.p1_death_col_height    = sp1.death_col_height;
+    ctx.p1_buried_puyo_count   = sp1.buried_puyo_count;
+    ctx.p1_ojama_dropped       = sp1.ojama_dropped;
+    ctx.p1_pending_ojama       = sp1.pending_ojama;
+    ctx.p1_potential_chain     = sp1.potential_chain;
+    ctx.p1_potential_score     = sp1.potential_score;
 
+    // ---------------------------------------------------------------------------
+    // Player 2
+    // ---------------------------------------------------------------------------
     const auto& p2 = m.getPlayer(1);
-    ctx.p2_delta_score = p2.score - start_score_p2;
-    ctx.p2_chain_count = p2.last_chain_count;
-    ctx.p2_total_erased = p2.last_erased_count;
-    ctx.p2_all_clear = p2.last_all_clear;
-    ctx.p2_ojama_sent = ctx.p2_delta_score / config::Score::kTargetScore;
-
-    ctx.p2_puyo_count = p2.field.getOccupied().popcount();
-    get_board_metrics(p2.field,
-                      ctx.p2_connectivity_score,
-                      ctx.p2_isolated_puyo_count,
-                      ctx.p2_near_group_count,
-                      ctx.p2_color_diversity);
-    ctx.p2_height_variance = get_height_variance(p2.field);
-    ctx.p2_death_col_height = p2.field.getColumnHeight(config::Rule::kDeathCol);
-    ctx.p2_buried_puyo_count = get_buried_count(p2.field);
-    ctx.p2_ojama_dropped = p2.total_ojama_dropped - pre_ojama_p2;
-    ctx.p2_pending_ojama = p2.active_ojama + p2.non_active_ojama;
-    // ctx.p2_potential_chain = get_max_potential_chain(p2.field);
-    ctx.p2_potential_chain = 0; // Disabled for performance
+    if (skip_opponent_metrics_) {
+        // Skip expensive opponent metrics when opponent rewards are all zero.
+        ctx.p2_delta_score         = p2.score - p2_pre.score;
+        ctx.p2_chain_count         = p2_max_chain;
+        ctx.p2_total_erased        = 0;
+        ctx.p2_all_clear           = false;
+        ctx.p2_ojama_sent          = ctx.p2_delta_score / config::Score::kTargetScore;
+        ctx.p2_puyo_count          = p2.field.getOccupied().popcount();
+        ctx.p2_connectivity_score  = 0;
+        ctx.p2_isolated_puyo_count = 0;
+        ctx.p2_near_group_count    = 0;
+        ctx.p2_color_diversity     = 0;
+        ctx.p2_height_variance     = 0.0f;
+        ctx.p2_death_col_height    = 0;
+        ctx.p2_buried_puyo_count   = 0;
+        ctx.p2_ojama_dropped       = p2_ojama_dropped;
+        ctx.p2_pending_ojama       = p2.active_ojama + p2.non_active_ojama;
+        ctx.p2_potential_chain     = 0;
+        ctx.p2_potential_score     = 0;
+    } else {
+        SinglePlayerRewardContext sp2 = extractSinglePlayerMetrics(p2, p2_pre, p2_ojama_dropped, p2_max_chain);
+        ctx.p2_delta_score         = sp2.delta_score;
+        ctx.p2_chain_count         = sp2.chain_count;
+        ctx.p2_total_erased        = sp2.total_erased;
+        ctx.p2_all_clear           = sp2.all_clear;
+        ctx.p2_ojama_sent          = sp2.ojama_sent;
+        ctx.p2_puyo_count          = sp2.puyo_count;
+        ctx.p2_connectivity_score  = sp2.connectivity_score;
+        ctx.p2_isolated_puyo_count = sp2.isolated_puyo_count;
+        ctx.p2_near_group_count    = sp2.near_group_count;
+        ctx.p2_color_diversity     = sp2.color_diversity;
+        ctx.p2_height_variance     = sp2.height_variance;
+        ctx.p2_death_col_height    = sp2.death_col_height;
+        ctx.p2_buried_puyo_count   = sp2.buried_puyo_count;
+        ctx.p2_ojama_dropped       = sp2.ojama_dropped;
+        ctx.p2_pending_ojama       = sp2.pending_ojama;
+        ctx.p2_potential_chain     = sp2.potential_chain;
+        ctx.p2_potential_score     = sp2.potential_score;
+    }
 
     return ctx;
 }

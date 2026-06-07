@@ -85,10 +85,12 @@ if (MSVC)
     )
 
     # Post-build copy to dist
+    file(GLOB TORCH_DLLS "${CMAKE_CURRENT_SOURCE_DIR}/libtorch/lib/*.dll")
+
     add_custom_command(TARGET puyotan_native POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_SOURCE_DIR}/dist
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:puyotan_native> ${CMAKE_SOURCE_DIR}/dist/
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ORT_DLL}" ${CMAKE_SOURCE_DIR}/dist/
-        COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/libtorch/lib" ${CMAKE_SOURCE_DIR}/dist
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${TORCH_DLLS} ${CMAKE_SOURCE_DIR}/dist/
     )
 endif()

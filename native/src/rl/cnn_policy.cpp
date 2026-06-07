@@ -23,9 +23,9 @@ CNNBackboneImpl::CNNBackboneImpl(int hidden_dim, int channels)
     conv2 = register_module("conv2",
                             torch::nn::Conv2d(torch::nn::Conv2dOptions(channels, channels, 3).padding(1)));
 
-    // GAP collapses [B, channels, H, W] -> [B, channels] — replaces flat 5376-dim FC input.
-    // Input to fc is just `channels` regardless of board size.
-    fc = register_module("fc", torch::nn::Linear(channels, hidden_dim));
+    // GAP is disabled. We flatten the [B, channels, 14, 6] tensor directly to preserve spatial details.
+    // fc input size: channels * 14 * 6 = channels * 84
+    fc = register_module("fc", torch::nn::Linear(channels * kObsRows * kObsCols, hidden_dim));
 }
 
 torch::Tensor CNNBackboneImpl::forward(torch::Tensor x) {
@@ -36,8 +36,8 @@ torch::Tensor CNNBackboneImpl::forward(torch::Tensor x) {
     x = torch::relu(conv1->forward(x)); // [B, channels, 14, 6]
     x = torch::relu(conv2->forward(x)); // [B, channels, 14, 6]
 
-    // Global Average Pooling: [B, channels, H, W] -> [B, channels]
-    x = torch::adaptive_avg_pool2d(x, {1, 1}).squeeze(-1).squeeze(-1);
+    // Spatial Flattening instead of slow adaptive average pooling (retains column/row structure)
+    x = x.reshape({b, -1});             // [B, channels * 84]
 
     x = torch::relu(fc->forward(x));    // [B, hidden_dim]
     return x;
@@ -70,7 +70,7 @@ CNNPolicyWrapper::CNNPolicyWrapper(int hidden_dim,
     const int channels = get("channels", 64);
     net_ = CNNPolicy(hidden_dim, channels);
     std::cout << "[CNNPolicy] channels=" << channels
-              << "  GAP enabled  fc_in=" << channels << "\n";
+              << "  GAP disabled  fc_in=" << channels * kObsRows * kObsCols << "\n";
 }
 
 PolicyOutput CNNPolicyWrapper::getActionAndValue(
