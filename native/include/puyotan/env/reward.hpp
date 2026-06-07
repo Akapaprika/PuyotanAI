@@ -279,9 +279,7 @@ class RewardCalculator {
         r += static_cast<float>(s_buried) * weights.board.buried_puyo_penalty;
         r += static_cast<float>(s_oj_drop) * weights.board.ojama_drop_penalty;
         r += static_cast<float>(s_pending) * weights.board.pending_ojama_penalty;
-        if (s_potential_score > 0.0f) {
-            r += s_potential_score * weights.board.potential_score_bonus_scale;
-        }
+        r += s_potential_score * weights.board.potential_score_bonus_scale;
 
         // Opponent
         r += static_cast<float>(o_puyo) * weights.opponent.field_pressure_reward;

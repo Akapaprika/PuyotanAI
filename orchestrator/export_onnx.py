@@ -92,47 +92,64 @@ class ResNetPolicy(nn.Module):
 # ---------------------------------------------------------------------------
 # Python mirror of C++ CNN architecture (matches cnn_policy.cpp)
 # ---------------------------------------------------------------------------
-class CNNPolicy(nn.Module):
-    def __init__(self, hidden_dim: int = 128, channels: int = 24):
+class CNNBackbone(nn.Module):
+    def __init__(self, hidden_dim: int, channels: int = 24):
         super().__init__()
         self.conv1 = nn.Conv2d(kCnnInChannels, channels, 3, padding=1)
         self.conv2 = nn.Conv2d(channels, channels, 3, padding=1)
-        self.conv3 = nn.Conv2d(channels, channels, 3, padding=1)
         fc_in = channels * kObsCols * kObsRows
         self.fc     = nn.Linear(fc_in, hidden_dim)
-        self.actor  = nn.Linear(hidden_dim, kNumActions)
-        self.critic = nn.Linear(hidden_dim, 1)
 
-    def forward(self, obs: torch.Tensor):
+    def forward(self, obs: torch.Tensor) -> torch.Tensor:
         b = obs.shape[0]
-        x = obs.reshape(b, kCnnInChannels, kObsCols, kObsRows)
-        x = x.transpose(2, 3).contiguous()
+        # Matches C++ CNNBackboneImpl::forward reshape exactly
+        x = obs.reshape(b, kCnnInChannels, kObsRows, kObsCols).float() # [B, 10, 14, 6]
         x = torch.relu(self.conv1(x))
         x = torch.relu(self.conv2(x))
-        x = torch.relu(self.conv3(x))
-        x = x.flatten(1)
+        x = x.reshape(b, -1)
         x = torch.relu(self.fc(x))
-        return self.actor(x), self.critic(x).squeeze(-1)
+        return x
+
+
+class CNNPolicy(nn.Module):
+    def __init__(self, hidden_dim: int = 128, channels: int = 24):
+        super().__init__()
+        self.backbone = CNNBackbone(hidden_dim, channels)
+        self.actor    = nn.Linear(hidden_dim, kNumActions)
+        self.critic   = nn.Linear(hidden_dim, 1)
+
+    def forward(self, obs: torch.Tensor):
+        features = self.backbone(obs)
+        return self.actor(features), self.critic(features).squeeze(-1)
 
 
 # ---------------------------------------------------------------------------
 # Python mirror of C++ MLP architecture (matches mlp_policy.cpp)
 # ---------------------------------------------------------------------------
-class MLPPolicy(nn.Module):
-    def __init__(self, hidden_dim: int = 128):
+class MLPBackbone(nn.Module):
+    def __init__(self, hidden_dim: int):
         super().__init__()
         obs_dim = kObsPlayers * kObsColors * kObsCols * kObsRows  # 840
         self.fc1    = nn.Linear(obs_dim, hidden_dim)
         self.fc2    = nn.Linear(hidden_dim, hidden_dim)
-        self.actor  = nn.Linear(hidden_dim, kNumActions)
-        self.critic = nn.Linear(hidden_dim, 1)
 
-    def forward(self, obs: torch.Tensor):
-        b = obs.shape[0]
-        x = obs.reshape(b, -1).float()
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.reshape(x.shape[0], -1).float()
         x = torch.relu(self.fc1(x))
         x = torch.relu(self.fc2(x))
-        return self.actor(x), self.critic(x).squeeze(-1)
+        return x
+
+
+class MLPPolicy(nn.Module):
+    def __init__(self, hidden_dim: int = 128):
+        super().__init__()
+        self.backbone = MLPBackbone(hidden_dim)
+        self.actor    = nn.Linear(hidden_dim, kNumActions)
+        self.critic   = nn.Linear(hidden_dim, 1)
+
+    def forward(self, obs: torch.Tensor):
+        features = self.backbone(obs)
+        return self.actor(features), self.critic(features).squeeze(-1)
 
 
 # ---------------------------------------------------------------------------
@@ -163,8 +180,8 @@ def export(
     hidden_dim: int,
     channels: int,
     num_blocks: int,
-    pt_path: Path = None,
-    onnx_path: Path = None,
+    pt_path: Path | None = None,
+    onnx_path: Path | None = None,
 ) -> None:
     arch_dir  = BASE_DIR / "models" / arch
     
