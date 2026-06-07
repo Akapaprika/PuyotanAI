@@ -130,3 +130,84 @@ class EmptyPlayerAgent(BasePlayerAgent):
             return p.Action(p.ActionType.PUT, other_action.x, other_action.rotation)
         # Other player hasn't confirmed yet — keep waiting
         return None
+
+
+# ---------------------------------------------------------------------------
+# Beam Search AI
+# ---------------------------------------------------------------------------
+class BeamSearchAgent(BasePlayerAgent):
+    """
+    Pure beam search agent — no neural network required.
+
+    Expands all 22 placements for each of the next `look_ahead` tsumo pieces,
+    retains the top `beam_width` boards at each depth, and returns the action
+    leading to the highest-evaluated leaf.
+
+    Parameters
+    ----------
+    beam_width : int
+        Number of top candidate boards kept at every depth level.
+        Higher = stronger but slower. 300-500 is typically fast enough.
+    look_ahead : int
+        How many tsumo pieces ahead to simulate (max 3 with standard preview).
+    """
+
+    def __init__(self, beam_width: int = 500, look_ahead: int = 3) -> None:
+        self._cfg = p.BeamConfig()
+        self._cfg.beam_width = beam_width
+        self._cfg.look_ahead = look_ahead
+
+    def get_action(self, match, player_id: int, pres) -> p.Action:
+        player = match.match.getPlayer(player_id)
+        tsumo  = match.match.getTsumo()
+        idx    = p.beam_search_action(player, tsumo, self._cfg)
+        return p.get_rl_action(idx)
+
+
+# ---------------------------------------------------------------------------
+# Hybrid: Beam Search + ONNX (Phase 2 preparation)
+# ---------------------------------------------------------------------------
+class HybridBeamOnnxAgent(BaseAIAgent):
+    """
+    Hybrid agent that combines beam search (chain construction) with ONNX
+    policy inference (tactical / defensive decisions).
+
+    Strategy:
+      - When no ojama is incoming → use beam search to build chains.
+      - When enemy ojama is pending → switch to ONNX for tactical response.
+
+    This serves as the bridge between Phase 1 (beam search) and Phase 2 (MCTS).
+
+    Parameters
+    ----------
+    model_path   : str   Path to the ONNX model file.
+    beam_width   : int   Beam width for the construction phase.
+    look_ahead   : int   Look-ahead depth for beam search.
+    """
+
+    def __init__(
+        self,
+        model_path: str,
+        beam_width: int = 400,
+        look_ahead: int = 3,
+    ) -> None:
+        super().__init__(model_path)
+        self._beam_cfg = p.BeamConfig()
+        self._beam_cfg.beam_width = beam_width
+        self._beam_cfg.look_ahead = look_ahead
+
+    def get_action(self, match, player_id: int, pres) -> p.Action:
+        player = match.match.getPlayer(player_id)
+        tsumo  = match.match.getTsumo()
+
+        pending_ojama = int(player.active_ojama) + int(player.non_active_ojama)
+
+        if pending_ojama == 0:
+            # Construction mode: build chains with beam search
+            idx = p.beam_search_action(player, tsumo, self._beam_cfg)
+            return p.get_rl_action(idx)
+        else:
+            # Tactical mode: use trained ONNX policy to respond to incoming ojama
+            obs_flat = p.build_observation(match.match)
+            obs_flat = self._flip_observation_if_needed(obs_flat, player_id)
+            return self._infer_action(obs_flat)

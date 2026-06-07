@@ -18,7 +18,10 @@ from PyQt6.QtWidgets import (
     QFileDialog, QLabel
 )
 
-from ..agents import HumanPlayerAgent, AIPlayerAgent, EmptyPlayerAgent, BasePlayerAgent
+from ..agents import (
+    HumanPlayerAgent, AIPlayerAgent, EmptyPlayerAgent, BasePlayerAgent,
+    BeamSearchAgent, HybridBeamOnnxAgent
+)
 
 # Resolve models directory relative to the project root (two levels up from this file)
 # gui/views/player_settings_widget.py → gui/ → project root → models/
@@ -34,7 +37,7 @@ class PlayerSettingsWidget(QWidget):
     #: Emitted with (player_id, new_agent) whenever the agent type or model changes.
     agent_changed = pyqtSignal(int, object)
 
-    _MODES = ["Human", "AI (ONNX)", "Empty (Solo)"]
+    _MODES = ["Human", "AI (ONNX)", "Beam Search", "Hybrid (Beam+ONNX)", "Empty (Solo)"]
 
     def __init__(self, player_id: int, allow_empty: bool = True, parent=None):
         super().__init__(parent)
@@ -54,7 +57,7 @@ class PlayerSettingsWidget(QWidget):
         row1.addWidget(lbl)
 
         self._combo = QComboBox()
-        modes = self._MODES if allow_empty else self._MODES[:2]
+        modes = self._MODES if allow_empty else self._MODES[:2] + [self._MODES[2], self._MODES[3]]
         self._combo.addItems(modes)
         self._combo.setFixedWidth(130)
         self._combo.currentIndexChanged.connect(self._on_mode_changed)
@@ -81,7 +84,8 @@ class PlayerSettingsWidget(QWidget):
 
     # ------------------------------------------------------------------
     def _on_mode_changed(self, idx: int) -> None:
-        is_ai = (self._combo.currentText() == "AI (ONNX)")
+        current_mode = self._combo.currentText()
+        is_ai = current_mode in ("AI (ONNX)", "Hybrid (Beam+ONNX)")
         self._browse_btn.setVisible(is_ai)
         if not is_ai:
             self._path_label.setVisible(False)
@@ -124,6 +128,15 @@ class PlayerSettingsWidget(QWidget):
                 return AIPlayerAgent(self._model_path), None
             except Exception as e:
                 return None, f"Failed to load AI model:\n{e}"
+        if mode == "Beam Search":
+            return BeamSearchAgent(), None
+        if mode == "Hybrid (Beam+ONNX)":
+            if not self._model_path:
+                return None, "Please click 'Browse' and select an ONNX model file."
+            try:
+                return HybridBeamOnnxAgent(self._model_path), None
+            except Exception as e:
+                return None, f"Failed to load Hybrid model:\n{e}"
         if mode == "Empty (Solo)":
             return EmptyPlayerAgent(), None
         return None, "Unknown mode."

@@ -11,6 +11,8 @@
 #include <puyotan/policy/onnx_policy.hpp>
 #include <puyotan/rl/constants.hpp>
 #include <puyotan/rl/ppo_trainer.hpp>
+#include <puyotan/search/beam_evaluator.hpp>
+#include <puyotan/search/beam_search.hpp>
 #include <map>
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
@@ -299,5 +301,33 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("load", &rl::CppPPOTrainer::load, pybind11::arg("path"))
         .def("loadP2", &rl::CppPPOTrainer::loadP2, pybind11::arg("path"))
         .def_property_readonly("env", [](rl::CppPPOTrainer& t) -> PuyotanVectorMatch& { return t.env(); }, pybind11::return_value_policy::reference_internal);
+    // =========================================================================
+    // Beam Search
+    // =========================================================================
+    pybind11::class_<search::BeamEvalWeights>(m, "BeamEvalWeights")
+        .def(pybind11::init<>())
+        .def_readwrite("potential_score_scale",   &search::BeamEvalWeights::potential_score_scale)
+        .def_readwrite("connectivity_bonus",       &search::BeamEvalWeights::connectivity_bonus)
+        .def_readwrite("isolated_penalty",         &search::BeamEvalWeights::isolated_penalty)
+        .def_readwrite("buried_penalty",           &search::BeamEvalWeights::buried_penalty)
+        .def_readwrite("height_variance_penalty",  &search::BeamEvalWeights::height_variance_penalty)
+        .def_readwrite("death_col_penalty",        &search::BeamEvalWeights::death_col_penalty)
+        .def_readwrite("chain_bonus_per_step",     &search::BeamEvalWeights::chain_bonus_per_step)
+        .def_readwrite("chain_power",              &search::BeamEvalWeights::chain_power);
+
+    pybind11::class_<search::BeamConfig>(m, "BeamConfig")
+        .def(pybind11::init<>())
+        .def_readwrite("beam_width",   &search::BeamConfig::beam_width)
+        .def_readwrite("look_ahead",   &search::BeamConfig::look_ahead)
+        .def_readwrite("eval_weights", &search::BeamConfig::eval_weights);
+
+    m.def("beam_search_action",
+          [](const PuyotanPlayer& player, const Tsumo& tsumo,
+             const search::BeamConfig& cfg) {
+              pybind11::gil_scoped_release release;
+              return search::beamSearch(player, tsumo, cfg);
+          },
+          pybind11::arg("player"), pybind11::arg("tsumo"), pybind11::arg("cfg"),
+          "Run beam search from the given player state. Returns RL action index.");
 }
 } // namespace puyotan

@@ -42,6 +42,15 @@ target_include_directories(puyotan_rl PUBLIC include ${TORCH_INCLUDE_DIRS})
 target_link_libraries(puyotan_rl PUBLIC puyotan_core torch)
 target_precompile_headers(puyotan_rl PRIVATE include/puyotan/pch.hpp)
 
+# 3a. Search Components (Beam Search, future MCTS — depends on Core only)
+file(GLOB_RECURSE SEARCH_SOURCES
+    src/search/*.cpp
+)
+add_library(puyotan_search STATIC ${SEARCH_SOURCES})
+target_compile_features(puyotan_search PRIVATE cxx_std_23)
+target_include_directories(puyotan_search PUBLIC include)
+target_link_libraries(puyotan_search PUBLIC puyotan_core)
+
 # 3. ONNX Policy (Depends on Core and ORT)
 file(GLOB_RECURSE POLICY_SOURCES
     src/policy/*.cpp
@@ -58,13 +67,13 @@ file(GLOB_RECURSE NATIVE_SOURCES
 pybind11_add_module(puyotan_native ${NATIVE_SOURCES})
 target_compile_features(puyotan_native PRIVATE cxx_std_23)
 target_include_directories(puyotan_native PRIVATE include ${TORCH_INCLUDE_DIRS} ${ORT_INCLUDE})
-target_link_libraries(puyotan_native PRIVATE puyotan_core puyotan_rl puyotan_policy torch ${ORT_LIB})
+target_link_libraries(puyotan_native PRIVATE puyotan_core puyotan_rl puyotan_policy puyotan_search torch ${ORT_LIB})
 target_precompile_headers(puyotan_native PRIVATE include/puyotan/pch.hpp)
 
 # ---------------------------------------------------------
 # Compile Options (All Targets)
 # ---------------------------------------------------------
-set(ALL_TARGETS puyotan_core puyotan_rl puyotan_policy puyotan_native)
+set(ALL_TARGETS puyotan_core puyotan_rl puyotan_policy puyotan_search puyotan_native)
 if (MSVC)
     foreach(T IN LISTS ALL_TARGETS)
         set_property(TARGET ${T} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
