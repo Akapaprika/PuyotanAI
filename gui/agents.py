@@ -134,7 +134,45 @@ class EmptyPlayerAgent(BasePlayerAgent):
 
 # ---------------------------------------------------------------------------
 # Beam Search AI
+# -----------------------------------------------------------# ---------------------------------------------------------------------------
+# Beam Search
 # ---------------------------------------------------------------------------
+def _adjust_eval_weights(cfg, is_solo: bool, is_stagnated: bool) -> None:
+    w = cfg.eval_weights
+    
+    # 1. 探索の深さ (look_ahead) に応じた調整 (総当たりによる影響度の動的変化)
+    if cfg.look_ahead >= 4:
+        # 深層探索の時：
+        # 将来の連鎖が総当たり（Expectimax）で見通せるため、
+        # 目先の連鎖をすぐに打つボーナスと、盤面を無理やり平坦にするペナルティを弱める。
+        w.height_variance_penalty = -0.05  # デフォルト -0.3 から大幅緩和（大連鎖用の起伏を許容）
+        w.chain_bonus_per_step = 0.5       # デフォルト 2.0 から大幅緩和（大連鎖完成まで発火を我慢）
+        w.connectivity_bonus = 0.5         # デフォルト 0.4 から少し引き上げ
+    else:
+        # 浅層探索（D<=3）の時：
+        # 将来が見えにくいため、平坦さの保険や即時発火ボーナスを維持。
+        w.height_variance_penalty = -0.3
+        w.chain_bonus_per_step = 2.0
+        w.connectivity_bonus = 0.4
+
+    # 2. ゲームモード (ソロ戦 vs 対人戦) に応じた調整
+    if is_solo:
+        # ソロプレイ時：相手からの妨害がないため、おじゃまや窒息に関するペナルティを 0 または極めて弱くする。
+        w.buried_penalty = 0.0          # おじゃま評価を無効化（C++側で if(!oj.empty()) により自動スキップ）
+        w.death_col_penalty = -0.1       # 窒息列ペナルティを最小限に（大連鎖構築の邪魔をしない）
+    else:
+        # 対人戦時：おじゃまぷよによる窒息死を徹底回避する。
+        w.buried_penalty = -2.0          # おじゃまの下の埋もれを厳しく拒絶
+        w.death_col_penalty = -2.5       # 窒息死を何よりも恐れる
+
+    # 3. 停滞検出 (Stagnation) 時の緊急発火リセット重み
+    if is_stagnated:
+        w.chain_bonus_per_step = 15.0      # 即時発火を最大優先して盤面をリセット
+        w.potential_score_scale = 0.1      # 将来的な伸ばしを一時諦める
+    else:
+        w.potential_score_scale = 1.0      # 通常時の潜在連鎖評価
+
+
 class BeamSearchAgent(BasePlayerAgent):
     """
     Pure beam search agent — no neural network required.
@@ -156,11 +194,40 @@ class BeamSearchAgent(BasePlayerAgent):
         self._cfg = p.BeamConfig()
         self._cfg.beam_width = beam_width
         self._cfg.look_ahead = look_ahead
+        self._score_history = []
+        self._is_solo = False
+        _adjust_eval_weights(self._cfg, is_solo=False, is_stagnated=False)
+
+    def adjust_for_mode(self, is_solo: bool) -> None:
+        self._is_solo = is_solo
 
     def get_action(self, match, player_id: int, pres) -> p.Action:
         player = match.match.getPlayer(player_id)
         tsumo  = match.match.getTsumo()
-        idx    = p.beam_search_action(player, tsumo, self._cfg)
+
+        # 盤面の色ぷよ総数を集計 (おじゃま除く)
+        puyo_count = 0
+        for c in [p.Cell.Red, p.Cell.Green, p.Cell.Blue, p.Cell.Yellow]:
+            puyo_count += player.field.getBitboard(c).popcount()
+
+        # 停滞度の判定 (過去3手で期待スコアの伸びがなく、かつぷよ密度が4段以上の場合)
+        is_stagnated = False
+        if len(self._score_history) >= 3 and puyo_count >= 24:
+            growth = self._score_history[-1] - self._score_history[-3]
+            if growth <= 0.5:
+                is_stagnated = True
+
+        # 重みを動的調整
+        _adjust_eval_weights(self._cfg, self._is_solo, is_stagnated)
+
+        # 探索実行 (タプル (action_idx, expected_score) が返る)
+        idx, expected_score = p.beam_search_action(player, tsumo, self._cfg)
+
+        # スコア履歴を更新 (最大10手分保持)
+        self._score_history.append(expected_score)
+        if len(self._score_history) > 10:
+            self._score_history.pop(0)
+
         return p.get_rl_action(idx)
 
 
@@ -195,6 +262,12 @@ class HybridBeamOnnxAgent(BaseAIAgent):
         self._beam_cfg = p.BeamConfig()
         self._beam_cfg.beam_width = beam_width
         self._beam_cfg.look_ahead = look_ahead
+        self._score_history = []
+        self._is_solo = False
+        _adjust_eval_weights(self._beam_cfg, is_solo=False, is_stagnated=False)
+
+    def adjust_for_mode(self, is_solo: bool) -> None:
+        self._is_solo = is_solo
 
     def get_action(self, match, player_id: int, pres) -> p.Action:
         player = match.match.getPlayer(player_id)
@@ -203,11 +276,33 @@ class HybridBeamOnnxAgent(BaseAIAgent):
         pending_ojama = int(player.active_ojama) + int(player.non_active_ojama)
 
         if pending_ojama == 0:
+            # 盤面の色ぷよ総数を集計 (おじゃま除く)
+            puyo_count = 0
+            for c in [p.Cell.Red, p.Cell.Green, p.Cell.Blue, p.Cell.Yellow]:
+                puyo_count += player.field.getBitboard(c).popcount()
+
+            # 停滞度の判定
+            is_stagnated = False
+            if len(self._score_history) >= 3 and puyo_count >= 24:
+                growth = self._score_history[-1] - self._score_history[-3]
+                if growth <= 0.5:
+                    is_stagnated = True
+
+            # 重みを動的調整
+            _adjust_eval_weights(self._beam_cfg, self._is_solo, is_stagnated)
+
             # Construction mode: build chains with beam search
-            idx = p.beam_search_action(player, tsumo, self._beam_cfg)
+            idx, expected_score = p.beam_search_action(player, tsumo, self._beam_cfg)
+
+            # スコア履歴を更新
+            self._score_history.append(expected_score)
+            if len(self._score_history) > 10:
+                self._score_history.pop(0)
+
             return p.get_rl_action(idx)
         else:
             # Tactical mode: use trained ONNX policy to respond to incoming ojama
+            self._score_history.clear()
             obs_flat = p.build_observation(match.match)
             obs_flat = self._flip_observation_if_needed(obs_flat, player_id)
             return self._infer_action(obs_flat)

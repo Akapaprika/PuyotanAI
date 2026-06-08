@@ -1,5 +1,6 @@
 #pragma once
 
+#include <utility>
 #include <puyotan/engine/match.hpp>
 #include <puyotan/search/beam_evaluator.hpp>
 
@@ -20,7 +21,7 @@ struct BeamConfig {
 };
 
 /**
- * @brief Runs a beam search from the given player state and returns the best RL action index.
+ * @brief Runs a beam search from the given player state and returns the best RL action index and its expected score.
  *
  * The search expands all 22 RL actions at each depth level, simulates the
  * resulting board state (drop + chain resolution + gravity), evaluates it,
@@ -31,10 +32,10 @@ struct BeamConfig {
  * @param player  Current player state (field + tsumo position).
  * @param tsumo   Shared tsumo generator for the match.
  * @param cfg     Beam search configuration (width, depth, weights).
- * @return        RL action index in [0, kNumRLActions). Returns 0 on error.
+ * @return        std::pair of RL action index and its expected score.
  */
-int beamSearch(const PuyotanPlayer& player,
-               const Tsumo&         tsumo,
-               const BeamConfig&    cfg) noexcept;
+std::pair<int, float> beamSearch(const PuyotanPlayer& player,
+                                 const Tsumo&         tsumo,
+                                 const BeamConfig&    cfg) noexcept;
 
 } // namespace puyotan::search

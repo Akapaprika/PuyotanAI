@@ -328,6 +328,6 @@ PYBIND11_MODULE(puyotan_native, m) {
               return search::beamSearch(player, tsumo, cfg);
           },
           pybind11::arg("player"), pybind11::arg("tsumo"), pybind11::arg("cfg"),
-          "Run beam search from the given player state. Returns RL action index.");
+          "Run beam search from the given player state. Returns tuple of (RL action index, expected score).");
 }
 } // namespace puyotan

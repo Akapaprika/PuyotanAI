@@ -174,9 +174,9 @@ inline float evaluateTwoSteps(const Board& field, const BeamConfig& cfg) noexcep
 // ---------------------------------------------------------------------------
 // beamSearch
 // ---------------------------------------------------------------------------
-int beamSearch(const PuyotanPlayer& player,
-               const Tsumo&         tsumo_const,
-               const BeamConfig&    cfg) noexcept {
+std::pair<int, float> beamSearch(const PuyotanPlayer& player,
+                                 const Tsumo&         tsumo_const,
+                                 const BeamConfig&    cfg) noexcept {
     // Tsumo::get() is non-const (lazy generation) so we work with a local copy.
     Tsumo tsumo = tsumo_const;
     const int tsumo_base = player.active_next_pos;
@@ -262,12 +262,12 @@ int beamSearch(const PuyotanPlayer& player,
         std::swap(current_beam, next_beam);
     }
 
-    // Return the action from the best surviving leaf
+    // Return the action and its expected score from the best surviving leaf
     if (!current_beam.empty() && current_beam[0].first_action >= 0)
-        return current_beam[0].first_action;
+        return {current_beam[0].first_action, current_beam[0].score};
 
     // Fallback: return action 0 (Up, col 0) if search found nothing valid
-    return 0;
+    return {0, -10000.0f};
 }
 
 } // namespace puyotan::search
