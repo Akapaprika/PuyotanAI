@@ -77,6 +77,98 @@ PlaceResult simulatePlacement(const Board& src,
     return res;
 }
 
+struct TsumoPattern {
+    int c1;
+    int c2;
+    float weight;
+    bool is_zoro;
+};
+
+// 10 unique combinations of tsumo colors (4 colors)
+const TsumoPattern kTsumoPatterns[10] = {
+    {0, 0, 1.0f / 16.0f, true},
+    {0, 1, 2.0f / 16.0f, false},
+    {0, 2, 2.0f / 16.0f, false},
+    {0, 3, 2.0f / 16.0f, false},
+    {1, 1, 1.0f / 16.0f, true},
+    {1, 2, 2.0f / 16.0f, false},
+    {1, 3, 2.0f / 16.0f, false},
+    {2, 2, 1.0f / 16.0f, true},
+    {2, 3, 2.0f / 16.0f, false},
+    {3, 3, 1.0f / 16.0f, true}
+};
+
+// Evaluate single tsumo for Expectimax (at deep levels)
+inline float evaluateSingleTsumo(const Board& field, const TsumoPattern& pat, const BeamConfig& cfg) noexcept {
+    float max_eval = -1e9f;
+    Cell axis = static_cast<Cell>(pat.c1);
+    Cell sub = static_cast<Cell>(pat.c2);
+    uint8_t dirty = (1u << pat.c1) | (1u << pat.c2);
+    PuyoPiece piece{axis, sub, dirty, 0};
+
+    for (int ai = 0; ai < kNumRLActions; ++ai) {
+        Action act = getRLAction(ai);
+        if (act.type != ActionType::Put) continue;
+        
+        // Zoro optimization: skip redundant Down and Left actions
+        if (pat.is_zoro && (act.rotation == Rotation::Down || act.rotation == Rotation::Left)) continue;
+
+        PlaceResult pr = simulatePlacement(field, piece, act);
+        if (pr.dead) continue;
+
+        float eval = BeamEvaluator::evaluate(pr.field, cfg.eval_weights, pr.chain, pr.score, false);
+        if (eval > max_eval) {
+            max_eval = eval;
+        }
+    }
+    if (max_eval < -1e8f) {
+        max_eval = -10000.0f;
+    }
+    return max_eval;
+}
+
+// Evaluate two steps of invisible tsumo (4th and 5th steps)
+inline float evaluateTwoSteps(const Board& field, const BeamConfig& cfg) noexcept {
+    float expected_score_4 = 0.0f;
+
+    for (const auto& pat4 : kTsumoPatterns) {
+        Cell axis4 = static_cast<Cell>(pat4.c1);
+        Cell sub4 = static_cast<Cell>(pat4.c2);
+        uint8_t dirty4 = (1u << pat4.c1) | (1u << pat4.c2);
+        PuyoPiece piece4{axis4, sub4, dirty4, 0};
+
+        float max_eval_4 = -1e9f;
+
+        for (int ai4 = 0; ai4 < kNumRLActions; ++ai4) {
+            Action act4 = getRLAction(ai4);
+            if (act4.type != ActionType::Put) continue;
+
+            // Zoro optimization
+            if (pat4.is_zoro && (act4.rotation == Rotation::Down || act4.rotation == Rotation::Left)) continue;
+
+            PlaceResult pr4 = simulatePlacement(field, piece4, act4);
+            if (pr4.dead) continue;
+
+            float expected_score_5 = 0.0f;
+            for (const auto& pat5 : kTsumoPatterns) {
+                float eval_5 = evaluateSingleTsumo(pr4.field, pat5, cfg);
+                expected_score_5 += eval_5 * pat5.weight;
+            }
+
+            if (expected_score_5 > max_eval_4) {
+                max_eval_4 = expected_score_5;
+            }
+        }
+
+        if (max_eval_4 < -1e8f) {
+            max_eval_4 = -10000.0f;
+        }
+        expected_score_4 += max_eval_4 * pat4.weight;
+    }
+
+    return expected_score_4;
+}
+
 } // anonymous namespace
 
 // ---------------------------------------------------------------------------
@@ -101,43 +193,28 @@ int beamSearch(const PuyotanPlayer& player,
 
     for (int depth = 0; depth < cfg.look_ahead; ++depth) {
         if (depth == 3) {
-            // Invisible 4th step: expectimax across all 10 unique color combinations (weighted)
+            // Invisible steps starting from 4th (depth=3)
             const int num_nodes = static_cast<int>(current_beam.size());
-            #pragma omp parallel for num_threads(2) schedule(static)
-            for (int i = 0; i < num_nodes; ++i) {
-                BeamNode& node = current_beam[i];
-                float expected_score = 0.0f;
-                for (int c1 = 0; c1 < 4; ++c1) {
-                    for (int c2 = c1; c2 < 4; ++c2) {
-                        float weight = (c1 == c2) ? (1.0f / 16.0f) : (2.0f / 16.0f);
 
-                        Cell axis = static_cast<Cell>(c1);
-                        Cell sub = static_cast<Cell>(c2);
-                        uint8_t dirty = (1u << c1) | (1u << c2);
-                        PuyoPiece piece{axis, sub, dirty, 0};
-
-                        float max_eval = -1e9f;
-                        for (int ai = 0; ai < kNumRLActions; ++ai) {
-                            Action act = getRLAction(ai);
-                            if (act.type != ActionType::Put) continue;
-
-                            PlaceResult pr = simulatePlacement(node.field, piece, act);
-                            if (pr.dead) continue;
-
-                            // Skip potential chain score calculation at depth=3 to save computation
-                            float eval = BeamEvaluator::evaluate(
-                                pr.field, cfg.eval_weights, pr.chain, pr.score, false);
-                            if (eval > max_eval) {
-                                max_eval = eval;
-                            }
-                        }
-                        if (max_eval < -1e8f) {
-                            max_eval = -10000.0f; // Dead-end penalty
-                        }
-                        expected_score += max_eval * weight;
+            if (cfg.look_ahead == 4) {
+                // 1-step Expectimax (4th step only)
+                #pragma omp parallel for num_threads(2) schedule(static)
+                for (int i = 0; i < num_nodes; ++i) {
+                    BeamNode& node = current_beam[i];
+                    float expected_score = 0.0f;
+                    for (const auto& pat : kTsumoPatterns) {
+                        float eval = evaluateSingleTsumo(node.field, pat, cfg);
+                        expected_score += eval * pat.weight;
                     }
+                    node.score = expected_score;
                 }
-                node.score = expected_score;
+            } else {
+                // 2-step Expectimax (4th & 5th steps)
+                #pragma omp parallel for num_threads(2) schedule(static)
+                for (int i = 0; i < num_nodes; ++i) {
+                    BeamNode& node = current_beam[i];
+                    node.score = evaluateTwoSteps(node.field, cfg);
+                }
             }
 
             // Sort descending by score
@@ -145,16 +222,20 @@ int beamSearch(const PuyotanPlayer& player,
                 current_beam.begin(),
                 current_beam.end(),
                 [](const BeamNode& a, const BeamNode& b) { return a.score > b.score; });
-            break; // We have completed the search (up to depth 3 / 4th step)
+            break; // We have completed the search
         }
 
         PuyoPiece piece = tsumo.get(tsumo_base + depth);
+        const bool is_zoro = (piece.axis == piece.sub);
         next_beam.clear();
 
         for (const BeamNode& node : current_beam) {
             for (int ai = 0; ai < kNumRLActions; ++ai) {
                 Action act = getRLAction(ai);
                 if (act.type != ActionType::Put) continue;
+
+                // Zoro optimization for visible tsumo
+                if (is_zoro && (act.rotation == Rotation::Down || act.rotation == Rotation::Left)) continue;
 
                 PlaceResult pr = simulatePlacement(node.field, piece, act);
                 if (pr.dead) continue;
