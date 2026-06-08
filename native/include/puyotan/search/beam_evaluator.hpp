@@ -56,7 +56,8 @@ class BeamEvaluator {
     static float evaluate(const Board& board,
                           const BeamEvalWeights& w,
                           int chain = 0,
-                          int score = 0) noexcept {
+                          int score = 0,
+                          bool calculate_potential = true) noexcept {
         float r = 0.0f;
 
         // --- Immediate chain reward ---
@@ -129,7 +130,7 @@ class BeamEvaluator {
         }
 
         // --- Potential chain score (max achievable by adding exactly one puyo) ---
-        {
+        if (calculate_potential) {
             int max_pot_score = 0;
             for (int x = 0; x < config::Board::kWidth; ++x) {
                 int h = board.getColumnHeight(x);

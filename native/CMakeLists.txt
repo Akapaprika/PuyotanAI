@@ -49,7 +49,7 @@ file(GLOB_RECURSE SEARCH_SOURCES
 add_library(puyotan_search STATIC ${SEARCH_SOURCES})
 target_compile_features(puyotan_search PRIVATE cxx_std_23)
 target_include_directories(puyotan_search PUBLIC include)
-target_link_libraries(puyotan_search PUBLIC puyotan_core)
+target_link_libraries(puyotan_search PUBLIC puyotan_core OpenMP::OpenMP_CXX)
 
 # 3. ONNX Policy (Depends on Core and ORT)
 file(GLOB_RECURSE POLICY_SOURCES
@@ -67,7 +67,7 @@ file(GLOB_RECURSE NATIVE_SOURCES
 pybind11_add_module(puyotan_native ${NATIVE_SOURCES})
 target_compile_features(puyotan_native PRIVATE cxx_std_23)
 target_include_directories(puyotan_native PRIVATE include ${TORCH_INCLUDE_DIRS} ${ORT_INCLUDE})
-target_link_libraries(puyotan_native PRIVATE puyotan_core puyotan_rl puyotan_policy puyotan_search torch ${ORT_LIB})
+target_link_libraries(puyotan_native PRIVATE puyotan_core puyotan_rl puyotan_policy puyotan_search torch ${ORT_LIB} OpenMP::OpenMP_CXX)
 target_precompile_headers(puyotan_native PRIVATE include/puyotan/pch.hpp)
 
 # ---------------------------------------------------------

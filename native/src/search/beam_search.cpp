@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <vector>
+#include <omp.h>
 
 #include <puyotan/common/types.hpp>
 #include <puyotan/core/chain.hpp>
@@ -99,6 +100,54 @@ int beamSearch(const PuyotanPlayer& player,
     current_beam.push_back({player.field, 0.0f, -1});
 
     for (int depth = 0; depth < cfg.look_ahead; ++depth) {
+        if (depth == 3) {
+            // Invisible 4th step: expectimax across all 10 unique color combinations (weighted)
+            const int num_nodes = static_cast<int>(current_beam.size());
+            #pragma omp parallel for num_threads(2) schedule(static)
+            for (int i = 0; i < num_nodes; ++i) {
+                BeamNode& node = current_beam[i];
+                float expected_score = 0.0f;
+                for (int c1 = 0; c1 < 4; ++c1) {
+                    for (int c2 = c1; c2 < 4; ++c2) {
+                        float weight = (c1 == c2) ? (1.0f / 16.0f) : (2.0f / 16.0f);
+
+                        Cell axis = static_cast<Cell>(c1);
+                        Cell sub = static_cast<Cell>(c2);
+                        uint8_t dirty = (1u << c1) | (1u << c2);
+                        PuyoPiece piece{axis, sub, dirty, 0};
+
+                        float max_eval = -1e9f;
+                        for (int ai = 0; ai < kNumRLActions; ++ai) {
+                            Action act = getRLAction(ai);
+                            if (act.type != ActionType::Put) continue;
+
+                            PlaceResult pr = simulatePlacement(node.field, piece, act);
+                            if (pr.dead) continue;
+
+                            // Skip potential chain score calculation at depth=3 to save computation
+                            float eval = BeamEvaluator::evaluate(
+                                pr.field, cfg.eval_weights, pr.chain, pr.score, false);
+                            if (eval > max_eval) {
+                                max_eval = eval;
+                            }
+                        }
+                        if (max_eval < -1e8f) {
+                            max_eval = -10000.0f; // Dead-end penalty
+                        }
+                        expected_score += max_eval * weight;
+                    }
+                }
+                node.score = expected_score;
+            }
+
+            // Sort descending by score
+            std::sort(
+                current_beam.begin(),
+                current_beam.end(),
+                [](const BeamNode& a, const BeamNode& b) { return a.score > b.score; });
+            break; // We have completed the search (up to depth 3 / 4th step)
+        }
+
         PuyoPiece piece = tsumo.get(tsumo_base + depth);
         next_beam.clear();
 
