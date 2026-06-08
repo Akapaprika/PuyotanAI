@@ -34,6 +34,10 @@ struct BeamEvalWeights {
     float chain_bonus_per_step   = 2.0f;
     // Exponent applied to chain count (rewards big chains super-linearly)
     float chain_power            = 2.0f;
+    // Use fast approximate potential calculation (flood-fill).
+    // NOTE: Disabling this gives more accurate multi-chain evaluation.
+    // Fast mode only counts connected group size and cannot detect multi-step chains.
+    bool use_fast_potential      = false;
 };
 
 /**
@@ -45,24 +49,56 @@ struct BeamEvalWeights {
  */
 class BeamEvaluator {
   public:
+    static __forceinline int fastGroupSize(const BitBoard& bb, int x, int h) noexcept {
+        BitBoard bb_plus = bb;
+        bb_plus.set(x, h);
+
+        BitBoard component{};
+        component.set(x, h);
+
+        for (;;) {
+            BitBoard next = component
+                | (component.shiftUpRaw()    & bb_plus)
+                | (component.shiftDownRaw()  & bb_plus)
+                | (component.shiftRightRaw() & bb_plus)
+                | (component.shiftLeftRaw()  & bb_plus);
+            if (next == component) break;
+            component = next;
+        }
+        return component.popcount();
+    }
+
     /**
      * @brief Evaluate a board state and return a heuristic score (higher = better).
      *
+     * @tparam CalculatePotential  Compile-time flag: false skips the expensive potential pass.
+     *                             Use evaluate<false>() from Expectimax inner loops.
      * @param board   The board to evaluate.
      * @param w       Evaluation weights.
      * @param chain   Number of chains already fired to reach this state (0 if placement only).
-     * @param score   Raw score delta from the chain (0 if no chain fired).
      */
+    template<bool CalculatePotential = true, bool UseFastPotential = false, bool HasOjama = true>
     static float evaluate(const Board& board,
                           const BeamEvalWeights& w,
-                          int chain = 0,
-                          int score = 0,
-                          bool calculate_potential = true) noexcept {
+                          float chain_bonus) noexcept {
         float r = 0.0f;
 
-        // --- Immediate chain reward ---
-        if (chain > 0) {
-            r += std::pow(static_cast<float>(chain), w.chain_power) * w.chain_bonus_per_step;
+        // --- Immediate chain reward (precomputed, branchless) ---
+        r += chain_bonus;
+
+        // --- Precompute all column heights once ---
+        // getColumnHeight uses _mm_popcnt_u32 per call. Caching here avoids
+        // 13+ redundant popcnt calls scattered across variance, death col, and potential.
+        int heights[config::Board::kWidth];
+        {
+            const uint64_t lo = board.getOccupied().lo;
+            const uint64_t hi = board.getOccupied().hi;
+            heights[0] = static_cast<int>(_mm_popcnt_u64((lo >>  0) & 0xFFFFu));
+            heights[1] = static_cast<int>(_mm_popcnt_u64((lo >> 16) & 0xFFFFu));
+            heights[2] = static_cast<int>(_mm_popcnt_u64((lo >> 32) & 0xFFFFu));
+            heights[3] = static_cast<int>(_mm_popcnt_u64((lo >> 48) & 0xFFFFu));
+            heights[4] = static_cast<int>(_mm_popcnt_u64((hi >>  0) & 0xFFFFu));
+            heights[5] = static_cast<int>(_mm_popcnt_u64((hi >> 16) & 0xFFFFu));
         }
 
         // --- Board metrics (BitBoard-level, branchless) ---
@@ -89,26 +125,27 @@ class BeamEvaluator {
         r += static_cast<float>(conn)  * w.connectivity_bonus;
         r += static_cast<float>(iso)   * w.isolated_penalty;
 
-        // --- Height variance ---
+        // --- Height variance (fully unrolled for kWidth=6, zero loop overhead) ---
         {
-            float sum = 0.0f, sum_sq = 0.0f;
-            for (int x = 0; x < config::Board::kWidth; ++x) {
-                float h = static_cast<float>(board.getColumnHeight(x));
-                sum    += h;
-                sum_sq += h * h;
-            }
-            constexpr float n = static_cast<float>(config::Board::kWidth);
-            float mean = sum / n;
-            float var  = sum_sq / n - mean * mean;
+            const float h0 = static_cast<float>(heights[0]);
+            const float h1 = static_cast<float>(heights[1]);
+            const float h2 = static_cast<float>(heights[2]);
+            const float h3 = static_cast<float>(heights[3]);
+            const float h4 = static_cast<float>(heights[4]);
+            const float h5 = static_cast<float>(heights[5]);
+            constexpr float inv6 = 1.0f / static_cast<float>(config::Board::kWidth);
+            const float sum    = h0 + h1 + h2 + h3 + h4 + h5;
+            const float sum_sq = h0*h0 + h1*h1 + h2*h2 + h3*h3 + h4*h4 + h5*h5;
+            const float mean   = sum * inv6;
+            const float var    = sum_sq * inv6 - mean * mean;
             r += var * w.height_variance_penalty;
         }
 
-        // --- Death column height ---
-        r += static_cast<float>(board.getColumnHeight(config::Rule::kDeathCol))
-             * w.death_col_penalty;
+        // --- Death column height (uses cached heights[], no extra popcnt call) ---
+        r += static_cast<float>(heights[config::Rule::kDeathCol]) * w.death_col_penalty;
 
         // --- Buried puyo count (colored puyos beneath any ojama shadow) ---
-        {
+        if constexpr (HasOjama) {
             const BitBoard& oj = board.getBitboard(Cell::Ojama);
             if (!oj.empty()) {
                 // Smear ojama shadow downward via arithmetic right-shift
@@ -129,44 +166,62 @@ class BeamEvaluator {
             }
         }
 
-        // --- Potential chain score (max achievable by adding exactly one puyo) ---
-        if (calculate_potential) {
-            int max_pot_score = 0;
-            for (int x = 0; x < config::Board::kWidth; ++x) {
-                int h = board.getColumnHeight(x);
-                if (h >= config::Board::kChainableRows) continue;
+        // --- Potential chain score ---
+        if constexpr (CalculatePotential) {
+            if constexpr (UseFastPotential) {
+                int max_gs = 0;
+                for (int x = 0; x < config::Board::kWidth; ++x) {
+                    const int h = heights[x]; // cached
+                    if (h >= config::Board::kChainableRows) continue;
 
-                for (int c = 0; c < config::Rule::kColors; ++c) {
-                    const BitBoard& bb = board.getBitboard(static_cast<Cell>(c));
+                    for (int c = 0; c < config::Rule::kColors; ++c) {
+                        const BitBoard& bb = board.getBitboard(static_cast<Cell>(c));
+                        // SIMD neighbor mask: 4 shift ops replace 3 conditional bb.get() calls.
+                        // No per-bit boundary checks needed.
+                        const BitBoard neighbor = bb.shiftUpRaw() | bb.shiftDownRaw()
+                                                | bb.shiftLeftRaw() | bb.shiftRightRaw();
+                        if (!neighbor.get(x, h)) continue;
 
-                    // Pre-check adjacency: if no adjacent puyos of color c, it cannot erase (size will be 1)
-                    bool has_adjacent = false;
-                    if (x > 0 && bb.get(x - 1, h)) has_adjacent = true;
-                    if (x < config::Board::kWidth - 1 && bb.get(x + 1, h)) has_adjacent = true;
-                    if (h > 0 && bb.get(x, h - 1)) has_adjacent = true;
-
-                    if (!has_adjacent) continue;
-
-                    Board temp = board;
-                    temp.dropNewPiece(x, h, static_cast<Cell>(c));
-
-                    ErasureData ed = Chain::findGroups(temp, 1u << c);
-                    if (ed.num_erased == 0) continue;
-
-                    int pot_chain = 0, pot_score = 0;
-                    while (ed.num_erased > 0) {
-                        ++pot_chain;
-                        pot_score += Scorer::calculateStepScore(ed, pot_chain);
-                        Chain::applyErasure(temp, ed);
-                        uint32_t fallen = Gravity::execute(temp);
-                        ed = Chain::findGroups(temp, fallen);
-                        if (pot_chain >= 10) { pot_score += 99999; break; }
+                        int gs = fastGroupSize(bb, x, h);
+                        max_gs = (gs > max_gs) ? gs : max_gs;
                     }
-                    if (pot_score > max_pot_score)
-                        max_pot_score = pot_score;
                 }
+                if (max_gs >= 4) {
+                    float approx = static_cast<float>(10 * max_gs * (max_gs - 3));
+                    r += approx * w.potential_score_scale;
+                }
+            } else {
+                int max_pot_score = 0;
+                for (int x = 0; x < config::Board::kWidth; ++x) {
+                    const int h = heights[x]; // cached
+                    if (h >= config::Board::kChainableRows) continue;
+
+                    for (int c = 0; c < config::Rule::kColors; ++c) {
+                        const BitBoard& bb = board.getBitboard(static_cast<Cell>(c));
+                        // SIMD neighbor mask: 4 shifts replace 3 conditional bb.get() calls.
+                        const BitBoard neighbor = bb.shiftUpRaw() | bb.shiftDownRaw()
+                                                | bb.shiftLeftRaw() | bb.shiftRightRaw();
+                        if (!neighbor.get(x, h)) continue;
+
+                        Board temp = board;
+                        temp.dropNewPiece(x, h, static_cast<Cell>(c));
+
+                        ErasureData ed = Chain::findGroups(temp, 1u << c);
+                        if (ed.num_erased == 0) continue;
+
+                        int pot_chain = 0, pot_score = 0;
+                        while (ed.num_erased > 0) {
+                            ++pot_chain;
+                            pot_score += Scorer::calculateStepScore(ed, pot_chain);
+                            Chain::applyErasure(temp, ed);
+                            uint32_t fallen = Gravity::execute(temp);
+                            ed = Chain::findGroups(temp, fallen);
+                        }
+                        max_pot_score = (pot_score > max_pot_score) ? pot_score : max_pot_score;
+                    }
+                }
+                r += static_cast<float>(max_pot_score) * w.potential_score_scale;
             }
-            r += static_cast<float>(max_pot_score) * w.potential_score_scale;
         }
 
         return r;

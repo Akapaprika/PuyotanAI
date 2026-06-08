@@ -82,7 +82,7 @@ if (MSVC)
             /wd4267
             /wd4819
             $<$<CONFIG:Debug>: /Od /Zi /RTC1 /W4 /MP >
-            $<$<CONFIG:Release>: /O2 /arch:AVX2 /Gy /Gw /fp:fast /Oi /DNDEBUG /MP /GL >
+            $<$<CONFIG:Release>: /O2 /arch:AVX2 /Gy /Gw /fp:fast /Oi /DNDEBUG /MP /GL /Ob3 /GS- >
         )
         # Enable Link-Time Optimization (LTO / Whole Program Optimization)
         set_property(TARGET ${T} PROPERTY INTERPROCEDURAL_OPTIMIZATION $<$<CONFIG:Release>:TRUE>)
