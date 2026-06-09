@@ -315,6 +315,8 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("height_variance_penalty",  &search::BeamEvalWeights::height_variance_penalty)
         .def_readwrite("death_col_penalty",        &search::BeamEvalWeights::death_col_penalty)
         .def_readwrite("fire_bias",                &search::BeamEvalWeights::fire_bias)
+        .def_readwrite("edge_column_bonus",        &search::BeamEvalWeights::edge_column_bonus)
+        .def_readwrite("edge_column_threshold",    &search::BeamEvalWeights::edge_column_threshold)
         .def_readwrite("use_fast_potential",       &search::BeamEvalWeights::use_fast_potential);
 
     pybind11::class_<search::BeamConfig>(m, "BeamConfig")

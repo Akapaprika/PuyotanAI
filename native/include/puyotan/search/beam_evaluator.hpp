@@ -36,6 +36,13 @@ struct BeamEvalWeights {
     // fire_bias == 1.0 => fire only if it strictly beats the beam score
     // fire_bias < 1.0  => prefer building (fire must be clearly better)
     float fire_bias              = 1.0f;
+    // Bonus applied to edge columns (col 0 and 5) to encourage building from sides.
+    // Decays linearly as total puyos on board increases, reaching 0 at edge_column_threshold puyos.
+    // Set edge_column_threshold <= 0 to apply the bonus at full strength regardless of board fill.
+    float edge_column_bonus      = 0.0f;
+    // Total puyo count at which edge_column_bonus decays to zero.
+    // 0 (or negative): always apply at full strength (no decay).
+    float edge_column_threshold  = 0.0f;
     // Use fast approximate potential calculation (flood-fill).
     // NOTE: Disabling this gives more accurate multi-chain evaluation.
     // Fast mode only counts connected group size and cannot detect multi-step chains.
@@ -143,6 +150,18 @@ class BeamEvaluator {
 
         // --- Death column height (uses cached heights[], no extra popcnt call) ---
         r += static_cast<float>(heights[config::Rule::kDeathCol]) * w.death_col_penalty;
+
+        // --- Edge column bonus (col 0 and 5) ---
+        // Encourages building from edge columns. Decays linearly as total puyos increase.
+        // If edge_column_threshold <= 0, the full bonus is always applied.
+        if (w.edge_column_bonus != 0.0f) {
+            const int total_puyos = board.getOccupied().popcount();
+            const int edge_height = heights[0] + heights[5];
+            const float edge_factor = (w.edge_column_threshold > 0.0f)
+                ? std::max(0.0f, 1.0f - static_cast<float>(total_puyos) / w.edge_column_threshold)
+                : 1.0f;
+            r += static_cast<float>(edge_height) * w.edge_column_bonus * edge_factor;
+        }
 
         // --- Buried puyo count (colored puyos beneath any ojama shadow) ---
         if constexpr (HasOjama) {

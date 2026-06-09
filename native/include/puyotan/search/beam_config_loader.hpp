@@ -127,6 +127,8 @@ class BeamConfigLoader {
         ew["height_variance_penalty"] = w.height_variance_penalty;
         ew["death_col_penalty"]       = w.death_col_penalty;
         ew["fire_bias"]               = w.fire_bias;
+        ew["edge_column_bonus"]       = w.edge_column_bonus;
+        ew["edge_column_threshold"]   = w.edge_column_threshold;
         ew["use_fast_potential"]      = w.use_fast_potential;
 
         std::ofstream ofs(path);
@@ -148,6 +150,8 @@ class BeamConfigLoader {
             else if (key == "height_variance_penalty"  && val.is_number()) w.height_variance_penalty  = val.get<float>();
             else if (key == "death_col_penalty"        && val.is_number()) w.death_col_penalty        = val.get<float>();
             else if (key == "fire_bias"                && val.is_number()) w.fire_bias                = val.get<float>();
+            else if (key == "edge_column_bonus"        && val.is_number()) w.edge_column_bonus        = val.get<float>();
+            else if (key == "edge_column_threshold"    && val.is_number()) w.edge_column_threshold    = val.get<float>();
             else if (key == "use_fast_potential"       && val.is_boolean()) w.use_fast_potential      = val.get<bool>();
         }
     }

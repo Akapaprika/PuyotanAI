@@ -18,6 +18,7 @@ namespace {
 struct BeamNode {
     Board field;
     float score;
+    float accum_score;
     int   first_action; // RL action index chosen at depth 0
 };
 
@@ -107,22 +108,14 @@ PlaceResult simulatePlacement(const Board& src,
     const int y_sub  = h_sub  + action.sub_dy;
 
     // Early-out: bounds check before the expensive Board copy.
-    if (y_axis >= config::Board::kHeight || y_sub >= config::Board::kHeight) [[unlikely]] {
+    // Changed boundary check to kTotalRows to allow placements above visible height (13) but below total bitmap rows (15).
+    if (y_axis >= config::Board::kTotalRows || y_sub >= config::Board::kTotalRows) [[unlikely]] {
         return {Board{}, 0, 0, true};
     }
 
     PlaceResult res{src, 0, 0, false}; // 96-byte copy only for valid placements
     res.field.dropNewPiece(ax, y_axis, piece.axis);
     res.field.dropNewPiece(sx, y_sub, piece.sub);
-
-    // Death check: only re-query height if axis or sub puyo landed on the death column.
-    // For all other columns, the death column height is unchanged from src (which is guaranteed <= kDeathRow).
-    if (action.is_death_col_related) {
-        if (res.field.getColumnHeight(config::Rule::kDeathCol) > config::Rule::kDeathRow) [[unlikely]] {
-            res.dead = true;
-            return res;
-        }
-    }
 
     // Resolve chain
     uint32_t color_mask = Chain::kAllColorsMask;
@@ -133,6 +126,13 @@ PlaceResult simulatePlacement(const Board& src,
         Chain::applyErasure(res.field, ed);
         uint32_t fallen = Gravity::execute(res.field);
         ed = Chain::findGroups(res.field, fallen);
+    }
+
+    // Death check (deferred until after chains resolve):
+    // Check if the death cell is occupied after the chain finishes.
+    if (res.field.get(config::Rule::kDeathCol, config::Rule::kDeathRow) != Cell::Empty) [[unlikely]] {
+        res.dead = true;
+        return res;
     }
 
     return res;
@@ -173,7 +173,9 @@ inline float evaluateSingleTsumo(const Board& field, const TsumoPattern& pat, co
         PlaceResult pr = simulatePlacement(field, piece, entry);
         if (pr.dead) continue;
 
-        float eval = BeamEvaluator::evaluate<false, false, HasOjama>(pr.field, cfg.eval_weights);
+        // Add the immediate chain score of the placement to the evaluation
+        float eval = BeamEvaluator::evaluate<false, false, HasOjama>(pr.field, cfg.eval_weights) +
+                     static_cast<float>(pr.score) * cfg.eval_weights.potential_score_scale;
         max_eval = (eval > max_eval) ? eval : max_eval;
     }
     if (max_eval < -1e8f) {
@@ -206,7 +208,9 @@ inline float evaluateTwoSteps(const Board& field, const BeamConfig& cfg) noexcep
                 expected_score_5 += eval_5 * pat5.weight;
             }
 
-            max_eval_4 = (expected_score_5 > max_eval_4) ? expected_score_5 : max_eval_4;
+            // Include the immediate chain score of the 4th step placement in the evaluation
+            float eval_4 = expected_score_5 + static_cast<float>(pr4.score) * cfg.eval_weights.potential_score_scale;
+            max_eval_4 = (eval_4 > max_eval_4) ? eval_4 : max_eval_4;
         }
 
         if (max_eval_4 < -1e8f) {
@@ -261,7 +265,7 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
     next_beam.reserve(static_cast<std::size_t>(cfg.beam_width) * kNumRLActions);
 
     // Seed the beam with the current board state
-    current_beam.push_back({player.field, 0.0f, -1});
+    current_beam.push_back({player.field, 0.0f, 0.0f, -1});
 
     for (int depth = 0; depth < cfg.look_ahead; ++depth) {
         if (depth == 3) {
@@ -278,14 +282,14 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                         float eval = evaluateSingleTsumo<HasOjama>(node.field, pat, cfg);
                         expected_score += eval * pat.weight;
                     }
-                    node.score = expected_score;
+                    node.score = node.accum_score * cfg.eval_weights.potential_score_scale + expected_score;
                 }
             } else {
                 // 2-step Expectimax (4th & 5th steps)
                 #pragma omp parallel for num_threads(2) schedule(static)
                 for (int i = 0; i < num_nodes; ++i) {
                     BeamNode& node = current_beam[i];
-                    node.score = evaluateTwoSteps<HasOjama>(node.field, cfg);
+                    node.score = node.accum_score * cfg.eval_weights.potential_score_scale + evaluateTwoSteps<HasOjama>(node.field, cfg);
                 }
             }
 
@@ -308,9 +312,11 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                 if (pr.dead) continue;
 
                 float eval = BeamEvaluator::evaluate<true, UseFastPotential, HasOjama>(pr.field, cfg.eval_weights);
+                float next_accum = node.accum_score + static_cast<float>(pr.score);
+                float total_score = next_accum * cfg.eval_weights.potential_score_scale + eval;
 
                 int first = (depth == 0) ? entry.idx : node.first_action;
-                next_beam.push_back({pr.field, eval, first});
+                next_beam.push_back({pr.field, total_score, next_accum, first});
             }
         }
 
