@@ -173,8 +173,7 @@ inline float evaluateSingleTsumo(const Board& field, const TsumoPattern& pat, co
         PlaceResult pr = simulatePlacement(field, piece, entry);
         if (pr.dead) continue;
 
-        float immediate_score = static_cast<float>(pr.score);
-        float eval = BeamEvaluator::evaluate<false, false, HasOjama>(pr.field, cfg.eval_weights, immediate_score);
+        float eval = BeamEvaluator::evaluate<false, false, HasOjama>(pr.field, cfg.eval_weights);
         max_eval = (eval > max_eval) ? eval : max_eval;
     }
     if (max_eval < -1e8f) {
@@ -232,6 +231,28 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
     Tsumo tsumo = tsumo_const;
     const int tsumo_base = player.active_next_pos;
 
+    // -----------------------------------------------------------------------
+    // Fire scan: try all actions with the current tsumo and find the best
+    // immediate chain.  This is compared against the beam result at the end
+    // to decide whether firing now is better than continuing to build.
+    // -----------------------------------------------------------------------
+    int   fire_best_action = -1;
+    float fire_best_score  = 0.0f;
+    {
+        PuyoPiece piece0 = tsumo.get(tsumo_base + 0);
+        const bool is_zoro0 = (piece0.axis == piece0.sub);
+        const auto& actions0 = is_zoro0 ? getZoroActions() : getPutActions();
+        for (const auto& entry : actions0) {
+            PlaceResult pr = simulatePlacement(player.field, piece0, entry);
+            if (pr.dead || pr.score == 0) continue;
+            float s = static_cast<float>(pr.score);
+            if (s > fire_best_score) {
+                fire_best_score  = s;
+                fire_best_action = entry.idx;
+            }
+        }
+    }
+
     // Initialise beam with a single root node (no action taken yet)
     std::vector<BeamNode> current_beam;
     current_beam.reserve(static_cast<std::size_t>(cfg.beam_width));
@@ -286,8 +307,7 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                 PlaceResult pr = simulatePlacement(node.field, piece, entry);
                 if (pr.dead) continue;
 
-                float immediate_score = static_cast<float>(pr.score);
-                float eval = BeamEvaluator::evaluate<true, UseFastPotential, HasOjama>(pr.field, cfg.eval_weights, immediate_score);
+                float eval = BeamEvaluator::evaluate<true, UseFastPotential, HasOjama>(pr.field, cfg.eval_weights);
 
                 int first = (depth == 0) ? entry.idx : node.first_action;
                 next_beam.push_back({pr.field, eval, first});
@@ -317,6 +337,21 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
         current_beam.resize(keep);
         for (int i = 0; i < keep; ++i) {
             current_beam[i] = std::move(next_beam[tl_sort_buf[i].idx]);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Fire-vs-beam decision:
+    // If the best immediate fire score (scaled by fire_bias) exceeds the beam
+    // search result, return the firing action instead.
+    // fire_bias > 1.0 : favour firing (chain is "saturated")
+    // fire_bias == 1.0: fire only when it strictly beats the beam continuation
+    // fire_bias < 1.0 : favour building (need clearly dominant fire to switch)
+    // -----------------------------------------------------------------------
+    if (fire_best_action >= 0 && !current_beam.empty()) {
+        const float beam_score = current_beam[0].score;
+        if (fire_best_score * cfg.eval_weights.fire_bias > beam_score) {
+            return {fire_best_action, fire_best_score};
         }
     }
 

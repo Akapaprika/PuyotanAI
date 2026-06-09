@@ -23,8 +23,8 @@
     "_comment_death_col_penalty":      "窒息列（3列目）の高さ1行あたりのペナルティ（負の値）。",
     "death_col_penalty":              -1.0,
 
-    "_comment_immediate_score_scale":  "配置で発火した即時連鎖得点に対する乗数。",
-    "immediate_score_scale":           1.0,
+    "_comment_fire_bias":             "発火判断のバイアス係数。fire_bias × 発火スコア > ビームスコア のとき即時発火を選択。\n                                       > 1.0: 発火を積極的に選ぶ / == 1.0: 等価比較 / < 1.0: 継続を優先",
+    "fire_bias":                       1.0,
 
     "_comment_use_fast_potential":     "true: flood-fill 近似（高速）、false: 完全チェーンシミュレーション（高精度）。",
     "use_fast_potential":              false
@@ -34,9 +34,8 @@
     "_comment": "各プロファイルは eval_weights への差分パッチです。複数を順番に適用できます。",
 
     "deep_search": {
-      "_comment": "look_ahead >= 4 時に適用。Expectimax で将来が見通せるため、平坦化ペナルティや即発火ボーナスを緩める。",
+      "_comment": "look_ahead >= 4 時に適用。Expectimax で将来が見通せるため、平坦化ペナルティを緩める。",
       "height_variance_penalty": -0.05,
-      "immediate_score_scale":    0.5,
       "connectivity_bonus":       0.5
     },
 
@@ -54,7 +53,7 @@
 
     "stagnated": {
       "_comment": "停滞検出時に適用。即時発火を最優先して盤面をリセットする。",
-      "immediate_score_scale":  15.0,
+      "fire_bias":              100.0,
       "potential_score_scale":  0.1
     }
   }

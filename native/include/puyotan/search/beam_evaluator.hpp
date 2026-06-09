@@ -30,8 +30,12 @@ struct BeamEvalWeights {
     float height_variance_penalty = -0.3f;
     // Penalty per unit of height in the death column (col 2)
     float death_col_penalty      = -1.0f;
-    // Scale applied to immediate score achieved this step (carry-through reward)
-    float immediate_score_scale  = 1.0f;
+    // Multiplier applied to the best immediate fire score when comparing
+    // fire-now vs. beam-continuation at depth 0.
+    // fire_bias > 1.0  => prefer firing earlier
+    // fire_bias == 1.0 => fire only if it strictly beats the beam score
+    // fire_bias < 1.0  => prefer building (fire must be clearly better)
+    float fire_bias              = 1.0f;
     // Use fast approximate potential calculation (flood-fill).
     // NOTE: Disabling this gives more accurate multi-chain evaluation.
     // Fast mode only counts connected group size and cannot detect multi-step chains.
@@ -73,16 +77,14 @@ class BeamEvaluator {
      *                             Use evaluate<false>() from Expectimax inner loops.
      * @param board   The board to evaluate.
      * @param w       Evaluation weights.
-     * @param immediate_score  Actual score achieved by chain erasure this step.
+     *
+     * Note: Immediate fire score is handled at the beam search level (see beamSearchImpl).
+     * This function evaluates only the board structure and potential.
      */
     template<bool CalculatePotential = true, bool UseFastPotential = false, bool HasOjama = true>
     static float evaluate(const Board& board,
-                          const BeamEvalWeights& w,
-                          float immediate_score) noexcept {
+                          const BeamEvalWeights& w) noexcept {
         float r = 0.0f;
-
-        // --- Immediate score reward ---
-        r += immediate_score * w.immediate_score_scale;
 
         // --- Precompute all column heights once ---
         // getColumnHeight uses _mm_popcnt_u32 per call. Caching here avoids
