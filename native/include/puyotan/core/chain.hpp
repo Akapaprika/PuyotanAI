@@ -14,7 +14,7 @@ struct ErasureData {
     std::array<uint8_t, config::Rule::kMaxErasureGroups> group_sizes;
 
     /// Bitmask of erased puyos for each color plane.
-    std::array<BitBoard, config::Rule::kColors> erased_per_color;
+    std::array<BitBoard, config::Board::kNumColors> erased_per_color;
 
     /// Combined bitmask of all erased puyos (including Ojama).
     BitBoard total_erased;

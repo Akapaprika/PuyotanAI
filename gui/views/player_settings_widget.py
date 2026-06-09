@@ -15,10 +15,13 @@ from pathlib import Path
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QComboBox, QPushButton,
-    QFileDialog, QLabel
+    QFileDialog, QLabel, QSpinBox
 )
 
-from ..agents import HumanPlayerAgent, AIPlayerAgent, EmptyPlayerAgent, BasePlayerAgent
+from ..agents import (
+    HumanPlayerAgent, AIPlayerAgent, EmptyPlayerAgent, BasePlayerAgent,
+    BeamSearchAgent, HybridBeamOnnxAgent
+)
 
 # Resolve models directory relative to the project root (two levels up from this file)
 # gui/views/player_settings_widget.py → gui/ → project root → models/
@@ -34,7 +37,7 @@ class PlayerSettingsWidget(QWidget):
     #: Emitted with (player_id, new_agent) whenever the agent type or model changes.
     agent_changed = pyqtSignal(int, object)
 
-    _MODES = ["Human", "AI (ONNX)", "Empty (Solo)"]
+    _MODES = ["Human", "AI (ONNX)", "Beam Search", "Hybrid (Beam+ONNX)", "Empty (Solo)"]
 
     def __init__(self, player_id: int, allow_empty: bool = True, parent=None):
         super().__init__(parent)
@@ -54,7 +57,7 @@ class PlayerSettingsWidget(QWidget):
         row1.addWidget(lbl)
 
         self._combo = QComboBox()
-        modes = self._MODES if allow_empty else self._MODES[:2]
+        modes = self._MODES if allow_empty else self._MODES[:2] + [self._MODES[2], self._MODES[3]]
         self._combo.addItems(modes)
         self._combo.setFixedWidth(130)
         self._combo.currentIndexChanged.connect(self._on_mode_changed)
@@ -79,15 +82,58 @@ class PlayerSettingsWidget(QWidget):
         self._path_label.setWordWrap(True)
         layout.addWidget(self._path_label)
 
+        # Row 3: Beam Search settings (Width, Depth)
+        self._beam_settings_widget = QWidget()
+        beam_layout = QHBoxLayout(self._beam_settings_widget)
+        beam_layout.setContentsMargins(28, 0, 0, 0)
+        beam_layout.setSpacing(8)
+
+        w_lbl = QLabel("Width:")
+        w_lbl.setStyleSheet("font-size: 11px; color: #94a3b8;")
+        beam_layout.addWidget(w_lbl)
+
+        self._width_spin = QSpinBox()
+        self._width_spin.setRange(50, 2000)
+        self._width_spin.setSingleStep(50)
+        self._width_spin.setValue(500)
+        self._width_spin.setFixedWidth(60)
+        self._width_spin.setStyleSheet("font-size: 11px;")
+        self._width_spin.valueChanged.connect(self._on_beam_param_changed)
+        beam_layout.addWidget(self._width_spin)
+
+        d_lbl = QLabel("Depth:")
+        d_lbl.setStyleSheet("font-size: 11px; color: #94a3b8;")
+        beam_layout.addWidget(d_lbl)
+
+        self._depth_spin = QSpinBox()
+        self._depth_spin.setRange(2, 5)
+        self._depth_spin.setValue(3)
+        self._depth_spin.setFixedWidth(45)
+        self._depth_spin.setStyleSheet("font-size: 11px;")
+        self._depth_spin.valueChanged.connect(self._on_beam_param_changed)
+        beam_layout.addWidget(self._depth_spin)
+
+        beam_layout.addStretch()
+        self._beam_settings_widget.setVisible(False)
+        layout.addWidget(self._beam_settings_widget)
+
     # ------------------------------------------------------------------
     def _on_mode_changed(self, idx: int) -> None:
-        is_ai = (self._combo.currentText() == "AI (ONNX)")
+        current_mode = self._combo.currentText()
+        is_ai = current_mode in ("AI (ONNX)", "Hybrid (Beam+ONNX)")
+        is_beam = current_mode in ("Beam Search", "Hybrid (Beam+ONNX)")
+
         self._browse_btn.setVisible(is_ai)
+        self._beam_settings_widget.setVisible(is_beam)
+
         if not is_ai:
             self._path_label.setVisible(False)
             self._emit_agent()
         elif self._model_path:
             self._emit_agent()
+
+    def _on_beam_param_changed(self, val: int) -> None:
+        self._emit_agent()
 
     def _on_browse(self) -> None:
         start_dir = str(_DEFAULT_MODELS_DIR) if _DEFAULT_MODELS_DIR.exists() else str(Path.home())
@@ -115,6 +161,9 @@ class PlayerSettingsWidget(QWidget):
     def get_agent_or_error(self) -> tuple[BasePlayerAgent | None, str | None]:
         """Returns (agent, None) on success, or (None, error_message) on failure."""
         mode = self._combo.currentText()
+        width = self._width_spin.value()
+        depth = self._depth_spin.value()
+
         if mode == "Human":
             return HumanPlayerAgent(), None
         if mode == "AI (ONNX)":
@@ -124,6 +173,15 @@ class PlayerSettingsWidget(QWidget):
                 return AIPlayerAgent(self._model_path), None
             except Exception as e:
                 return None, f"Failed to load AI model:\n{e}"
+        if mode == "Beam Search":
+            return BeamSearchAgent(beam_width=width, look_ahead=depth), None
+        if mode == "Hybrid (Beam+ONNX)":
+            if not self._model_path:
+                return None, "Please click 'Browse' and select an ONNX model file."
+            try:
+                return HybridBeamOnnxAgent(self._model_path, beam_width=width, look_ahead=depth), None
+            except Exception as e:
+                return None, f"Failed to load Hybrid model:\n{e}"
         if mode == "Empty (Solo)":
             return EmptyPlayerAgent(), None
         return None, "Unknown mode."

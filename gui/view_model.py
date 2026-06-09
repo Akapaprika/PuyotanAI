@@ -92,6 +92,14 @@ class PuyotanViewModel(QObject):
             for pid in [0, 1]:
                 if not (mask & (1 << pid)):
                     continue
+
+                # Adjust evaluation weights dynamically if the agent supports adjust_for_mode
+                if hasattr(self.agents[pid], "adjust_for_mode"):
+                    from .agents import EmptyPlayerAgent
+                    other_agent = self.agents[1 - pid]
+                    is_solo = isinstance(other_agent, EmptyPlayerAgent)
+                    self.agents[pid].adjust_for_mode(is_solo)
+
                 action = self.agents[pid].get_action(self.model, pid, self.players[pid])
                 if action is not None:
                     if self.model.set_action(pid, action):
