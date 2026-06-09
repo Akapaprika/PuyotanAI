@@ -11,9 +11,15 @@ the player as needing a decision (decision_mask bit is set).
 """
 from __future__ import annotations
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 import numpy as np
 import puyotan_native as p
+
+# ---------------------------------------------------------------------------
+# beam_config.json のパス（C++ 側に渡すためだけに保持）
+# ---------------------------------------------------------------------------
+_CONFIG_PATH = str(Path(__file__).parent / "beam_config.json")
 
 
 class BasePlayerAgent(ABC):
@@ -138,39 +144,31 @@ class EmptyPlayerAgent(BasePlayerAgent):
 # Beam Search
 # ---------------------------------------------------------------------------
 def _adjust_eval_weights(cfg, is_solo: bool, is_stagnated: bool) -> None:
-    w = cfg.eval_weights
-    
-    # 1. 探索の深さ (look_ahead) に応じた調整 (総当たりによる影響度の動的変化)
+    """C++ BeamConfigLoader 経由で JSON を読み込み、プロファイルを差分適用する。"""
+    # ベース値を JSON から C++ でロード
+    loaded = p.load_beam_config(_CONFIG_PATH)
+    cfg.eval_weights = loaded.eval_weights
+
+    # apply_beam_profile は BeamConfig を値渡しで返すため、
+    # 返り値の eval_weights を元の cfg に書き戻す。
+    def _apply(profile_name: str) -> None:
+        patched = p.apply_beam_profile(cfg, _CONFIG_PATH, profile_name)
+        cfg.eval_weights = patched.eval_weights
+
+    # 1. 探索の深さに応じたプロファイル適用
     if cfg.look_ahead >= 4:
-        # 深層探索の時：
-        # 将来の連鎖が総当たり（Expectimax）で見通せるため、
-        # 目先の連鎖をすぐに打つボーナスと、盤面を無理やり平坦にするペナルティを弱める。
-        w.height_variance_penalty = -0.05  # デフォルト -0.3 から大幅緩和（大連鎖用の起伏を許容）
-        w.chain_bonus_per_step = 0.5       # デフォルト 2.0 から大幅緩和（大連鎖完成まで発火を我慢）
-        w.connectivity_bonus = 0.5         # デフォルト 0.4 から少し引き上げ
-    else:
-        # 浅層探索（D<=3）の時：
-        # 将来が見えにくいため、平坦さの保険や即時発火ボーナスを維持。
-        w.height_variance_penalty = -0.3
-        w.chain_bonus_per_step = 2.0
-        w.connectivity_bonus = 0.4
+        _apply("deep_search")
 
-    # 2. ゲームモード (ソロ戦 vs 対人戦) に応じた調整
+    # 2. ゲームモードに応じたプロファイル適用
     if is_solo:
-        # ソロプレイ時：相手からの妨害がないため、おじゃまや窒息に関するペナルティを 0 または極めて弱くする。
-        w.buried_penalty = 0.0          # おじゃま評価を無効化（C++側で if(!oj.empty()) により自動スキップ）
-        w.death_col_penalty = -0.1       # 窒息列ペナルティを最小限に（大連鎖構築の邪魔をしない）
+        _apply("solo_mode")
     else:
-        # 対人戦時：おじゃまぷよによる窒息死を徹底回避する。
-        w.buried_penalty = -2.0          # おじゃまの下の埋もれを厳しく拒絶
-        w.death_col_penalty = -2.5       # 窒息死を何よりも恐れる
+        _apply("vs_mode")
 
-    # 3. 停滞検出 (Stagnation) 時の緊急発火リセット重み
+    # 3. 停滞検出時のプロファイル適用（最後に上書き）
     if is_stagnated:
-        w.chain_bonus_per_step = 15.0      # 即時発火を最大優先して盤面をリセット
-        w.potential_score_scale = 0.1      # 将来的な伸ばしを一時諦める
-    else:
-        w.potential_score_scale = 1.0      # 通常時の潜在連鎖評価
+        _apply("stagnated")
+
 
 
 class BeamSearchAgent(BasePlayerAgent):
@@ -190,10 +188,13 @@ class BeamSearchAgent(BasePlayerAgent):
         How many tsumo pieces ahead to simulate (max 3 with standard preview).
     """
 
-    def __init__(self, beam_width: int = 500, look_ahead: int = 3) -> None:
+    def __init__(self,
+                 beam_width: int | None = None,
+                 look_ahead: int | None = None) -> None:
+        loaded = p.load_beam_config(_CONFIG_PATH)
         self._cfg = p.BeamConfig()
-        self._cfg.beam_width = beam_width
-        self._cfg.look_ahead = look_ahead
+        self._cfg.beam_width = beam_width if beam_width is not None else loaded.beam_width
+        self._cfg.look_ahead = look_ahead if look_ahead is not None else loaded.look_ahead
         self._score_history = []
         self._is_solo = False
         _adjust_eval_weights(self._cfg, is_solo=False, is_stagnated=False)
@@ -255,13 +256,14 @@ class HybridBeamOnnxAgent(BaseAIAgent):
     def __init__(
         self,
         model_path: str,
-        beam_width: int = 400,
-        look_ahead: int = 3,
+        beam_width: int | None = None,
+        look_ahead: int | None = None,
     ) -> None:
         super().__init__(model_path)
+        loaded = p.load_beam_config(_CONFIG_PATH)
         self._beam_cfg = p.BeamConfig()
-        self._beam_cfg.beam_width = beam_width
-        self._beam_cfg.look_ahead = look_ahead
+        self._beam_cfg.beam_width = beam_width if beam_width is not None else loaded.beam_width
+        self._beam_cfg.look_ahead = look_ahead if look_ahead is not None else loaded.look_ahead
         self._score_history = []
         self._is_solo = False
         _adjust_eval_weights(self._beam_cfg, is_solo=False, is_stagnated=False)

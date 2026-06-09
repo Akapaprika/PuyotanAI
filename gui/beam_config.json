@@ -1,0 +1,64 @@
+{
+  "_comment": "ビームサーチ評価関数の設定ファイル。eval_weights の値と動的調整プロファイルをここで一元管理します。",
+
+  "beam_width": 500,
+  "look_ahead": 3,
+
+  "eval_weights": {
+    "_comment_potential_score_scale":  "ポテンシャル連鎖スコアへの乗数。高いほど将来の連鎖を重視。",
+    "potential_score_scale":           1.0,
+
+    "_comment_connectivity_bonus":     "同色隣接が2つ以上あるぷよ1個あたりのボーナス。",
+    "connectivity_bonus":              0.4,
+
+    "_comment_isolated_penalty":       "同色隣接ゼロの孤立ぷよ1個あたりのペナルティ（負の値）。",
+    "isolated_penalty":               -0.6,
+
+    "_comment_buried_penalty":         "おじゃまの下に埋もれた色ぷよ1個あたりのペナルティ（おじゃまなし時は自動スキップ）。",
+    "buried_penalty":                 -1.5,
+
+    "_comment_height_variance_penalty": "列高さの分散に掛けるペナルティ係数（負の値）。大きいほど盤面を平坦に保とうとする。",
+    "height_variance_penalty":        -0.3,
+
+    "_comment_death_col_penalty":      "窒息列（3列目）の高さ1行あたりのペナルティ（負の値）。",
+    "death_col_penalty":              -1.0,
+
+    "_comment_chain_bonus_per_step":   "配置で発火した連鎖の報酬乗数。chain^chain_power × chain_bonus_per_step が加算される。",
+    "chain_bonus_per_step":            2.0,
+
+    "_comment_chain_power":            "連鎖報酬の指数。2.0 で二乗スケール（3連鎖 > 1+1+1連鎖）。",
+    "chain_power":                     2.0,
+
+    "_comment_use_fast_potential":     "true: flood-fill 近似（高速）、false: 完全チェーンシミュレーション（高精度）。",
+    "use_fast_potential":              false
+  },
+
+  "profiles": {
+    "_comment": "各プロファイルは eval_weights への差分パッチです。複数を順番に適用できます。",
+
+    "deep_search": {
+      "_comment": "look_ahead >= 4 時に適用。Expectimax で将来が見通せるため、平坦化ペナルティや即発火ボーナスを緩める。",
+      "height_variance_penalty": -0.05,
+      "chain_bonus_per_step":     0.5,
+      "connectivity_bonus":       0.5
+    },
+
+    "vs_mode": {
+      "_comment": "対人戦時に適用。おじゃまによる窒息死を厳格に回避する。",
+      "buried_penalty":    -2.0,
+      "death_col_penalty": -2.5
+    },
+
+    "solo_mode": {
+      "_comment": "ソロ戦時に適用。おじゃまペナルティを無効化し大連鎖構築を優先する。",
+      "buried_penalty":    0.0,
+      "death_col_penalty": -0.1
+    },
+
+    "stagnated": {
+      "_comment": "停滞検出時に適用。即時発火を最優先して盤面をリセットする。",
+      "chain_bonus_per_step":  15.0,
+      "potential_score_scale":  0.1
+    }
+  }
+}

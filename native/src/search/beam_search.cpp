@@ -39,7 +39,7 @@ const std::vector<BeamAction>& getPutActions() noexcept {
             if (a.type == ActionType::Put) {
                 const int rot = static_cast<int>(a.rotation) & 3;
                 const int ax = a.x;
-                const int sx = std::clamp(static_cast<int>(ax + kSubDx[rot]), 0, config::Board::kWidth - 1);
+                const int sx = ax + kSubDx[rot];
                 const int axis_dy = kAxisDy[rot];
                 const int sub_dy = kSubDySimple[rot];
                 const bool is_death_col_related = (ax == config::Rule::kDeathCol || sx == config::Rule::kDeathCol);
@@ -62,7 +62,7 @@ const std::vector<BeamAction>& getZoroActions() noexcept {
 
             const int rot = static_cast<int>(a.rotation) & 3;
             const int ax = a.x;
-            const int sx = std::clamp(static_cast<int>(ax + kSubDx[rot]), 0, config::Board::kWidth - 1);
+            const int sx = ax + kSubDx[rot];
             const int axis_dy = kAxisDy[rot];
             const int sub_dy = kSubDySimple[rot];
             const bool is_death_col_related = (ax == config::Rule::kDeathCol || sx == config::Rule::kDeathCol);

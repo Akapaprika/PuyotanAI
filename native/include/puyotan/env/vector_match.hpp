@@ -19,12 +19,9 @@ namespace puyotan {
 //   [ 0 ..  5]  Up,    col 0-5   (6 actions)
 //   [ 6 .. 10]  Right, col 0-4   (5 actions  sub puyo at col+1)
 //   [11 .. 16]  Down,  col 0-5   (6 actions)
-//   [17 .. 21]  Left,  col 0-4   (5 actions  sub puyo at col-1, but col 0
-//                                  maps sub to col -1 which the engine
-//                                  accepts as a pass-through; see note below)
+//   [17 .. 21]  Left,  col 1-5   (5 actions  sub puyo at col-1)
 //
-// NOTE: Indices 17 (Left, col=0) is geometrically marginal but kept as-is
-// to preserve compatibility with all trained ONNX models.
+// NOTE: All 22 actions are now strictly within board boundaries.
 // -----------------------------------------------------------------------
 inline constexpr int kNumRLActions =
     config::Board::kWidth + (config::Board::kWidth - 1) +
@@ -42,7 +39,9 @@ inline constexpr int kNumRLActions =
         return Action{ActionType::Put, static_cast<int8_t>(idx - w), Rotation::Right};
     if (idx < w + (w - 1) + w)
         return Action{ActionType::Put, static_cast<int8_t>(idx - (2 * w - 1)), Rotation::Down};
-    return Action{ActionType::Put, static_cast<int8_t>(idx - (3 * w - 1)), Rotation::Left};
+    
+    // Left rotation: col 1 to 5 (idx 17..21 maps to col 1..5)
+    return Action{ActionType::Put, static_cast<int8_t>(idx - (3 * w - 1) + 1), Rotation::Left};
 }
 
 /**

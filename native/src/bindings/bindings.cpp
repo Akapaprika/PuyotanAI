@@ -10,6 +10,7 @@
 #include <puyotan/env/vector_match.hpp>
 #include <puyotan/policy/onnx_policy.hpp>
 #include <puyotan/rl/constants.hpp>
+#include <puyotan/search/beam_config_loader.hpp>
 #include <puyotan/rl/ppo_trainer.hpp>
 #include <puyotan/search/beam_evaluator.hpp>
 #include <puyotan/search/beam_search.hpp>
@@ -59,7 +60,8 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("get", &BitBoard::get)
         .def("set", &BitBoard::set)
         .def("clear", &BitBoard::clear)
-        .def("empty", &BitBoard::empty);
+        .def("empty", &BitBoard::empty)
+        .def("popcount", &BitBoard::popcount);
 
     pybind11::class_<Board>(m, "Board")
         .def(pybind11::init<>())
@@ -330,5 +332,29 @@ PYBIND11_MODULE(puyotan_native, m) {
           },
           pybind11::arg("player"), pybind11::arg("tsumo"), pybind11::arg("cfg"),
           "Run beam search from the given player state. Returns tuple of (RL action index, expected score).");
+
+    // =========================================================================
+    // BeamConfig JSON loader (future auto-tuning entry point)
+    // =========================================================================
+    m.def("load_beam_config",
+          [](const std::string& path) {
+              return search::BeamConfigLoader::load(path);
+          },
+          pybind11::arg("path"),
+          "Load BeamConfig from a JSON file. Returns default BeamConfig if the file is not found.");
+
+    m.def("apply_beam_profile",
+          [](search::BeamConfig cfg, const std::string& path, const std::string& profile_name) {
+              return search::BeamConfigLoader::applyProfile(std::move(cfg), path, profile_name);
+          },
+          pybind11::arg("cfg"), pybind11::arg("path"), pybind11::arg("profile_name"),
+          "Apply a named profile patch to a BeamConfig. Re-reads the profiles section from the JSON file.");
+
+    m.def("save_beam_config",
+          [](const std::string& path, const search::BeamConfig& cfg) {
+              search::BeamConfigLoader::save(path, cfg);
+          },
+          pybind11::arg("path"), pybind11::arg("cfg"),
+          "Serialize a BeamConfig back to a JSON file, preserving existing profiles and comments.");
 }
 } // namespace puyotan
