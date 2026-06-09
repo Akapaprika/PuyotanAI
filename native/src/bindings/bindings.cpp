@@ -314,8 +314,7 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("buried_penalty",           &search::BeamEvalWeights::buried_penalty)
         .def_readwrite("height_variance_penalty",  &search::BeamEvalWeights::height_variance_penalty)
         .def_readwrite("death_col_penalty",        &search::BeamEvalWeights::death_col_penalty)
-        .def_readwrite("chain_bonus_per_step",     &search::BeamEvalWeights::chain_bonus_per_step)
-        .def_readwrite("chain_power",              &search::BeamEvalWeights::chain_power)
+        .def_readwrite("immediate_score_scale",    &search::BeamEvalWeights::immediate_score_scale)
         .def_readwrite("use_fast_potential",       &search::BeamEvalWeights::use_fast_potential);
 
     pybind11::class_<search::BeamConfig>(m, "BeamConfig")

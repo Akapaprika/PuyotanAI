@@ -23,11 +23,8 @@
     "_comment_death_col_penalty":      "窒息列（3列目）の高さ1行あたりのペナルティ（負の値）。",
     "death_col_penalty":              -1.0,
 
-    "_comment_chain_bonus_per_step":   "配置で発火した連鎖の報酬乗数。chain^chain_power × chain_bonus_per_step が加算される。",
-    "chain_bonus_per_step":            2.0,
-
-    "_comment_chain_power":            "連鎖報酬の指数。2.0 で二乗スケール（3連鎖 > 1+1+1連鎖）。",
-    "chain_power":                     2.0,
+    "_comment_immediate_score_scale":  "配置で発火した即時連鎖得点に対する乗数。",
+    "immediate_score_scale":           1.0,
 
     "_comment_use_fast_potential":     "true: flood-fill 近似（高速）、false: 完全チェーンシミュレーション（高精度）。",
     "use_fast_potential":              false
@@ -39,7 +36,7 @@
     "deep_search": {
       "_comment": "look_ahead >= 4 時に適用。Expectimax で将来が見通せるため、平坦化ペナルティや即発火ボーナスを緩める。",
       "height_variance_penalty": -0.05,
-      "chain_bonus_per_step":     0.5,
+      "immediate_score_scale":    0.5,
       "connectivity_bonus":       0.5
     },
 
@@ -57,7 +54,7 @@
 
     "stagnated": {
       "_comment": "停滞検出時に適用。即時発火を最優先して盤面をリセットする。",
-      "chain_bonus_per_step":  15.0,
+      "immediate_score_scale":  15.0,
       "potential_score_scale":  0.1
     }
   }

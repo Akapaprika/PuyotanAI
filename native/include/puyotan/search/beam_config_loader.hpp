@@ -126,8 +126,7 @@ class BeamConfigLoader {
         ew["buried_penalty"]          = w.buried_penalty;
         ew["height_variance_penalty"] = w.height_variance_penalty;
         ew["death_col_penalty"]       = w.death_col_penalty;
-        ew["chain_bonus_per_step"]    = w.chain_bonus_per_step;
-        ew["chain_power"]             = w.chain_power;
+        ew["immediate_score_scale"]   = w.immediate_score_scale;
         ew["use_fast_potential"]      = w.use_fast_potential;
 
         std::ofstream ofs(path);
@@ -148,8 +147,7 @@ class BeamConfigLoader {
             else if (key == "buried_penalty"           && val.is_number()) w.buried_penalty           = val.get<float>();
             else if (key == "height_variance_penalty"  && val.is_number()) w.height_variance_penalty  = val.get<float>();
             else if (key == "death_col_penalty"        && val.is_number()) w.death_col_penalty        = val.get<float>();
-            else if (key == "chain_bonus_per_step"     && val.is_number()) w.chain_bonus_per_step     = val.get<float>();
-            else if (key == "chain_power"              && val.is_number()) w.chain_power              = val.get<float>();
+            else if (key == "immediate_score_scale"    && val.is_number()) w.immediate_score_scale    = val.get<float>();
             else if (key == "use_fast_potential"       && val.is_boolean()) w.use_fast_potential      = val.get<bool>();
         }
     }

@@ -30,10 +30,8 @@ struct BeamEvalWeights {
     float height_variance_penalty = -0.3f;
     // Penalty per unit of height in the death column (col 2)
     float death_col_penalty      = -1.0f;
-    // Bonus per immediate chain fired this step (carry-through reward)
-    float chain_bonus_per_step   = 2.0f;
-    // Exponent applied to chain count (rewards big chains super-linearly)
-    float chain_power            = 2.0f;
+    // Scale applied to immediate score achieved this step (carry-through reward)
+    float immediate_score_scale  = 1.0f;
     // Use fast approximate potential calculation (flood-fill).
     // NOTE: Disabling this gives more accurate multi-chain evaluation.
     // Fast mode only counts connected group size and cannot detect multi-step chains.
@@ -75,16 +73,16 @@ class BeamEvaluator {
      *                             Use evaluate<false>() from Expectimax inner loops.
      * @param board   The board to evaluate.
      * @param w       Evaluation weights.
-     * @param chain   Number of chains already fired to reach this state (0 if placement only).
+     * @param immediate_score  Actual score achieved by chain erasure this step.
      */
     template<bool CalculatePotential = true, bool UseFastPotential = false, bool HasOjama = true>
     static float evaluate(const Board& board,
                           const BeamEvalWeights& w,
-                          float chain_bonus) noexcept {
+                          float immediate_score) noexcept {
         float r = 0.0f;
 
-        // --- Immediate chain reward (precomputed, branchless) ---
-        r += chain_bonus;
+        // --- Immediate score reward ---
+        r += immediate_score * w.immediate_score_scale;
 
         // --- Precompute all column heights once ---
         // getColumnHeight uses _mm_popcnt_u32 per call. Caching here avoids

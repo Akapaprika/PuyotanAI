@@ -159,16 +159,9 @@ const TsumoPattern kTsumoPatterns[10] = {
     {3, 3, 1.0f / 16.0f, true}
 };
 
-// Precomputed default chain bonus table for up to 19 chains (20 elements)
-// Calculation: (chain * chain) * 2.0f
-static constexpr float kDefaultChainBonusLut[20] = {
-    0.0f, 2.0f, 8.0f, 18.0f, 32.0f, 50.0f, 72.0f, 98.0f, 128.0f, 162.0f, 200.0f,
-    242.0f, 288.0f, 338.0f, 392.0f, 450.0f, 512.0f, 578.0f, 648.0f, 722.0f
-};
-
 // Evaluate single tsumo for Expectimax (at deep levels)
 template<bool HasOjama>
-inline float evaluateSingleTsumo(const Board& field, const TsumoPattern& pat, const BeamConfig& cfg, const float* chain_bonus_table) noexcept {
+inline float evaluateSingleTsumo(const Board& field, const TsumoPattern& pat, const BeamConfig& cfg) noexcept {
     float max_eval = -1e9f;
     Cell axis = static_cast<Cell>(pat.c1);
     Cell sub = static_cast<Cell>(pat.c2);
@@ -180,8 +173,8 @@ inline float evaluateSingleTsumo(const Board& field, const TsumoPattern& pat, co
         PlaceResult pr = simulatePlacement(field, piece, entry);
         if (pr.dead) continue;
 
-        float chain_bonus = chain_bonus_table[std::min(pr.chain, 19)];
-        float eval = BeamEvaluator::evaluate<false, false, HasOjama>(pr.field, cfg.eval_weights, chain_bonus);
+        float immediate_score = static_cast<float>(pr.score);
+        float eval = BeamEvaluator::evaluate<false, false, HasOjama>(pr.field, cfg.eval_weights, immediate_score);
         max_eval = (eval > max_eval) ? eval : max_eval;
     }
     if (max_eval < -1e8f) {
@@ -192,7 +185,7 @@ inline float evaluateSingleTsumo(const Board& field, const TsumoPattern& pat, co
 
 // Evaluate two steps of invisible tsumo (4th and 5th steps)
 template<bool HasOjama>
-inline float evaluateTwoSteps(const Board& field, const BeamConfig& cfg, const float* chain_bonus_table) noexcept {
+inline float evaluateTwoSteps(const Board& field, const BeamConfig& cfg) noexcept {
     float expected_score_4 = 0.0f;
 
     for (const auto& pat4 : kTsumoPatterns) {
@@ -210,7 +203,7 @@ inline float evaluateTwoSteps(const Board& field, const BeamConfig& cfg, const f
 
             float expected_score_5 = 0.0f;
             for (const auto& pat5 : kTsumoPatterns) {
-                float eval_5 = evaluateSingleTsumo<HasOjama>(pr4.field, pat5, cfg, chain_bonus_table);
+                float eval_5 = evaluateSingleTsumo<HasOjama>(pr4.field, pat5, cfg);
                 expected_score_5 += eval_5 * pat5.weight;
             }
 
@@ -234,8 +227,7 @@ inline float evaluateTwoSteps(const Board& field, const BeamConfig& cfg, const f
 template<bool UseFastPotential, bool HasOjama>
 std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                                      const Tsumo&         tsumo_const,
-                                     const BeamConfig&    cfg,
-                                     const float*         chain_bonus_ptr) noexcept {
+                                     const BeamConfig&    cfg) noexcept {
     // Tsumo::get() is non-const (lazy generation) so we work with a local copy.
     Tsumo tsumo = tsumo_const;
     const int tsumo_base = player.active_next_pos;
@@ -262,7 +254,7 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                     BeamNode& node = current_beam[i];
                     float expected_score = 0.0f;
                     for (const auto& pat : kTsumoPatterns) {
-                        float eval = evaluateSingleTsumo<HasOjama>(node.field, pat, cfg, chain_bonus_ptr);
+                        float eval = evaluateSingleTsumo<HasOjama>(node.field, pat, cfg);
                         expected_score += eval * pat.weight;
                     }
                     node.score = expected_score;
@@ -272,7 +264,7 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                 #pragma omp parallel for num_threads(2) schedule(static)
                 for (int i = 0; i < num_nodes; ++i) {
                     BeamNode& node = current_beam[i];
-                    node.score = evaluateTwoSteps<HasOjama>(node.field, cfg, chain_bonus_ptr);
+                    node.score = evaluateTwoSteps<HasOjama>(node.field, cfg);
                 }
             }
 
@@ -294,8 +286,8 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                 PlaceResult pr = simulatePlacement(node.field, piece, entry);
                 if (pr.dead) continue;
 
-                float chain_bonus = chain_bonus_ptr[std::min(pr.chain, 19)];
-                float eval = BeamEvaluator::evaluate<true, UseFastPotential, HasOjama>(pr.field, cfg.eval_weights, chain_bonus);
+                float immediate_score = static_cast<float>(pr.score);
+                float eval = BeamEvaluator::evaluate<true, UseFastPotential, HasOjama>(pr.field, cfg.eval_weights, immediate_score);
 
                 int first = (depth == 0) ? entry.idx : node.first_action;
                 next_beam.push_back({pr.field, eval, first});
@@ -341,39 +333,19 @@ std::pair<int, float> beamSearch(const PuyotanPlayer& player,
                                  const BeamConfig&    cfg) noexcept {
     // Tsumo::get() is non-const (lazy generation) so we work with a local copy.
     Tsumo tsumo = tsumo_const;
-    const int tsumo_base = player.active_next_pos;
-
-    // Use default static constexpr LUT when parameters are at default (chain_power == 2.0 && chain_bonus_per_step == 2.0)
-    // to bypass startup table generation overhead entirely.
-    const float* chain_bonus_ptr = nullptr;
-    float chain_bonus_table_buf[20]; // 19 chains limit
-
-    if (cfg.eval_weights.chain_power == 2.0f && cfg.eval_weights.chain_bonus_per_step == 2.0f) {
-        chain_bonus_ptr = kDefaultChainBonusLut;
-    } else {
-        chain_bonus_table_buf[0] = 0.0f;
-        for (int chain = 1; chain < 20; ++chain) {
-            float cpow = (cfg.eval_weights.chain_power == 2.0f)
-                ? static_cast<float>(chain * chain)
-                : std::pow(static_cast<float>(chain), cfg.eval_weights.chain_power);
-            chain_bonus_table_buf[chain] = cpow * cfg.eval_weights.chain_bonus_per_step;
-        }
-        chain_bonus_ptr = chain_bonus_table_buf;
-    }
-
     const bool has_ojama = !player.field.getBitboard(Cell::Ojama).empty();
 
     if (cfg.eval_weights.use_fast_potential) {
         if (has_ojama) {
-            return beamSearchImpl<true, true>(player, tsumo_const, cfg, chain_bonus_ptr);
+            return beamSearchImpl<true, true>(player, tsumo_const, cfg);
         } else {
-            return beamSearchImpl<true, false>(player, tsumo_const, cfg, chain_bonus_ptr);
+            return beamSearchImpl<true, false>(player, tsumo_const, cfg);
         }
     } else {
         if (has_ojama) {
-            return beamSearchImpl<false, true>(player, tsumo_const, cfg, chain_bonus_ptr);
+            return beamSearchImpl<false, true>(player, tsumo_const, cfg);
         } else {
-            return beamSearchImpl<false, false>(player, tsumo_const, cfg, chain_bonus_ptr);
+            return beamSearchImpl<false, false>(player, tsumo_const, cfg);
         }
     }
 }
