@@ -51,6 +51,19 @@ target_compile_features(puyotan_search PRIVATE cxx_std_23)
 target_include_directories(puyotan_search PUBLIC include)
 target_link_libraries(puyotan_search PUBLIC puyotan_core OpenMP::OpenMP_CXX)
 
+# Benchmarks (C++ only)
+file(GLOB_RECURSE BENCHMARK_SOURCES
+    src/benchmarks/*.cpp
+)
+add_executable(engine_benchmark src/benchmarks/engine_benchmark.cpp)
+add_executable(beam_search_benchmark src/benchmarks/beam_search_benchmark.cpp)
+target_compile_features(engine_benchmark PRIVATE cxx_std_23)
+target_compile_features(beam_search_benchmark PRIVATE cxx_std_23)
+target_include_directories(engine_benchmark PRIVATE include)
+target_include_directories(beam_search_benchmark PRIVATE include)
+target_link_libraries(engine_benchmark PRIVATE puyotan_core OpenMP::OpenMP_CXX)
+target_link_libraries(beam_search_benchmark PRIVATE puyotan_search OpenMP::OpenMP_CXX)
+
 # 3. ONNX Policy (Depends on Core and ORT)
 file(GLOB_RECURSE POLICY_SOURCES
     src/policy/*.cpp
@@ -73,8 +86,20 @@ target_precompile_headers(puyotan_native PRIVATE include/puyotan/pch.hpp)
 # ---------------------------------------------------------
 # Compile Options (All Targets)
 # ---------------------------------------------------------
-set(ALL_TARGETS puyotan_core puyotan_rl puyotan_policy puyotan_search puyotan_native)
+# FIXED: Included engine_benchmark and beam_search_benchmark into optimize targets
+set(ALL_TARGETS 
+    puyotan_core 
+    puyotan_rl 
+    puyotan_policy 
+    puyotan_search 
+    puyotan_native 
+    engine_benchmark 
+    beam_search_benchmark
+)
+
 if (MSVC)
+string(REPLACE "/Ob2" "/Ob3" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
+
     foreach(T IN LISTS ALL_TARGETS)
         set_property(TARGET ${T} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
         
@@ -82,16 +107,21 @@ if (MSVC)
             /wd4267
             /wd4819
             $<$<CONFIG:Debug>: /Od /Zi /RTC1 /W4 /MP >
-            $<$<CONFIG:Release>: /O2 /arch:AVX2 /Gy /Gw /fp:fast /Oi /DNDEBUG /MP /GL /Ob3 /GS- >
+            # FIXED: Added /Ot (Favor speed over size) to release options
+            $<$<CONFIG:Release>: /O2 /Ot /arch:AVX2 /Gy /Gw /fp:fast /Oi /DNDEBUG /MP /GL /Ob3 /GS- >
         )
         # Enable Link-Time Optimization (LTO / Whole Program Optimization)
         set_property(TARGET ${T} PROPERTY INTERPROCEDURAL_OPTIMIZATION $<$<CONFIG:Release>:TRUE>)
     endforeach()
 
-    target_link_options(puyotan_native PRIVATE
-        $<$<CONFIG:Debug>: /DEBUG >
-        $<$<CONFIG:Release>: /OPT:REF /OPT:ICF /LTCG /INCREMENTAL:NO >
-    )
+    # FIXED: Apply high-performance link optimizations to ALL release executables and pybind modules
+    set(LINK_TARGETS puyotan_native engine_benchmark beam_search_benchmark)
+    foreach(LT IN LISTS LINK_TARGETS)
+        target_link_options(${LT} PRIVATE
+            $<$<CONFIG:Debug>: /DEBUG >
+            $<$<CONFIG:Release>: /OPT:REF /OPT:ICF /LTCG /INCREMENTAL:NO >
+        )
+    endforeach()
 
     # Post-build copy to dist
     file(GLOB TORCH_DLLS "${CMAKE_CURRENT_SOURCE_DIR}/libtorch/lib/*.dll")
@@ -101,5 +131,15 @@ if (MSVC)
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:puyotan_native> ${CMAKE_SOURCE_DIR}/dist/
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ORT_DLL}" ${CMAKE_SOURCE_DIR}/dist/
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${TORCH_DLLS} ${CMAKE_SOURCE_DIR}/dist/
+    )
+
+    add_custom_command(TARGET engine_benchmark POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_SOURCE_DIR}/dist
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:engine_benchmark> ${CMAKE_SOURCE_DIR}/dist/
+    )
+
+    add_custom_command(TARGET beam_search_benchmark POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_SOURCE_DIR}/dist
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:beam_search_benchmark> ${CMAKE_SOURCE_DIR}/dist/
     )
 endif()
