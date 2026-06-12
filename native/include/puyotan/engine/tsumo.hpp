@@ -22,12 +22,8 @@ class Tsumo {
      * @return The axis and sub puyo colors.
      * @note Performance: O(1) ring-buffer access.
      */
-    inline PuyoPiece get(int32_t index) noexcept {
-        if (index >= generated_count_) {
-            generateMore();
-        }
-        // Ring buffer access using bitmask
-        return pool_[static_cast<std::size_t>(index) & (config::Rule::kTsumoPoolSize - 1)];
+    inline PuyoPiece get(int32_t index) const noexcept {
+        return pool_[static_cast<std::size_t>(index) % config::Rule::kTsumoPoolSize];
     }
     void setSeed(uint32_t seed) noexcept;
     uint32_t getSeed() const noexcept {
@@ -36,12 +32,6 @@ class Tsumo {
 
   private:
     uint32_t seed_;
-    int32_t generated_count_ = 0;
     std::array<PuyoPiece, config::Rule::kTsumoPoolSize> pool_;
-
-    static_assert((config::Rule::kTsumoPoolSize & (config::Rule::kTsumoPoolSize - 1)) == 0,
-                  "TsumoPoolSize must be a power of 2 for fast bitmask indexing");
-
-    void generateMore() noexcept;
 };
 } // namespace puyotan

@@ -38,8 +38,9 @@ int PuyotanMatch::getDecisionMask() const noexcept {
     }
     return mask;
 }
-PuyotanMatch::PuyotanMatch(uint32_t seed) noexcept : seed_(seed), tsumo_(seed) {
+PuyotanMatch::PuyotanMatch(uint32_t seed) noexcept : tsumo_(seed) {
     assert(seed != 0u);
+    seed_ = tsumo_.getSeed();
 }
 void PuyotanMatch::start() noexcept {
     assert(status_ == MatchStatus::Ready && "start() should only be called once when match is ready");

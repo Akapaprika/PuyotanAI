@@ -89,7 +89,7 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_static("calculateStepScore", &Scorer::calculateStepScore);
 
     pybind11::class_<Tsumo>(m, "Tsumo")
-        .def(pybind11::init<int32_t>(), pybind11::arg("seed") = 0)
+        .def(pybind11::init<uint32_t>(), pybind11::arg("seed") = 0)
         .def("get", &Tsumo::get)
         .def("setSeed", &Tsumo::setSeed)
         .def_property_readonly("seed", &Tsumo::getSeed);
@@ -136,7 +136,7 @@ PYBIND11_MODULE(puyotan_native, m) {
         .export_values();
 
     pybind11::class_<PuyotanMatch>(m, "PuyotanMatch")
-        .def(pybind11::init<int32_t>(), pybind11::arg("seed") = 0)
+        .def(pybind11::init<uint32_t>(), pybind11::arg("seed") = 0)
         .def("clone", [](const PuyotanMatch& m) { return PuyotanMatch(m); })
         .def_static("runBatch", &PuyotanMatch::runBatch,
                     pybind11::arg("num_games"), pybind11::arg("seed") = 1,

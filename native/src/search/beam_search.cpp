@@ -230,8 +230,7 @@ template<bool UseFastPotential, bool HasOjama>
 std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                                      const Tsumo&         tsumo_const,
                                      const BeamConfig&    cfg) noexcept {
-    // Tsumo::get() is non-const (lazy generation) so we work with a local copy.
-    Tsumo tsumo = tsumo_const;
+    const Tsumo& tsumo = tsumo_const;
     const int tsumo_base = player.active_next_pos;
 
     // -----------------------------------------------------------------------
@@ -371,8 +370,6 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
 std::pair<int, float> beamSearch(const PuyotanPlayer& player,
                                  const Tsumo&         tsumo_const,
                                  const BeamConfig&    cfg) noexcept {
-    // Tsumo::get() is non-const (lazy generation) so we work with a local copy.
-    Tsumo tsumo = tsumo_const;
     const bool has_ojama = !player.field.getBitboard(Cell::Ojama).empty();
 
     if (cfg.eval_weights.use_fast_potential) {

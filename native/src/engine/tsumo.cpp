@@ -8,25 +8,12 @@ Tsumo::Tsumo(uint32_t seed) noexcept {
 }
 
 void Tsumo::setSeed(uint32_t seed) noexcept {
-    // Replace 0 with 1 mathematically to avoid conditional move (CMOV) overhead
-    seed_ = seed + (seed == 0); // XORSHIFT requires non-zero seed
-    generated_count_ = 0;
-    generateMore(); // Initial chunk
-}
-
-void Tsumo::generateMore() noexcept {
-    // Optimization: Since ChunkSize (64) is a power of 2 and a factor of PoolSize (256),
-    // and generated_count_ always starts at 0 and increments by 64,
-    // we never cross the wrap-around boundary within a single generateMore() call.
-    static_assert((config::Rule::kTsumoPoolSize % config::Rule::kTsumoChunkSize) == 0,
-                  "ChunkSize must be a factor of PoolSize for fast contiguous writes");
-
+    // seed can be any positive uint32. XORSHIFT requires non-zero.
+    seed_ = seed + (seed == 0);
     uint32_t s = seed_;
-    const size_t start_idx = static_cast<size_t>(generated_count_) & (config::Rule::kTsumoPoolSize - 1);
-    PuyoPiece* __restrict p = &pool_[start_idx];
     const uint32_t color_mask = config::Rule::kColors - 1;
 
-    for (int i = 0; i < config::Rule::kTsumoChunkSize; ++i) {
+    for (int i = 0; i < config::Rule::kTsumoPoolSize; ++i) {
         // Generate Axis Puyo (XORSHIFT 13, 17, 15)
         s ^= (s << 13);
         s ^= static_cast<uint32_t>(static_cast<int32_t>(s) >> 17);
@@ -42,11 +29,8 @@ void Tsumo::generateMore() noexcept {
         // Precompute dirty flag for O(1) retrieval during simulation
         uint8_t dirty = static_cast<uint8_t>((1u << static_cast<int>(c1)) | (1u << static_cast<int>(c2)));
 
-        // Direct contiguous write without inner-loop masking
-        p[i] = {c1, c2, dirty, 0};
+        pool_[i] = {c1, c2, dirty, 0};
     }
-
     seed_ = s;
-    generated_count_ += config::Rule::kTsumoChunkSize;
 }
 } // namespace puyotan

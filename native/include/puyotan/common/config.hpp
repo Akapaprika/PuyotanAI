@@ -71,7 +71,7 @@ constexpr int kConnectCount = 4; // minimum group size to fire
 constexpr int kColors = 4;       // number of normal puyo colors
 static_assert((kColors & (kColors - 1)) == 0, "kColors must be power of 2 for bitmask optimization in Tsumo");
 constexpr int kPuyosPerPiece = 2;                   // number of puyos in each falling piece (tsumo)
-constexpr int kTsumoPoolSize = 256;                 // Ring buffer size (2^8)
+constexpr int kTsumoPoolSize = 1000;                // Ring buffer size (1000)
 constexpr int kTsumoChunkSize = 64;                 // increment size (2^6)
 constexpr int kDeathCol = 2;                        // column index for death check (1-indexed: 3)
 constexpr int kDeathRow = 11;                       // row index for death check (1-indexed: 12)
