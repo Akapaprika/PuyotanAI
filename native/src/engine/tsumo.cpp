@@ -29,13 +29,13 @@ void Tsumo::generateMore() noexcept {
     for (int i = 0; i < config::Rule::kTsumoChunkSize; ++i) {
         // Generate Axis Puyo (XORSHIFT 13, 17, 15)
         s ^= (s << 13);
-        s ^= (s >> 17);
+        s ^= static_cast<uint32_t>(static_cast<int32_t>(s) >> 17);
         s ^= (s << 15);
         Cell c1 = static_cast<Cell>(s & color_mask);
 
         // Generate Sub Puyo
         s ^= (s << 13);
-        s ^= (s >> 17);
+        s ^= static_cast<uint32_t>(static_cast<int32_t>(s) >> 17);
         s ^= (s << 15);
         Cell c2 = static_cast<Cell>(s & color_mask);
 
