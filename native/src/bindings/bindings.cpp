@@ -170,56 +170,50 @@ PYBIND11_MODULE(puyotan_native, m) {
     // =========================================================================
     // Beam Search
     // =========================================================================
-    pybind11::class_<search::BeamEvalWeights>(m, "BeamEvalWeights")
-        .def(pybind11::init<>())
-        .def_readwrite("potential_score_scale",   &search::BeamEvalWeights::potential_score_scale)
-        .def_readwrite("connectivity_bonus",       &search::BeamEvalWeights::connectivity_bonus)
-        .def_readwrite("isolated_penalty",         &search::BeamEvalWeights::isolated_penalty)
-        .def_readwrite("buried_penalty",           &search::BeamEvalWeights::buried_penalty)
-        .def_readwrite("height_variance_penalty",  &search::BeamEvalWeights::height_variance_penalty)
-        .def_readwrite("death_col_penalty",        &search::BeamEvalWeights::death_col_penalty)
-        .def_readwrite("fire_bias",                &search::BeamEvalWeights::fire_bias)
-        .def_readwrite("edge_column_bonus",        &search::BeamEvalWeights::edge_column_bonus)
-        .def_readwrite("edge_column_threshold",    &search::BeamEvalWeights::edge_column_threshold)
-        .def_readwrite("use_fast_potential",       &search::BeamEvalWeights::use_fast_potential);
-
-    pybind11::class_<search::BeamConfig>(m, "BeamConfig")
-        .def(pybind11::init<>())
-        .def_readwrite("beam_width",   &search::BeamConfig::beam_width)
-        .def_readwrite("look_ahead",   &search::BeamConfig::look_ahead)
-        .def_readwrite("eval_weights", &search::BeamConfig::eval_weights);
-
     m.def("beam_search_action",
           [](const PuyotanPlayer& player, const Tsumo& tsumo,
-             const search::BeamConfig& cfg) {
+             const std::string& config_path,
+             int beam_width,
+             int look_ahead,
+             bool is_solo,
+             bool is_stagnated) {
               pybind11::gil_scoped_release release;
+
+              // Load configuration with static in-memory caching
+              search::BeamConfig cfg = search::BeamConfigLoader::load(config_path);
+
+              // Override parameters if specified
+              if (beam_width > 0) {
+                  cfg.beam_width = beam_width;
+              }
+              if (look_ahead > 0) {
+                  cfg.look_ahead = look_ahead;
+              }
+
+              // Apply profiles
+              if (cfg.look_ahead >= 4) {
+                  cfg = search::BeamConfigLoader::applyProfile(std::move(cfg), config_path, "deep_search");
+              }
+
+              if (is_solo) {
+                  cfg = search::BeamConfigLoader::applyProfile(std::move(cfg), config_path, "solo_mode");
+              } else {
+                  cfg = search::BeamConfigLoader::applyProfile(std::move(cfg), config_path, "vs_mode");
+              }
+
+              if (is_stagnated) {
+                  cfg = search::BeamConfigLoader::applyProfile(std::move(cfg), config_path, "stagnated");
+              }
+
               return search::beamSearch(player, tsumo, cfg);
           },
-          pybind11::arg("player"), pybind11::arg("tsumo"), pybind11::arg("cfg"),
-          "Run beam search from the given player state. Returns tuple of (RL action index, expected score).");
-
-    // =========================================================================
-    // BeamConfig JSON loader (future auto-tuning entry point)
-    // =========================================================================
-    m.def("load_beam_config",
-          [](const std::string& path) {
-              return search::BeamConfigLoader::load(path);
-          },
-          pybind11::arg("path"),
-          "Load BeamConfig from a JSON file. Returns default BeamConfig if the file is not found.");
-
-    m.def("apply_beam_profile",
-          [](search::BeamConfig cfg, const std::string& path, const std::string& profile_name) {
-              return search::BeamConfigLoader::applyProfile(std::move(cfg), path, profile_name);
-          },
-          pybind11::arg("cfg"), pybind11::arg("path"), pybind11::arg("profile_name"),
-          "Apply a named profile patch to a BeamConfig. Re-reads the profiles section from the JSON file.");
-
-    m.def("save_beam_config",
-          [](const std::string& path, const search::BeamConfig& cfg) {
-              search::BeamConfigLoader::save(path, cfg);
-          },
-          pybind11::arg("path"), pybind11::arg("cfg"),
-          "Serialize a BeamConfig back to a JSON file, preserving existing profiles and comments.");
+          pybind11::arg("player"),
+          pybind11::arg("tsumo"),
+          pybind11::arg("config_path"),
+          pybind11::arg("beam_width") = -1,
+          pybind11::arg("look_ahead") = -1,
+          pybind11::arg("is_solo") = false,
+          pybind11::arg("is_stagnated") = false,
+          "Run beam search internally managing config loading and profiling. Returns tuple of (RL action index, expected score).");
 }
 } // namespace puyotan

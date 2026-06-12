@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include <string>
+#include <filesystem>
 #include <external/nlohmann/json.hpp>
 #include <puyotan/search/beam_search.hpp>
 
@@ -9,39 +10,44 @@ namespace puyotan::search {
 
 /**
  * @class BeamConfigLoader
- * @brief Loads, applies profiles to, and saves BeamConfig from/to a JSON file.
- *
- * The JSON schema mirrors gui/beam_config.json:
- *   - "beam_width"    : int
- *   - "look_ahead"    : int
- *   - "eval_weights"  : object matching BeamEvalWeights fields
- *   - "profiles"      : object of named patch objects (keys starting with "_comment" are ignored)
- *
- * Designed to be the single source of truth for evaluation parameters,
- * enabling future automatic tuning loops entirely within C++.
+ * @brief Loads and patches BeamConfig from/to a JSON file with static in-memory caching.
  */
 class BeamConfigLoader {
+  private:
+    static inline nlohmann::json s_cached_json;
+    static inline std::filesystem::file_time_type s_last_write_time;
+    static inline std::string s_cached_path;
+    static inline bool s_has_cache = false;
+
+    static nlohmann::json getJson(const std::string& path) {
+        try {
+            auto current_time = std::filesystem::last_write_time(path);
+            if (s_has_cache && path == s_cached_path && current_time == s_last_write_time) {
+                return s_cached_json;
+            }
+            std::ifstream ifs(path);
+            if (ifs.is_open()) {
+                nlohmann::json j;
+                ifs >> j;
+                s_cached_json = j;
+                s_last_write_time = current_time;
+                s_cached_path = path;
+                s_has_cache = true;
+                return j;
+            }
+        } catch (...) {
+            if (s_has_cache && path == s_cached_path) {
+                return s_cached_json;
+            }
+        }
+        return nlohmann::json::object();
+    }
+
   public:
-    /**
-     * @brief Load a BeamConfig from a JSON file.
-     *
-     * If the file cannot be opened or parsed, returns a default-constructed
-     * BeamConfig (same as declaring `BeamConfig cfg;`).
-     *
-     * @param path  Absolute or relative path to the JSON config file.
-     * @return      Populated BeamConfig.
-     */
     static BeamConfig load(const std::string& path) {
         BeamConfig cfg{};
-        std::ifstream ifs(path);
-        if (!ifs.is_open()) return cfg;
-
-        nlohmann::json j;
-        try {
-            ifs >> j;
-        } catch (...) {
-            return cfg;
-        }
+        nlohmann::json j = getJson(path);
+        if (j.is_discarded() || j.empty()) return cfg;
 
         if (j.contains("beam_width") && j["beam_width"].is_number_integer())
             cfg.beam_width = j["beam_width"].get<int>();
@@ -55,30 +61,11 @@ class BeamConfigLoader {
         return cfg;
     }
 
-    /**
-     * @brief Apply a named profile patch to an existing BeamConfig.
-     *
-     * The profile must be defined under the "profiles" key in the same JSON file
-     * that was used to produce `cfg`. If the profile is not found, `cfg` is
-     * returned unchanged.
-     *
-     * @param cfg           Config to patch (value-copied).
-     * @param path          Path to the JSON config file (to re-read profiles).
-     * @param profile_name  Name of the profile to apply.
-     * @return              Patched BeamConfig.
-     */
     static BeamConfig applyProfile(BeamConfig cfg,
                                    const std::string& path,
                                    const std::string& profile_name) {
-        std::ifstream ifs(path);
-        if (!ifs.is_open()) return cfg;
-
-        nlohmann::json j;
-        try {
-            ifs >> j;
-        } catch (...) {
-            return cfg;
-        }
+        nlohmann::json j = getJson(path);
+        if (j.is_discarded() || j.empty()) return cfg;
 
         if (!j.contains("profiles") || !j["profiles"].is_object()) return cfg;
         const auto& profiles = j["profiles"];
@@ -89,30 +76,10 @@ class BeamConfigLoader {
         return cfg;
     }
 
-    /**
-     * @brief Save a BeamConfig back to a JSON file.
-     *
-     * Writes only the scalar fields (beam_width, look_ahead, eval_weights).
-     * Existing "profiles" and "_comment" keys in the file are preserved if the
-     * file already exists; otherwise a minimal JSON is written.
-     *
-     * Intended for use by future automatic tuning features that want to persist
-     * updated weights without discarding user-authored profiles.
-     *
-     * @param path  Path to write.
-     * @param cfg   Config to serialize.
-     */
     static void save(const std::string& path, const BeamConfig& cfg) {
-        nlohmann::json j;
-
-        // Try to preserve existing content (profiles, comments, etc.)
-        {
-            std::ifstream ifs(path);
-            if (ifs.is_open()) {
-                try { ifs >> j; } catch (...) { j = nlohmann::json::object(); }
-            } else {
-                j = nlohmann::json::object();
-            }
+        nlohmann::json j = getJson(path);
+        if (j.empty() || j.is_discarded()) {
+            j = nlohmann::json::object();
         }
 
         j["beam_width"]  = cfg.beam_width;
@@ -133,13 +100,18 @@ class BeamConfigLoader {
 
         std::ofstream ofs(path);
         ofs << j.dump(2);
+
+        try {
+            s_cached_json = j;
+            s_last_write_time = std::filesystem::last_write_time(path);
+            s_cached_path = path;
+            s_has_cache = true;
+        } catch (...) {
+            s_has_cache = false;
+        }
     }
 
   private:
-    /**
-     * @brief Apply key-value pairs from a JSON object onto a BeamEvalWeights.
-     *        Keys starting with "_comment" are silently ignored.
-     */
     static void applyPatch(BeamEvalWeights& w, const nlohmann::json& patch) {
         for (auto& [key, val] : patch.items()) {
             if (key.starts_with("_comment")) continue;

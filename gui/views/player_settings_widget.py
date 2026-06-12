@@ -39,13 +39,12 @@ class PlayerSettingsWidget(QWidget):
     def __init__(self, player_id: int, allow_empty: bool = True, parent=None):
         super().__init__(parent)
         self.player_id = player_id
-        self._model_path: str | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
-        # Row 1: Label + Combo + Browse button
+        # Row 1: Label + Combo
         row1 = QHBoxLayout()
         row1.setSpacing(6)
 
@@ -60,24 +59,8 @@ class PlayerSettingsWidget(QWidget):
         self._combo.currentIndexChanged.connect(self._on_mode_changed)
         row1.addWidget(self._combo)
 
-        self._browse_btn = QPushButton("Browse")
-        self._browse_btn.setFixedWidth(65)
-        self._browse_btn.setStyleSheet("font-size: 11px;")
-        self._browse_btn.setVisible(False)
-        self._browse_btn.clicked.connect(self._on_browse)
-        row1.addWidget(self._browse_btn)
-
         row1.addStretch()
         layout.addLayout(row1)
-
-        # Row 2: selected model path (hidden unless AI + path chosen)
-        self._path_label = QLabel("")
-        self._path_label.setVisible(False)
-        self._path_label.setStyleSheet(
-            "font-size: 10px; color: #64748b; padding-left: 28px;"
-        )
-        self._path_label.setWordWrap(True)
-        layout.addWidget(self._path_label)
 
         # Row 3: Beam Search settings (Width, Depth)
         self._beam_settings_widget = QWidget()

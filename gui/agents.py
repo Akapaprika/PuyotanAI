@@ -18,7 +18,7 @@ import puyotan_native as p
 # ---------------------------------------------------------------------------
 # beam_config.json のパス（C++ 側に渡すためだけに保持）
 # ---------------------------------------------------------------------------
-_CONFIG_PATH = str(Path(__file__).parent / "beam_config.json")
+_CONFIG_PATH = str(Path(__file__).parent.parent / "native" / "resources" / "beam_config.json")
 
 
 class BasePlayerAgent(ABC):
@@ -88,61 +88,25 @@ class EmptyPlayerAgent(BasePlayerAgent):
 # -----------------------------------------------------------# ---------------------------------------------------------------------------
 # Beam Search
 # ---------------------------------------------------------------------------
-def _adjust_eval_weights(cfg, is_solo: bool, is_stagnated: bool) -> None:
-    """C++ BeamConfigLoader 経由で JSON を読み込み、プロファイルを差分適用する。"""
-    # ベース値を JSON から C++ でロード
-    loaded = p.load_beam_config(_CONFIG_PATH)
-    cfg.eval_weights = loaded.eval_weights
-
-    # apply_beam_profile は BeamConfig を値渡しで返すため、
-    # 返り値の eval_weights を元の cfg に書き戻す。
-    def _apply(profile_name: str) -> None:
-        patched = p.apply_beam_profile(cfg, _CONFIG_PATH, profile_name)
-        cfg.eval_weights = patched.eval_weights
-
-    # 1. 探索の深さに応じたプロファイル適用
-    if cfg.look_ahead >= 4:
-        _apply("deep_search")
-
-    # 2. ゲームモードに応じたプロファイル適用
-    if is_solo:
-        _apply("solo_mode")
-    else:
-        _apply("vs_mode")
-
-    # 3. 停滞検出時のプロファイル適用（最後に上書き）
-    if is_stagnated:
-        _apply("stagnated")
-
-
-
 class BeamSearchAgent(BasePlayerAgent):
     """
     Pure beam search agent — no neural network required.
 
-    Expands all 22 placements for each of the next `look_ahead` tsumo pieces,
+    Expands all placements for each of the next `look_ahead` tsumo pieces,
     retains the top `beam_width` boards at each depth, and returns the action
     leading to the highest-evaluated leaf.
 
-    Parameters
-    ----------
-    beam_width : int
-        Number of top candidate boards kept at every depth level.
-        Higher = stronger but slower. 300-500 is typically fast enough.
-    look_ahead : int
-        How many tsumo pieces ahead to simulate (max 3 with standard preview).
+    All JSON parsing, static caching, and profile overrides (such as solo_mode,
+    vs_mode, deep_search, and stagnated) are managed entirely inside C++.
     """
 
     def __init__(self,
                  beam_width: int | None = None,
                  look_ahead: int | None = None) -> None:
-        loaded = p.load_beam_config(_CONFIG_PATH)
-        self._cfg = p.BeamConfig()
-        self._cfg.beam_width = beam_width if beam_width is not None else loaded.beam_width
-        self._cfg.look_ahead = look_ahead if look_ahead is not None else loaded.look_ahead
+        self._beam_width = beam_width
+        self._look_ahead = look_ahead
         self._score_history = []
         self._is_solo = False
-        _adjust_eval_weights(self._cfg, is_solo=False, is_stagnated=False)
 
     def adjust_for_mode(self, is_solo: bool) -> None:
         self._is_solo = is_solo
@@ -163,11 +127,13 @@ class BeamSearchAgent(BasePlayerAgent):
             if growth <= 0.5:
                 is_stagnated = True
 
-        # 重みを動的調整
-        _adjust_eval_weights(self._cfg, self._is_solo, is_stagnated)
+        width = self._beam_width if self._beam_width is not None else -1
+        depth = self._look_ahead if self._look_ahead is not None else -1
 
-        # 探索実行 (タプル (action_idx, expected_score) が返る)
-        idx, expected_score = p.beam_search_action(player, tsumo, self._cfg)
+        # C++側で設定ファイルをキャッシュ/ロードし、かつプロファイル(solo/vs/stagnated)を動的に適用
+        idx, expected_score = p.beam_search_action(
+            player, tsumo, _CONFIG_PATH, width, depth, self._is_solo, is_stagnated
+        )
 
         # スコア履歴を更新 (最大10手分保持)
         self._score_history.append(expected_score)
