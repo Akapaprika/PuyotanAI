@@ -180,13 +180,15 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Slots
     # ------------------------------------------------------------------
-    def _on_start(self, agents: list) -> None:
+    def _on_start(self, agents: list, seed: int) -> None:
         """Commit agent choices, configure panels, and begin the match."""
         for pid, agent in enumerate(agents):
             self.vm.set_agent(pid, agent)
             is_human = isinstance(agent, HumanPlayerAgent)
             self._panels[pid].set_human_controlled(is_human)
 
+        self.vm.model.seed = seed
+        self._status_bar.set_seed(seed)
         self.vm.restart()
         self._stack.setCurrentIndex(self._PAGE_GAME)
         self._timer.start()
