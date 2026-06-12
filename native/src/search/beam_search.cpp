@@ -137,90 +137,6 @@ PlaceResult simulatePlacement(const Board& src,
     return res;
 }
 
-struct TsumoPattern {
-    int c1;
-    int c2;
-    float weight;
-    bool is_zoro;
-};
-
-// 10 unique combinations of tsumo colors (4 colors)
-const TsumoPattern kTsumoPatterns[10] = {
-    {0, 0, 1.0f / 16.0f, true},
-    {0, 1, 2.0f / 16.0f, false},
-    {0, 2, 2.0f / 16.0f, false},
-    {0, 3, 2.0f / 16.0f, false},
-    {1, 1, 1.0f / 16.0f, true},
-    {1, 2, 2.0f / 16.0f, false},
-    {1, 3, 2.0f / 16.0f, false},
-    {2, 2, 1.0f / 16.0f, true},
-    {2, 3, 2.0f / 16.0f, false},
-    {3, 3, 1.0f / 16.0f, true}
-};
-
-// Evaluate single tsumo for Expectimax (at deep levels)
-template<bool HasOjama>
-inline float evaluateSingleTsumo(const Board& field, const TsumoPattern& pat, const BeamConfig& cfg) noexcept {
-    float max_eval = -1e9f;
-    Cell axis = static_cast<Cell>(pat.c1);
-    Cell sub = static_cast<Cell>(pat.c2);
-    uint8_t dirty = (1u << pat.c1) | (1u << pat.c2);
-    PuyoPiece piece{axis, sub, dirty, 0};
-
-    const auto& actions = pat.is_zoro ? getZoroActions() : getPutActions();
-    for (const auto& entry : actions) {
-        PlaceResult pr = simulatePlacement(field, piece, entry);
-        if (pr.dead) continue;
-
-        // Add the immediate chain score of the placement to the evaluation
-        float eval = BeamEvaluator::evaluate<false, false, HasOjama>(pr.field, cfg.eval_weights) +
-                     static_cast<float>(pr.score) * cfg.eval_weights.potential_score_scale;
-        max_eval = (eval > max_eval) ? eval : max_eval;
-    }
-    if (max_eval < -1e8f) {
-        max_eval = -10000.0f;
-    }
-    return max_eval;
-}
-
-// Evaluate two steps of invisible tsumo (4th and 5th steps)
-template<bool HasOjama>
-inline float evaluateTwoSteps(const Board& field, const BeamConfig& cfg) noexcept {
-    float expected_score_4 = 0.0f;
-
-    for (const auto& pat4 : kTsumoPatterns) {
-        Cell axis4 = static_cast<Cell>(pat4.c1);
-        Cell sub4 = static_cast<Cell>(pat4.c2);
-        uint8_t dirty4 = (1u << pat4.c1) | (1u << pat4.c2);
-        PuyoPiece piece4{axis4, sub4, dirty4, 0};
-
-        float max_eval_4 = -1e9f;
-
-        const auto& actions4 = pat4.is_zoro ? getZoroActions() : getPutActions();
-        for (const auto& entry4 : actions4) {
-            PlaceResult pr4 = simulatePlacement(field, piece4, entry4);
-            if (pr4.dead) continue;
-
-            float expected_score_5 = 0.0f;
-            for (const auto& pat5 : kTsumoPatterns) {
-                float eval_5 = evaluateSingleTsumo<HasOjama>(pr4.field, pat5, cfg);
-                expected_score_5 += eval_5 * pat5.weight;
-            }
-
-            // Include the immediate chain score of the 4th step placement in the evaluation
-            float eval_4 = expected_score_5 + static_cast<float>(pr4.score) * cfg.eval_weights.potential_score_scale;
-            max_eval_4 = (eval_4 > max_eval_4) ? eval_4 : max_eval_4;
-        }
-
-        if (max_eval_4 < -1e8f) {
-            max_eval_4 = -10000.0f;
-        }
-        expected_score_4 += max_eval_4 * pat4.weight;
-    }
-
-    return expected_score_4;
-}
-
 } // anonymous namespace
 
 // ---------------------------------------------------------------------------
@@ -266,39 +182,6 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
     current_beam.push_back({player.field, 0.0f, 0.0f, -1});
 
     for (int depth = 0; depth < cfg.look_ahead; ++depth) {
-        if (depth == 3) {
-            // Invisible steps starting from 4th (depth=3)
-            const int num_nodes = static_cast<int>(current_beam.size());
-
-            if (cfg.look_ahead == 4) {
-                // 1-step Expectimax (4th step only)
-                #pragma omp parallel for num_threads(2) schedule(static)
-                for (int i = 0; i < num_nodes; ++i) {
-                    BeamNode& node = current_beam[i];
-                    float expected_score = 0.0f;
-                    for (const auto& pat : kTsumoPatterns) {
-                        float eval = evaluateSingleTsumo<HasOjama>(node.field, pat, cfg);
-                        expected_score += eval * pat.weight;
-                    }
-                    node.score = node.accum_score * cfg.eval_weights.potential_score_scale + expected_score;
-                }
-            } else {
-                // 2-step Expectimax (4th & 5th steps)
-                #pragma omp parallel for num_threads(2) schedule(static)
-                for (int i = 0; i < num_nodes; ++i) {
-                    BeamNode& node = current_beam[i];
-                    node.score = node.accum_score * cfg.eval_weights.potential_score_scale + evaluateTwoSteps<HasOjama>(node.field, cfg);
-                }
-            }
-
-            // Sort descending by score
-            std::sort(
-                current_beam.begin(),
-                current_beam.end(),
-                [](const BeamNode& a, const BeamNode& b) { return a.score > b.score; });
-            break; // We have completed the search
-        }
-
         PuyoPiece piece = tsumo.get(tsumo_base + depth);
         const bool is_zoro = (piece.axis == piece.sub);
         next_beam.clear();

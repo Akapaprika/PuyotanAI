@@ -69,13 +69,6 @@ int estimateNodesProcessed(const BeamConfig& cfg) {
         nodes += expanded;
         current_width = std::min(expanded, cfg.beam_width);
     }
-    if (cfg.look_ahead >= 4) {
-        nodes += current_width * 10 * actions_per_depth; // 10 tsumo patterns
-        if (cfg.look_ahead >= 5) {
-            nodes += current_width * 10 * 10 *
-                     actions_per_depth; // 2-step expectimax
-        }
-    }
     return nodes;
 }
 
