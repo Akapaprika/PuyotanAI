@@ -192,7 +192,11 @@ void PuyotanMatch::stepNextFrame() noexcept {
             }
             // 5. Tsumo and frame transition: Otherwise, pull the next piece (unless passing)
             else if (p.current_action.action.type != ActionType::Pass) {
-                ++(p.active_next_pos);
+                if (p.active_next_pos == 999) [[unlikely]] {
+                    p.active_next_pos = 0;
+                } else {
+                    ++(p.active_next_pos);
+                }
             }
         }
         // Advance actions: current = next, and clear next for the next step.

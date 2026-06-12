@@ -23,7 +23,11 @@ class Tsumo {
      * @note Performance: O(1) ring-buffer access.
      */
     inline PuyoPiece get(int32_t index) const noexcept {
-        return pool_[static_cast<std::size_t>(index) % config::Rule::kTsumoPoolSize];
+        uint32_t idx = static_cast<uint32_t>(index);
+        if (idx >= 1000) [[unlikely]] {
+            idx -= 1000;
+        }
+        return pool_[idx];
     }
     void setSeed(uint32_t seed) noexcept;
     uint32_t getSeed() const noexcept {
