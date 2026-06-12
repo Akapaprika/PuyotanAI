@@ -78,10 +78,10 @@ class SetupWidget(QWidget):
         seed_lbl.setStyleSheet("font-size: 14px; font-weight: bold; color: #94a3b8;")
         seed_row.addWidget(seed_lbl)
 
-        # Use QDoubleSpinBox with 0 decimals to support full 32-bit unsigned integers (up to 4294967295)
+        # Use QDoubleSpinBox with 0 decimals to support full 31-bit signed integers (up to 2147483647)
         self._seed_spin = QDoubleSpinBox()
         self._seed_spin.setDecimals(0)
-        self._seed_spin.setRange(1, 4294967295)
+        self._seed_spin.setRange(1, 2147483647)
         self._seed_spin.setValue(1)
         self._seed_spin.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
         self._seed_spin.setFixedWidth(150)
@@ -130,7 +130,7 @@ class SetupWidget(QWidget):
         self._agents[pid] = agent
 
     def _on_random_seed(self) -> None:
-        r = random.randint(1, 4294967295)
+        r = random.randint(1, 2147483647)
         self._seed_spin.setValue(float(r))
 
     def _on_start(self) -> None:

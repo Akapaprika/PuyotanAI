@@ -51,7 +51,7 @@ class StatusBarWidget(QWidget):
         seed_col.addWidget(seed_lbl)
         self._seed_spin = QDoubleSpinBox()
         self._seed_spin.setDecimals(0)
-        self._seed_spin.setRange(1, 4294967295)
+        self._seed_spin.setRange(1, 2147483647)
         self._seed_spin.setValue(initial_seed)
         self._seed_spin.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
         self._seed_spin.setStyleSheet("font-size: 11px;")
