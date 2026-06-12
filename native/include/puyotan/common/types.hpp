@@ -3,6 +3,8 @@
 #include <array>
 #include <cstdint>
 
+#include <puyotan/common/config.hpp>
+
 namespace puyotan {
 /**
  * @enum Cell
@@ -102,4 +104,26 @@ inline constexpr std::array<int8_t, 4> kSubDy = {1, 0, -1, 0};
  * @brief Simplified Y-axis offset for Sub puyo (legacy/simple placement rules).
  */
 inline constexpr std::array<int8_t, 4> kSubDySimple = {1, 0, 0, 0};
+
+// Maps a flat action index [0, kNumRLActions) to a concrete (column, rotation) pair.
+inline constexpr int kNumRLActions =
+    config::Board::kWidth + (config::Board::kWidth - 1) +
+    config::Board::kWidth + (config::Board::kWidth - 1); // = 22
+
+/// Convert a flat RL action index to a concrete Action.
+/// Returns ActionType::Pass for out-of-range indices.
+[[nodiscard]] inline Action getRLAction(int idx) noexcept {
+    constexpr int w = config::Board::kWidth;
+    if (idx < 0 || idx >= kNumRLActions)
+        return Action{ActionType::Pass};
+    if (idx < w)
+        return Action{ActionType::Put, static_cast<int8_t>(idx), Rotation::Up};
+    if (idx < w + (w - 1))
+        return Action{ActionType::Put, static_cast<int8_t>(idx - w), Rotation::Right};
+    if (idx < w + (w - 1) + w)
+        return Action{ActionType::Put, static_cast<int8_t>(idx - (2 * w - 1)), Rotation::Down};
+    
+    // Left rotation: col 1 to 5 (idx 17..21 maps to col 1..5)
+    return Action{ActionType::Put, static_cast<int8_t>(idx - (3 * w - 1) + 1), Rotation::Left};
+}
 } // namespace puyotan

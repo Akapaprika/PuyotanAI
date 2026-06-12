@@ -6,19 +6,13 @@
 #include <puyotan/engine/match.hpp>
 #include <puyotan/engine/scorer.hpp>
 #include <puyotan/engine/tsumo.hpp>
-#include <puyotan/env/observation.hpp>
-#include <puyotan/env/vector_match.hpp>
-#include <puyotan/policy/onnx_policy.hpp>
-#include <puyotan/rl/constants.hpp>
 #include <puyotan/search/beam_config_loader.hpp>
-#include <puyotan/rl/ppo_trainer.hpp>
 #include <puyotan/search/beam_evaluator.hpp>
 #include <puyotan/search/beam_search.hpp>
 #include <map>
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include <torch/torch.h>
 
 namespace puyotan {
 PYBIND11_MODULE(puyotan_native, m) {
@@ -172,137 +166,7 @@ PYBIND11_MODULE(puyotan_native, m) {
           "Convert a flat RL action index to an Action (col, rotation). "
           "Returns Pass action for out-of-range indices.");
 
-    m.def("build_observation", [](const PuyotanMatch& match) {
-            constexpr std::size_t N = ObservationBuilder::kBytesPerObservation;
-            auto arr = pybind11::array_t<uint8_t>(N);
-            ObservationBuilder::buildObservation(match, static_cast<uint8_t*>(arr.mutable_data()));
-            return arr; }, pybind11::arg("match"));
 
-    pybind11::class_<PuyotanVectorMatch>(m, "PuyotanVectorMatch")
-        .def(pybind11::init<int, int32_t>(),
-             pybind11::arg("num_matches"), pybind11::arg("base_seed") = 0)
-        .def("reset", &PuyotanVectorMatch::reset, pybind11::arg("id") = -1,
-             pybind11::call_guard<pybind11::gil_scoped_release>())
-        .def("stepUntilDecision", &PuyotanVectorMatch::stepUntilDecision,
-             pybind11::call_guard<pybind11::gil_scoped_release>())
-        .def("setActions", &PuyotanVectorMatch::setActions,
-             pybind11::arg("match_indices"), pybind11::arg("player_ids"), pybind11::arg("actions"))
-        .def("getMatch", static_cast<PuyotanMatch& (PuyotanVectorMatch::*)(int)>(&PuyotanVectorMatch::getMatch),
-             pybind11::return_value_policy::reference_internal)
-        .def_property_readonly("size", &PuyotanVectorMatch::size)
-        .def_readwrite("reward_calc", &PuyotanVectorMatch::reward_calc)
-        .def("setMaxEpisodeSteps", &PuyotanVectorMatch::setMaxEpisodeSteps, pybind11::arg("n"),
-             "Set max steps per episode (0 = unlimited). Episodes exceeding this are force-reset with done=true.")
-        .def("getMaxEpisodeSteps", &PuyotanVectorMatch::getMaxEpisodeSteps);
-
-    // =========================================================================
-    // Reward system
-    // =========================================================================
-    pybind11::class_<RewardWeights::Match>(m, "MatchWeights")
-        .def_readwrite("win", &RewardWeights::Match::win)
-        .def_readwrite("loss", &RewardWeights::Match::loss)
-        .def_readwrite("draw", &RewardWeights::Match::draw);
-
-    pybind11::class_<RewardWeights::Turn>(m, "TurnWeights")
-        .def_readwrite("step_penalty", &RewardWeights::Turn::step_penalty);
-
-    pybind11::class_<RewardWeights::Performance>(m, "PerformanceWeights")
-        .def_readwrite("score_scale", &RewardWeights::Performance::score_scale)
-        .def_readwrite("chain_scale", &RewardWeights::Performance::chain_scale)
-        .def_readwrite("chain_power", &RewardWeights::Performance::chain_power)
-        .def_readwrite("min_chain_threshold", &RewardWeights::Performance::min_chain_threshold)
-        .def_readwrite("premature_chain_penalty", &RewardWeights::Performance::premature_chain_penalty)
-        .def_readwrite("all_clear_bonus", &RewardWeights::Performance::all_clear_bonus)
-        .def_readwrite("erasure_count_scale", &RewardWeights::Performance::erasure_count_scale)
-        .def_readwrite("ojama_sent_scale", &RewardWeights::Performance::ojama_sent_scale);
-
-    pybind11::class_<RewardWeights::Board>(m, "BoardWeights")
-        .def_readwrite("puyo_count_penalty", &RewardWeights::Board::puyo_count_penalty)
-        .def_readwrite("connectivity_bonus", &RewardWeights::Board::connectivity_bonus)
-        .def_readwrite("isolated_puyo_penalty", &RewardWeights::Board::isolated_puyo_penalty)
-        .def_readwrite("near_group_bonus", &RewardWeights::Board::near_group_bonus)
-        .def_readwrite("height_variance_penalty", &RewardWeights::Board::height_variance_penalty)
-        .def_readwrite("death_col_height_penalty", &RewardWeights::Board::death_col_height_penalty)
-        .def_readwrite("color_diversity_reward", &RewardWeights::Board::color_diversity_reward)
-        .def_readwrite("buried_puyo_penalty", &RewardWeights::Board::buried_puyo_penalty)
-        .def_readwrite("ojama_drop_penalty", &RewardWeights::Board::ojama_drop_penalty)
-        .def_readwrite("pending_ojama_penalty", &RewardWeights::Board::pending_ojama_penalty)
-        .def_readwrite("potential_score_bonus_scale", &RewardWeights::Board::potential_score_bonus_scale);
-
-    pybind11::class_<RewardWeights::Opponent>(m, "OpponentWeights")
-        .def_readwrite("field_pressure_reward", &RewardWeights::Opponent::field_pressure_reward)
-        .def_readwrite("connectivity_penalty", &RewardWeights::Opponent::connectivity_penalty)
-        .def_readwrite("ojama_diff_scale", &RewardWeights::Opponent::ojama_diff_scale)
-        .def_readwrite("initiative_bonus", &RewardWeights::Opponent::initiative_bonus);
-
-    pybind11::class_<RewardWeights>(m, "RewardWeights")
-        .def_readwrite("match", &RewardWeights::match)
-        .def_readwrite("turn", &RewardWeights::turn)
-        .def_readwrite("performance", &RewardWeights::performance)
-        .def_readwrite("board", &RewardWeights::board)
-        .def_readwrite("opponent", &RewardWeights::opponent);
-
-    pybind11::class_<RewardCalculator>(m, "RewardCalculator")
-        .def(pybind11::init<>())
-        .def_readwrite("weights", &RewardCalculator::weights)
-        .def("load_from_json", &RewardCalculator::load_from_json)
-        .def("load_from_json_string", &RewardCalculator::load_from_json_string);
-
-    // =========================================================================
-    // OnnxPolicy
-    // =========================================================================
-    pybind11::class_<OnnxPolicy>(m, "OnnxPolicy")
-        .def(pybind11::init<const std::string&, bool>(),
-             pybind11::arg("model_path"), pybind11::arg("use_cpu") = true)
-        .def("infer", [](OnnxPolicy& self, pybind11::array_t<uint8_t, pybind11::array::c_style | pybind11::array::forcecast> obs) {
-                 pybind11::gil_scoped_release release;
-                 return self.infer(obs.data(), static_cast<int64_t>(obs.shape(0))); }, pybind11::arg("obs"))
-        .def("is_loaded", &OnnxPolicy::isLoaded);
-
-
-    // =========================================================================
-    // C++ PPO Trainer
-    // =========================================================================
-    pybind11::class_<rl::PPOConfig>(m, "PPOConfig")
-        .def(pybind11::init<>())
-        .def_readwrite("gamma", &rl::PPOConfig::gamma)
-        .def_readwrite("lambda_", &rl::PPOConfig::lambda)
-        .def_readwrite("clip_eps", &rl::PPOConfig::clip_eps)
-        .def_readwrite("entropy_coef", &rl::PPOConfig::entropy_coef)
-        .def_readwrite("value_coef", &rl::PPOConfig::value_coef)
-        .def_readwrite("max_grad_norm", &rl::PPOConfig::max_grad_norm)
-        .def_readwrite("lr", &rl::PPOConfig::lr)
-        .def_readwrite("num_epochs", &rl::PPOConfig::num_epochs)
-        .def_readwrite("minibatch", &rl::PPOConfig::minibatch);
-
-    pybind11::class_<rl::TrainMetrics>(m, "TrainMetrics")
-        .def_readonly("loss", &rl::TrainMetrics::loss)
-        .def_readonly("avg_reward", &rl::TrainMetrics::avg_reward)
-        .def_readonly("max_chain", &rl::TrainMetrics::max_chain)
-        .def_readonly("avg_max_chain", &rl::TrainMetrics::avg_max_chain)
-        .def_readonly("chain_rate", &rl::TrainMetrics::chain_rate)
-        .def_readonly("avg_game_score", &rl::TrainMetrics::avg_game_score)
-        .def_readonly("avg_game_len", &rl::TrainMetrics::avg_game_len)
-        .def_readonly("avg_max_potential", &rl::TrainMetrics::avg_max_potential);
-
-    pybind11::class_<rl::CppPPOTrainer>(m, "CppPPOTrainer")
-        .def(pybind11::init<int, int, const std::string&, int, uint32_t, rl::PPOConfig,
-                            const std::map<std::string, int>&>(),
-             pybind11::arg("num_envs")     = rl::kDefaultNumEnvs,
-             pybind11::arg("num_steps")    = rl::kDefaultNumSteps,
-             pybind11::arg("arch")         = "mlp",
-             pybind11::arg("hidden_dim")   = rl::kDefaultHidden,
-             pybind11::arg("base_seed")    = 1u,
-             pybind11::arg("cfg")          = rl::PPOConfig{},
-             pybind11::arg("arch_params")  = std::map<std::string, int>{})
-        .def("trainStep", &rl::CppPPOTrainer::trainStep,
-             pybind11::call_guard<pybind11::gil_scoped_release>(),
-             pybind11::arg("p2_random") = false,
-             "Run one rollout + PPO update. Returns TrainMetrics.")
-        .def("save", &rl::CppPPOTrainer::save, pybind11::arg("path"))
-        .def("load", &rl::CppPPOTrainer::load, pybind11::arg("path"))
-        .def("loadP2", &rl::CppPPOTrainer::loadP2, pybind11::arg("path"))
-        .def_property_readonly("env", [](rl::CppPPOTrainer& t) -> PuyotanVectorMatch& { return t.env(); }, pybind11::return_value_policy::reference_internal);
     // =========================================================================
     // Beam Search
     // =========================================================================

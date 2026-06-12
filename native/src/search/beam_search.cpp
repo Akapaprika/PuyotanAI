@@ -6,7 +6,6 @@
 #include <puyotan/core/chain.hpp>
 #include <puyotan/core/gravity.hpp>
 #include <puyotan/engine/tsumo.hpp>
-#include <puyotan/env/vector_match.hpp>  // for kNumRLActions, getRLAction
 #include <puyotan/search/beam_search.hpp>
 
 namespace puyotan::search {

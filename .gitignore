@@ -11,14 +11,9 @@ __pycache__/
 build/
 dist/
 
-# Models (Keep repository lightweight)
-models/
-
-# Native (C++ Build & External Libs)
+# Native (C++ Build Output)
 native/build*/
 native/dist/
-native/onnxruntime/
-native/libtorch/
 *.pyd
 *.obj
 *.lib

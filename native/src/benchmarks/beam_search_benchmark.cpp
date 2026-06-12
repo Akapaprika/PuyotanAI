@@ -23,7 +23,7 @@
 #include <numeric>
 #include <puyotan/engine/match.hpp>
 #include <puyotan/engine/tsumo.hpp>
-#include <puyotan/env/vector_match.hpp>
+#include <puyotan/common/types.hpp>
 #include <puyotan/search/beam_search.hpp>
 #include <random>
 #include <string>
