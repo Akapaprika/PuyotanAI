@@ -36,7 +36,7 @@ class PlayerSettingsWidget(QWidget):
 
     _MODES = ["Human", "Beam Search", "Empty (Solo)"]
 
-    def __init__(self, player_id: int, allow_empty: bool = True, parent=None):
+    def __init__(self, player_id: int, allow_empty: bool = True, default_index: int = 0, parent=None):
         super().__init__(parent)
         self.player_id = player_id
 
@@ -56,6 +56,8 @@ class PlayerSettingsWidget(QWidget):
         modes = self._MODES if allow_empty else self._MODES[:2]
         self._combo.addItems(modes)
         self._combo.setFixedWidth(130)
+        if 0 <= default_index < len(modes):
+            self._combo.setCurrentIndex(default_index)
         self._combo.currentIndexChanged.connect(self._on_mode_changed)
         row1.addWidget(self._combo)
 

@@ -57,6 +57,7 @@ class BoardSnapshot:
     active_ojama:   int        = 0
     chain_count:    int        = 0
     last_chain:     int        = 0
+    last_chain_score: int      = 0
     state:          str        = "WAITING"
 
 
@@ -113,24 +114,24 @@ class BoardWidget(QWidget):
         w, h = self.width(), self.height()
         cell = self._cell_size(w, h)
         board_w = cell * _BOARD_COLS
-        # Vertical layout: [SKY (2 rows)] + [GRID (13 rows)] + [INFO (approx 1.5 rows)]
         total_grid_h = cell * (_BOARD_ROWS + _SKY_ROWS)
 
         margin_x = max(10, (w - board_w - cell * 2 - 24) // 2)
-        margin_y = max(10, (h - total_grid_h - 40) // 2)
+        top_margin = int(1.1 * cell + 18)
 
         # Paint background
         painter.fillRect(0, 0, w, h, _BG_COLOR)
 
         snap = self._snapshot
         bx = margin_x + 20 # space for row labels
-        by = margin_y + (cell * _SKY_ROWS) # Top of the 13-row grid
+        by = top_margin + (cell * _SKY_ROWS) # Top of the 13-row grid
 
         self._draw_labels(painter, bx, by, cell)
         self._draw_grid(painter, bx, by, cell)
         self._draw_cells(painter, snap.field, bx, by, cell)
         if snap.show_ghost:
             self._draw_ghost(painter, snap, bx, by, cell)
+        self._draw_status_badge(painter, snap, bx, by, board_w, cell)
         # Next panel starts at the top of the sky area
         self._draw_next_panel(painter, snap, bx + board_w + 12, by - (cell * (_SKY_ROWS - 1)), cell)
         self._draw_info(painter, snap, bx, by + (cell * _BOARD_ROWS) + 20, board_w)
@@ -142,7 +143,7 @@ class BoardWidget(QWidget):
     # ------------------------------------------------------------------
     def _cell_size(self, w: int, h: int) -> int:
         by_w = (w - 60) // (_BOARD_COLS + 3)
-        by_h = (h - 80) // (_BOARD_ROWS + _SKY_ROWS)
+        by_h = (h - 110) // (_BOARD_ROWS + _SKY_ROWS)
         return max(16, min(by_w, by_h))
 
     def _cell_rect(self, col: int, row: int, ox: int, oy: int, cell: int) -> QRectF:
@@ -288,18 +289,18 @@ class BoardWidget(QWidget):
         painter.drawText(bx, by + 28, f"Ojama: {snap.non_active_ojama} / {snap.active_ojama}")
         
         # Determine chain display
-        is_chaining = (snap.chain_count > 0 and snap.state == "WAITING")
+        is_chaining = (snap.chain_count > 0)
         if is_chaining:
             chain_text = f"{snap.chain_count} Chain!"
             chain_color = QColor(255, 215, 0)
         else:
-            chain_text = f"Last: {snap.last_chain}"
+            chain_text = f"Last: {snap.last_chain} ({snap.last_chain_score} pts)"
             chain_color = _TEXT_COLOR
         
         painter.setPen(QPen(chain_color))
         painter.drawText(bx, by + 42, f"Chain: {chain_text}")
 
-        # Small status badge - Shifted further right for 4-digit score/ojama safety
+    def _draw_status_badge(self, painter: QPainter, snap: BoardSnapshot, bx: int, by: int, board_w: int, cell: int):
         st = snap.state
         bg = "#374151"
         fg = "#9ca3af"
@@ -308,12 +309,18 @@ class BoardWidget(QWidget):
         elif st == "LOCKED": bg, fg = "#dc2626", "#ffffff"
 
         badge_w = 58
-        # Shifted +30px further right to clear long score/ojama numbers
-        badge_rect = QRectF(bx + board_w - badge_w + 30, by + 2, badge_w, 18)
+        badge_h = 16
+        top_margin = by - cell * _SKY_ROWS
+        # Set badge y position based on cell height to guarantee absolute separation from the highest ghost puyo position
+        badge_y = top_margin - int(1.1 * cell) - 16
+        badge_rect = QRectF(bx + (board_w - badge_w) // 2, badge_y, badge_w, badge_h)
+
+        painter.save()
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(QColor(bg)))
         painter.drawRoundedRect(badge_rect, 3, 3)
-        
+
         painter.setPen(QPen(QColor(fg)))
-        painter.setFont(QFont("Segoe UI", 6, QFont.Weight.Bold))
+        painter.setFont(QFont("Segoe UI", 7, QFont.Weight.Bold))
         painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, st)
+        painter.restore()

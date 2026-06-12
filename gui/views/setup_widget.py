@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 )
 
 from .player_settings_widget import PlayerSettingsWidget
-from ..agents import BasePlayerAgent, HumanPlayerAgent
+from ..agents import BasePlayerAgent, HumanPlayerAgent, EmptyPlayerAgent
 
 
 class SetupWidget(QWidget):
@@ -29,7 +29,7 @@ class SetupWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self._agents: list[BasePlayerAgent | None] = [HumanPlayerAgent(), HumanPlayerAgent()]
+        self._agents: list[BasePlayerAgent | None] = [HumanPlayerAgent(), EmptyPlayerAgent()]
 
         root = QVBoxLayout(self)
         root.setContentsMargins(40, 40, 40, 40)
@@ -62,7 +62,7 @@ class SetupWidget(QWidget):
         vs_lbl.setStyleSheet("font-size: 28px; font-weight: bold; color: #475569;")
         settings_row.addWidget(vs_lbl)
 
-        self._p2_settings = PlayerSettingsWidget(1, allow_empty=True)
+        self._p2_settings = PlayerSettingsWidget(1, allow_empty=True, default_index=2)
         self._p2_settings.agent_changed.connect(lambda pid, a: self._on_agent_changed(pid, a))
         settings_row.addWidget(self._p2_settings)
 

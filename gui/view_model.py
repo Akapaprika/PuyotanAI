@@ -39,6 +39,10 @@ class PuyotanViewModel(QObject):
         self.last_chains = [0, 0]
         self.current_max_chains = [0, 0]
         self.was_field_empty = [True, True]
+        self.prev_scores = [0, 0]
+        self.current_chain_scores = [0, 0]
+        self.last_chain_scores = [0, 0]
+        self.prev_actions = [p.ActionType.NONE, p.ActionType.NONE]
         
         self.p_colors = {
             p.Cell.Red: config.COLORS["Red"],
@@ -137,6 +141,24 @@ class PuyotanViewModel(QObject):
                 self.last_chains[pid] = self.current_max_chains[pid]
                 self.current_max_chains[pid] = 0
 
+            # Track chain scores autonomously
+            curr_score = player_state.score
+            score_diff = curr_score - self.prev_scores[pid]
+            
+            prev_was_chaining = self.prev_actions[pid] in [p.ActionType.CHAIN, p.ActionType.CHAIN_FALL]
+            curr_is_chaining = player_state.current_action.action.type in [p.ActionType.CHAIN, p.ActionType.CHAIN_FALL]
+
+            if prev_was_chaining:
+                self.current_chain_scores[pid] += score_diff
+
+            if not curr_is_chaining:
+                if self.current_chain_scores[pid] > 0:
+                    self.last_chain_scores[pid] = self.current_chain_scores[pid]
+                    self.current_chain_scores[pid] = 0
+
+            self.prev_scores[pid] = curr_score
+            self.prev_actions[pid] = player_state.current_action.action.type
+
             # Track all clears autonomously
             is_empty = player_state.field.getOccupied().empty()
             if is_empty and not self.was_field_empty[pid] and chain_for_all_clear > 0:
@@ -209,6 +231,10 @@ class PuyotanViewModel(QObject):
         self.last_chains = [0, 0]
         self.current_max_chains = [0, 0]
         self.was_field_empty = [True, True]
+        self.prev_scores = [0, 0]
+        self.current_chain_scores = [0, 0]
+        self.last_chain_scores = [0, 0]
+        self.prev_actions = [p.ActionType.NONE, p.ActionType.NONE]
         for pid in [0, 1]:
             self.reset_player_input(pid)
         self.last_step_time = self.timer.elapsed()

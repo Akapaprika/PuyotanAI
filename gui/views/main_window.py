@@ -62,6 +62,7 @@ def _build_snapshot(vm, pid: int) -> BoardSnapshot:
         active_ojama=vm.get_player_ojama(pid)[1],
         chain_count=chain_current,
         last_chain=chain_last,
+        last_chain_score=vm.last_chain_scores[pid],
         state=_state_label(pres)
     )
 
