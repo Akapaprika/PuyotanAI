@@ -245,7 +245,10 @@ def main():
     
     parser = argparse.ArgumentParser()
     parser.add_argument("--run", action="store_true", help="Run the benchmarks and save output")
-    parser.add_argument("--compare", nargs=2, metavar=("BASE", "PR"), help="Compare two benchmark JSON results and output stats")
+    
+    # 【変更点】--compare, -c を可変長引数 (nargs='*') に変更し、短縮形 -c を追加
+    parser.add_argument("--compare", "-c", nargs="*", metavar="FILE", help="Compare benchmark results. 0 args: compare two newest; 1 arg: compare specified vs newest; 2 args: compare specified base vs specified pr.")
+    
     parser.add_argument("--iterations", type=int, default=30, help="Number of repetitions to run")
     parser.add_argument("--duration", type=float, default=10.0, help="Duration of each benchmark run in seconds")
     parser.add_argument("--beam-width", type=int, default=500, help="Beam width for beam search benchmark")
@@ -266,9 +269,38 @@ def main():
             }, f, indent=2)
         print(f"Results successfully saved to {args.output}")
         
-    elif args.compare:
+    elif args.compare is not None:
+        # 【新設】自動比較用のロジック
+        num_args = len(args.compare)
+        
+        # フォルダ内の bench_results_*.json を探し、日時順（昇順）にソート
+        bench_files = sorted(glob_files := [str(p) for p in Path(".").glob("bench_results_*.json")])
+        
+        if num_args == 0:
+            # 引数なし：最新の2ファイルを自動比較
+            if len(bench_files) < 2:
+                print("Error: Auto-compare requires at least 2 saved benchmark files in the current directory.", file=sys.stderr)
+                sys.exit(1)
+            base_path = bench_files[-2]
+            pr_path = bench_files[-1]
+            print(f"Auto-comparing two newest results:\n  Base (Previous): {base_path}\n  PR   (Newest)  : {pr_path}\n")
+        elif num_args == 1:
+            # 引数1個：指定された古いファイル ↔ 最も新しいファイルを比較
+            if len(bench_files) < 1:
+                print("Error: No local benchmark files found to compare against.", file=sys.stderr)
+                sys.exit(1)
+            base_path = args.compare[0]
+            pr_path = bench_files[-1]
+            print(f"Comparing specified base against newest result:\n  Base: {base_path}\n  PR   (Newest): {pr_path}\n")
+        elif num_args == 2:
+            # 引数2個：従来通りの指定ファイル同士の比較（GHAでの動作を保証）
+            base_path = args.compare[0]
+            pr_path = args.compare[1]
+        else:
+            print("Error: --compare / -c takes at most 2 arguments (base, pr).", file=sys.stderr)
+            sys.exit(1)
+
         # Load datasets
-        base_path, pr_path = args.compare
         with open(base_path) as f:
             base_data = json.load(f)
         with open(pr_path) as f:
