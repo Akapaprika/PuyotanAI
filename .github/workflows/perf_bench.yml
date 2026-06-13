@@ -1,5 +1,8 @@
 name: Performance Benchmark Comparison
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # GitHub ActionsのNode.js 24への移行に伴う互換性のための環境変数
+
 on:
   push:
     branches:
@@ -46,6 +49,13 @@ jobs:
           path: pr-branch/pr_results.json
           key: bench-results-${{ steps.parent.outputs.sha }}
 
+      # ── 上書きされる前に、キャッシュから復元したデータを即座に退避（コピー）させます ──
+      - name: Prepare Base Results from Cache
+        if: steps.restore-cache.outputs.cache-hit == 'true'
+        shell: bash
+        run: |
+          cp pr-branch/pr_results.json pr-branch/base_results.json
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -75,11 +85,7 @@ jobs:
 
       # ── キャッシュの有無に応じたベース（比較元）データの準備 ──
       
-      - name: Prepare Base Results from Cache
-        if: steps.restore-cache.outputs.cache-hit == 'true'
-        shell: bash
-        run: |
-          cp pr-branch/pr_results.json pr-branch/base_results.json
+      # ※ Prepare Base Results from Cache は上部に移動したため、ここからは削除されています
 
       - name: Checkout Base Branch (Fallback)
         if: steps.restore-cache.outputs.cache-hit != 'true'
@@ -94,7 +100,6 @@ jobs:
         run: |
           if [ -d "base-branch/native" ] && [ -f "base-branch/native/build.bat" ]; then
             cd base-branch/native
-            # 【セーフガード】main側に新しいCPPファイルがないことでビルドが失敗しても、パイプラインを止めずに後続に流します
             ./build.bat || echo "Build failed or skipped on base branch. Continuing to fallback!"
           else
             echo "Base branch does not have the native folder or build.bat yet. Skipping compilation!"
@@ -104,7 +109,6 @@ jobs:
         if: steps.restore-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          # 【セーフガード】ビルドフォルダが存在する場合のみテストを実行します（存在しなければ安全にスキップ）
           if [ -d "base-branch/native/build_Release/Release" ]; then
             cd base-branch/native/build_Release/Release
             ./engine_benchmark.exe --regression
@@ -117,11 +121,9 @@ jobs:
         if: steps.restore-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          # 1. 【超重要】PR側の測定スクリプトをベースブランチ側に一時的にコピーしてマウントします（スクリプト未存在エラーの防止）
           mkdir -p base-branch/tests/perf
           cp pr-branch/tests/perf/run_stat_bench.py base-branch/tests/perf/run_stat_bench.py
           
-          # 2. 【セーフガード】ビルドされた実行ファイルが存在する場合のみ実行。なければ PRブランチ の測定データをコピーして代用（差分0%としてパス）
           if [ -f "base-branch/native/build_Release/Release/engine_benchmark.exe" ]; then
             python base-branch/tests/perf/run_stat_bench.py --run --iterations 30 --duration 10 --output pr-branch/base_results.json
           else
