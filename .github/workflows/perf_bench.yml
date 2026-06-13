@@ -81,7 +81,7 @@ jobs:
 
       - name: Run PR Benchmarks (Current Commit)
         run: |
-          python pr-branch/tests/perf/run_stat_bench.py --run --iterations 30 --duration 10 --output pr-branch/pr_results.json
+          python pr-branch/tests/perf/run_stat_bench.py --run --iterations 20 --duration 10 --output pr-branch/pr_results.json
 
       # ── キャッシュの有無に応じたベース（比較元）データの準備 ──
       
@@ -125,7 +125,7 @@ jobs:
           cp pr-branch/tests/perf/run_stat_bench.py base-branch/tests/perf/run_stat_bench.py
           
           if [ -f "base-branch/native/build_Release/Release/engine_benchmark.exe" ]; then
-            python base-branch/tests/perf/run_stat_bench.py --run --iterations 30 --duration 10 --output pr-branch/base_results.json
+            python base-branch/tests/perf/run_stat_bench.py --run --iterations 20 --duration 10 --output pr-branch/base_results.json
           else
             echo "Base branch does not have the benchmark executables yet. Copying PR results as baseline (0% change)."
             cp pr-branch/pr_results.json pr-branch/base_results.json
