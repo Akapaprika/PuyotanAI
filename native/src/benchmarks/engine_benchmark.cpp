@@ -155,20 +155,47 @@ void printBenchmarkResult(const BenchmarkResult& r) {
     printf("========================================\n");
 }
 
-/// Quick verification: runs a few games with fixed seeds and prints stats for
-/// regression testing
-void runRegressionTest() {
-    printf("\n=== REGRESSION TEST (Fixed Seeds) ===\n");
-    const uint32_t test_seeds[] = {1, 42, 123, 999, 12345, 424242};
+struct ExpectedEngineStats {
+    uint32_t seed;
+    int frames;
+    int score_p1;
+    int score_p2;
+    int moves_p1;
+    int moves_p2;
+    int status;
+};
 
-    for (uint32_t seed : test_seeds) {
-        GameStats s = simulateGame(seed);
+/// Quick verification: runs a few games with fixed seeds and prints stats for
+/// regression testing. Returns true if all stats match expected values.
+bool runRegressionTest() {
+    printf("\n=== REGRESSION TEST (Fixed Seeds) ===\n");
+    const ExpectedEngineStats expected[] = {
+        {1, 56, 286, 286, 25, 25, 4},
+        {42, 51, 300, 300, 24, 24, 4},
+        {123, 61, 816, 816, 26, 26, 4},
+        {999, 66, 1390, 1390, 26, 26, 4},
+        {12345, 56, 280, 280, 25, 25, 4},
+        {424242, 55, 319, 319, 24, 24, 4}
+    };
+
+    bool all_ok = true;
+    for (const auto& exp : expected) {
+        GameStats s = simulateGame(exp.seed);
         printf("Seed %7u: frames=%4d  score=(%4d,%4d)  moves=(%3d,%3d)  "
                "max_chain=(%d,%d)  status=%d\n",
-               seed, s.frames, s.score_p1, s.score_p2, s.moves_p1, s.moves_p2,
+               exp.seed, s.frames, s.score_p1, s.score_p2, s.moves_p1, s.moves_p2,
                s.chain_max_p1, s.chain_max_p2, static_cast<int>(s.status));
+        
+        if (s.frames != exp.frames || s.score_p1 != exp.score_p1 || s.score_p2 != exp.score_p2 ||
+            s.moves_p1 != exp.moves_p1 || s.moves_p2 != exp.moves_p2 || static_cast<int>(s.status) != exp.status) {
+            printf("  [ERROR] Regression mismatch for Seed %u!\n", exp.seed);
+            printf("          Expected: frames=%d, score=(%d,%d), moves=(%d,%d), status=%d\n",
+                   exp.frames, exp.score_p1, exp.score_p2, exp.moves_p1, exp.moves_p2, exp.status);
+            all_ok = false;
+        }
     }
     printf("======================================\n\n");
+    return all_ok;
 }
 
 int main(int argc, char** argv) {
@@ -186,10 +213,8 @@ int main(int argc, char** argv) {
         } else if (arg == "--help" || arg == "-h") {
             printf("Usage: engine_benchmark [options]\n");
             printf("Options:\n");
-            printf("  --duration, -d <seconds>  Benchmark duration (default: "
-                   "5.0)\n");
-            printf("  --regression, -r          Run regression test with fixed "
-                   "seeds\n");
+            printf("  --duration, -d <seconds>  Benchmark duration (default: 5.0)\n");
+            printf("  --regression, -r          Run regression test with fixed seeds\n");
             printf("  --help, -h                Show this help\n");
             return 0;
         }
@@ -199,14 +224,22 @@ int main(int argc, char** argv) {
     printf("Duration: %.1f seconds\n", duration);
 
     if (run_regression) {
-        runRegressionTest();
+        bool ok = runRegressionTest();
+        if (!ok) {
+            printf("Regression test FAILED!\n");
+            return 1;
+        }
+        printf("Regression test PASSED!\n");
+        return 0;
     }
 
     BenchmarkResult result = runBenchmark(duration);
     printBenchmarkResult(result);
 
-    if (!run_regression) {
-        runRegressionTest();
+    bool ok = runRegressionTest();
+    if (!ok) {
+        printf("Post-benchmark regression check FAILED!\n");
+        return 1;
     }
 
     return 0;

@@ -31,6 +31,19 @@ python -m tests.perf.bench_engine --regression
 python -m tests.perf.bench_beam --regression
 ```
 
+Run the statistical benchmark & comparison:
+
+```powershell
+# Run PR branch benchmarks (e.g. 30 runs of 10 seconds each)
+python -m tests.perf.run_stat_bench --run --iterations 30 --duration 10 --output pr_results.json
+
+# Run Base branch benchmarks
+python -m tests.perf.run_stat_bench --run --iterations 30 --duration 10 --output base_results.json
+
+# Compare them and perform Welch's t-test
+python -m tests.perf.run_stat_bench --compare base_results.json pr_results.json --output-md comparison.md
+```
+
 Notes
 -----
 - The native executables are copied into `native/dist` by the CMake build.

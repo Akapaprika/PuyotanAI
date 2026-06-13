@@ -282,22 +282,46 @@ void printBenchmarkResult(const BenchmarkResult& r, const BeamConfig& cfg) {
     printf("========================================\n");
 }
 
-void runRegressionTest(const BeamConfig& cfg) {
-    printf("\n=== REGRESSION TEST (Fixed Seeds) ===\n");
-    const uint32_t test_seeds[] = {1,     42,     123,    999,
-                                   12345, 424242, 111111, 999999};
+struct ExpectedBeamStats {
+    uint32_t seed;
+    int action;
+    float score;
+};
 
-    for (uint32_t seed : test_seeds) {
-        PuyotanPlayer player = createTestPlayer(seed);
-        Tsumo tsumo(seed);
+/// Quick verification: runs a few games with fixed seeds and prints stats for
+/// regression testing. Returns true if all stats match expected values.
+bool runRegressionTest(const BeamConfig& cfg) {
+    printf("\n=== REGRESSION TEST (Fixed Seeds) ===\n");
+    const ExpectedBeamStats expected[] = {
+        {1, 5, 39.50f},
+        {42, 10, -1.40f},
+        {123, 10, -1.30f},
+        {999, 21, 98.70f},
+        {12345, 9, 39.50f},
+        {424242, 10, 38.30f},
+        {111111, 16, 39.70f},
+        {999999, 10, 179.70f}
+    };
+
+    bool all_ok = true;
+    for (const auto& exp : expected) {
+        PuyotanPlayer player = createTestPlayer(exp.seed);
+        Tsumo tsumo(exp.seed);
         SearchStats stats = runSingleSearch(player, tsumo, cfg);
         Action a = getRLAction(stats.action);
         printf("Seed %7u: action=%3d (Put, rot=%d, x=%2d)  score=%.2f  "
                "latency=%.3fms  valid=%d\n",
-               seed, stats.action, static_cast<int>(a.rotation), a.x,
+               exp.seed, stats.action, static_cast<int>(a.rotation), a.x,
                stats.expected_score, stats.latency_ms, stats.valid);
+
+        if (stats.action != exp.action || std::abs(stats.expected_score - exp.score) > 1e-4) {
+            printf("  [ERROR] Regression mismatch for Seed %u!\n", exp.seed);
+            printf("          Expected: action=%d, score=%.2f\n", exp.action, exp.score);
+            all_ok = false;
+        }
     }
     printf("======================================\n\n");
+    return all_ok;
 }
 
 int main(int argc, char** argv) {
@@ -351,11 +375,23 @@ int main(int argc, char** argv) {
            look_ahead, fast_potential);
 
     if (run_regression) {
-        runRegressionTest(cfg);
+        bool ok = runRegressionTest(cfg);
+        if (!ok) {
+            printf("Regression test FAILED!\n");
+            return 1;
+        }
+        printf("Regression test PASSED!\n");
+        return 0;
     }
 
     BenchmarkResult result = runBenchmark(duration, cfg);
     printBenchmarkResult(result, cfg);
+
+    bool ok = runRegressionTest(cfg);
+    if (!ok) {
+        printf("Post-benchmark regression check FAILED!\n");
+        return 1;
+    }
 
     return 0;
 }

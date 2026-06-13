@@ -1,0 +1,138 @@
+name: Performance Benchmark Comparison
+
+on:
+  push:
+    paths:
+      - 'native/**'
+      - 'tests/perf/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'native/**'
+      - 'tests/perf/**'
+  workflow_dispatch:
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  benchmark:
+    name: Benchmark Comparison (Welch's t-test)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout PR Branch
+        uses: actions/checkout@v4
+        with:
+          path: pr-branch
+          # 【最重要】親コミットのハッシュ（HEAD~1）を特定するため、直近2件の履歴をフェッチします
+          fetch-depth: 2
+
+      - name: Get Parent SHA
+        id: parent
+        shell: bash
+        run: |
+          # 直前のコミット（親）のハッシュ値を取得します
+          PARENT_SHA=$(git -C pr-branch rev-parse HEAD~1 || echo "")
+          echo "sha=$PARENT_SHA" >> $GITHUB_OUTPUT
+
+      - name: Restore Previous Commit Benchmark Cache
+        id: restore-cache
+        uses: actions/cache/restore@v4
+        if: steps.parent.outputs.sha != ''
+        with:
+          path: pr-branch/pr_results.json
+          key: bench-results-${{ steps.parent.outputs.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pybind11
+
+      - name: Build C++ Native on PR Branch
+        run: |
+          cd pr-branch/native
+          ./build.bat
+
+      - name: Run Regression Tests on PR Branch
+        run: |
+          pr-branch/native/build_Release/Release/engine_benchmark.exe --regression
+          pr-branch/native/build_Release/Release/beam_search_benchmark.exe --regression
+
+      - name: Run PR Benchmarks (Current Commit)
+        run: |
+          python pr-branch/tests/perf/run_stat_bench.py --run --iterations 15 --duration 10 --output pr-branch/pr_results.json
+
+      # ── キャッシュの有無に応じたベース（比較元）データの準備 ──
+      
+      # パターンA（キャッシュヒット時）：前回の結果（pr_results.json）を base_results.json としてコピーして利用（ビルド時間を完全カット）
+      - name: Prepare Base Results from Cache
+        if: steps.restore-cache.outputs.cache-hit == 'true'
+        shell: bash
+        run: |
+          cp pr-branch/pr_results.json pr-branch/base_results.json
+
+      # パターンB（キャッシュミス時）：初回やブランチの分岐点。Baseブランチ（main）をビルドしてゼロからベースデータを生成
+      - name: Checkout Base Branch (Fallback)
+        if: steps.restore-cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.base_ref || 'main' }}
+          path: base-branch
+
+      - name: Build C++ Native on Base Branch (Fallback)
+        if: steps.restore-cache.outputs.cache-hit != 'true'
+        run: |
+          cd base-branch/native
+          ./build.bat
+
+      - name: Run Regression Tests on Base Branch (Fallback)
+        if: steps.restore-cache.outputs.cache-hit != 'true'
+        run: |
+          base-branch/native/build_Release/Release/engine_benchmark.exe --regression
+          base-branch/native/build_Release/Release/beam_search_benchmark.exe --regression
+
+      - name: Run Base Benchmarks (Fallback)
+        if: steps.restore-cache.outputs.cache-hit != 'true'
+        run: |
+          python base-branch/tests/perf/run_stat_bench.py --run --iterations 15 --duration 10 --output pr-branch/base_results.json
+
+      # ── 比較とレポート生成 ──
+
+      - name: Compare Benchmarks
+        run: |
+          python pr-branch/tests/perf/run_stat_bench.py --compare pr-branch/base_results.json pr-branch/pr_results.json --output-md comparison_report.md
+
+      - name: Display Report in Console
+        run: |
+          type comparison_report.md
+
+      # 【最重要】次のコミットでの比較（ベース）として使うために、今回の結果をクラウドに保存します
+      - name: Save Current Commit Benchmark Cache
+        uses: actions/cache/save@v4
+        with:
+          path: pr-branch/pr_results.json
+          key: bench-results-${{ github.sha }}
+
+      - name: Upload Report Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-report
+          path: |
+            comparison_report.md
+            pr-branch/base_results.json
+            pr-branch/pr_results.json
+
+      - name: Comment PR with Report
+        if: github.event_name == 'pull_request'
+        uses: thollander/actions-comment-pull-request@v2.5.0
+        with:
+          filePath: comparison_report.md
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
