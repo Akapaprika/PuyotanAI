@@ -7,6 +7,7 @@ performance improvements are statistically significant.
 """
 
 import argparse
+import datetime  # 追加：タイムスタンプ生成に使用
 import json
 import os
 import re
@@ -123,7 +124,7 @@ def collect_data(iterations, duration, beam_width, look_ahead):
 def perform_statistical_test(base_results, pr_results):
     keys = set(base_results[0].keys()) & set(pr_results[0].keys())
     comparison = {}
-    import math # 標準ライブラリのみ使用
+    import math  # 標準ライブラリのみ使用
     
     for key in sorted(keys):
         base_samples = [r[key] for r in base_results if key in r]
@@ -237,6 +238,11 @@ def main():
         sys.stdout.reconfigure(encoding='utf-8')
     except AttributeError:
         pass
+    
+    # 起動時の現在日時から、ローカル実行用のデフォルトファイル名を動的に生成
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    default_output = f"bench_results_{timestamp}.json"
+    
     parser = argparse.ArgumentParser()
     parser.add_argument("--run", action="store_true", help="Run the benchmarks and save output")
     parser.add_argument("--compare", nargs=2, metavar=("BASE", "PR"), help="Compare two benchmark JSON results and output stats")
@@ -244,14 +250,20 @@ def main():
     parser.add_argument("--duration", type=float, default=10.0, help="Duration of each benchmark run in seconds")
     parser.add_argument("--beam-width", type=int, default=500, help="Beam width for beam search benchmark")
     parser.add_argument("--look-ahead", type=int, default=10, help="Lookahead depth for beam search benchmark")
-    parser.add_argument("--output", type=str, default="bench_results.json", help="Path to output JSON")
+    parser.add_argument("--output", type=str, default=default_output, help="Path to output JSON")
     parser.add_argument("--output-md", type=str, default=None, help="Path to output Markdown report")
     args = parser.parse_args()
 
     if args.run:
         results = collect_data(args.iterations, args.duration, args.beam_width, args.look_ahead)
         with open(args.output, "w") as f:
-            json.dump({"iterations": args.iterations, "duration": args.duration, "results": results}, f, indent=2)
+            # データの履歴追跡を容易にするため、jsonの内部にも実行時のタイムスタンプを保存します
+            json.dump({
+                "timestamp": timestamp,
+                "iterations": args.iterations, 
+                "duration": args.duration, 
+                "results": results
+            }, f, indent=2)
         print(f"Results successfully saved to {args.output}")
         
     elif args.compare:
