@@ -6,7 +6,7 @@ Emits signals instead of calling objects directly, keeping it decoupled.
 """
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel,
-    QPushButton, QSpinBox, QFrame
+    QPushButton, QSpinBox, QDoubleSpinBox, QFrame
 )
 from PyQt6.QtCore import pyqtSignal, Qt
 
@@ -49,11 +49,13 @@ class StatusBarWidget(QWidget):
         seed_lbl = QLabel("Seed:")
         seed_lbl.setStyleSheet("font-size: 11px; color: #94a3b8;")
         seed_col.addWidget(seed_lbl)
-        self._seed_spin = QSpinBox()
-        self._seed_spin.setRange(0, 999999)
+        self._seed_spin = QDoubleSpinBox()
+        self._seed_spin.setDecimals(0)
+        self._seed_spin.setRange(1, 2147483647)
         self._seed_spin.setValue(initial_seed)
+        self._seed_spin.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
         self._seed_spin.setStyleSheet("font-size: 11px;")
-        self._seed_spin.valueChanged.connect(self.seed_changed.emit)
+        self._seed_spin.valueChanged.connect(lambda val: self.seed_changed.emit(int(val)))
         seed_col.addWidget(self._seed_spin)
         root.addLayout(seed_col)
 
@@ -67,8 +69,8 @@ class StatusBarWidget(QWidget):
         lbl.setStyleSheet("font-size: 11px; color: #94a3b8;")
         speed_col.addWidget(lbl)
         self._interval_spin = QSpinBox()
-        self._interval_spin.setRange(100, 9999)
-        self._interval_spin.setSingleStep(100)
+        self._interval_spin.setRange(1, 9999)
+        self._interval_spin.setSingleStep(10)
         self._interval_spin.setValue(initial_interval_ms)
         self._interval_spin.setSuffix(" ms")
         self._interval_spin.setToolTip("Time between virtual frames (lower = faster)")
@@ -92,3 +94,8 @@ class StatusBarWidget(QWidget):
 
     def set_status(self, text: str) -> None:
         self._status_label.setText(f"Status: {text}")
+
+    def set_seed(self, seed: int) -> None:
+        self._seed_spin.blockSignals(True)
+        self._seed_spin.setValue(float(seed))
+        self._seed_spin.blockSignals(False)

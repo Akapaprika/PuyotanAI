@@ -6,21 +6,21 @@
     "_comment_potential_score_scale": "ポテンシャル連鎖スコアへの乗数。高いほど将来の連鎖を重視。",
     "potential_score_scale": 1.0,
     "_comment_connectivity_bonus": "同色隣接が2つ以上あるぷよ1個あたりのボーナス。",
-    "connectivity_bonus": 0.2,
+    "connectivity_bonus": 0.0,
     "_comment_isolated_penalty": "同色隣接ゼロの孤立ぷよ1個あたりのペナルティ（負の値）。",
-    "isolated_penalty": -0.05,
+    "isolated_penalty": -0.0,
     "_comment_buried_penalty": "おじゃまの下に埋もれた色ぷよ1個あたりのペナルティ（おじゃまなし時は自動スキップ）。",
-    "buried_penalty": -1.5,
+    "buried_penalty": -1.0,
     "_comment_height_variance_penalty": "列高さの分散に掛けるペナルティ係数（負の値）。大きいほど盤面を平坦に保とうとする。",
-    "height_variance_penalty": -0.01,
+    "height_variance_penalty": -0.0,
     "_comment_death_col_penalty": "窒息列（3列目）の高さ1行あたりのペナルティ（負の値）。",
-    "death_col_penalty": -0.05,
+    "death_col_penalty": -0.0,
     "_comment_fire_bias": "発火判断のバイアス係数。fire_bias × 発火スコア > ビームスコア のとき即時発火を選択。\n                                       > 1.0: 発火を積極的に選ぶ / == 1.0: 等価比較 / < 1.0: 継続を優先",
-    "fire_bias": 0.92,
+    "fire_bias": 0.97,
     "_comment_edge_column_bonus": "端の列（列0, 5）の高さに対するボーナス。edge_column_threshold に達するまで線形減衰。",
-    "edge_column_bonus": 5.0,
+    "edge_column_bonus": 0.0,
     "_comment_edge_column_threshold": "端列ボーナスがゼロになる総ぷよ数の閾値。0 以下なら常にフル適用（減衰なし）。",
-    "edge_column_threshold": 20.0,
+    "edge_column_threshold": 0.0,
     "_comment_use_fast_potential": "true: flood-fill 近似（高速）、false: 完全チェーンシミュレーション（高精度）。",
     "use_fast_potential": false
   },
@@ -28,23 +28,23 @@
     "_comment": "各プロファイルは eval_weights への差分パッチです。複数を順番に適用できます。",
     "deep_search": {
       "_comment": "look_ahead >= 4 時に適用。Expectimax で将来が見通せるため、平坦化ペナルティを緩める。",
-      "height_variance_penalty": -0.05,
-      "connectivity_bonus": 0.5
+      "height_variance_penalty": -0.00,
+      "connectivity_bonus": 0.0
     },
     "vs_mode": {
       "_comment": "対人戦時に適用。おじゃまによる窒息死を厳格に回避する。",
-      "buried_penalty": -2.0,
-      "death_col_penalty": -2.5
+      "buried_penalty": -0.0,
+      "death_col_penalty": -0.0
     },
     "solo_mode": {
       "_comment": "ソロ戦時に適用。おじゃまペナルティを無効化し大連鎖構築を優先する。",
       "buried_penalty": 0.0,
-      "death_col_penalty": -0.1
+      "death_col_penalty": -0.0
     },
     "stagnated": {
       "_comment": "停滞検出時に適用。即時発火を最優先して盤面をリセットする。",
-      "fire_bias": 0.92,
-      "potential_score_scale": 0.1
+      "fire_bias": 0.97,
+      "potential_score_scale": 0.0
     }
   }
 }

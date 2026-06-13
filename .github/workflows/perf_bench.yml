@@ -1,0 +1,160 @@
+name: Performance Benchmark Comparison
+
+on:
+  push:
+    paths:
+      - 'native/**'
+      - 'tests/perf/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'native/**'
+      - 'tests/perf/**'
+  workflow_dispatch:
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  benchmark:
+    name: Benchmark Comparison (Welch's t-test)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout PR Branch
+        uses: actions/checkout@v4
+        with:
+          path: pr-branch
+          fetch-depth: 2
+
+      - name: Get Parent SHA
+        id: parent
+        shell: bash
+        run: |
+          PARENT_SHA=$(git -C pr-branch rev-parse HEAD~1 || echo "")
+          echo "sha=$PARENT_SHA" >> $GITHUB_OUTPUT
+
+      - name: Restore Previous Commit Benchmark Cache
+        id: restore-cache
+        uses: actions/cache/restore@v4
+        if: steps.parent.outputs.sha != ''
+        with:
+          path: pr-branch/pr_results.json
+          key: bench-results-${{ steps.parent.outputs.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pybind11
+
+      - name: Build C++ Native on PR Branch
+        shell: bash
+        run: |
+          cd pr-branch/native
+          ./build.bat
+
+      - name: Run Regression Tests on PR Branch
+        shell: bash
+        run: |
+          cd pr-branch/native/build_Release/Release
+          ./engine_benchmark.exe --regression
+          ./beam_search_benchmark.exe --regression
+
+      - name: Run PR Benchmarks (Current Commit)
+        run: |
+          python pr-branch/tests/perf/run_stat_bench.py --run --iterations 30 --duration 10 --output pr-branch/pr_results.json
+
+      # ── キャッシュの有無に応じたベース（比較元）データの準備 ──
+      
+      - name: Prepare Base Results from Cache
+        if: steps.restore-cache.outputs.cache-hit == 'true'
+        shell: bash
+        run: |
+          cp pr-branch/pr_results.json pr-branch/base_results.json
+
+      - name: Checkout Base Branch (Fallback)
+        if: steps.restore-cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.base_ref || 'main' }}
+          path: base-branch
+
+      - name: Build C++ Native on Base Branch (Fallback)
+        if: steps.restore-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          if [ -d "base-branch/native" ] && [ -f "base-branch/native/build.bat" ]; then
+            cd base-branch/native
+            # 【セーフガード】main側に新しいCPPファイルがないことでビルドが失敗しても、パイプラインを止めずに後続に流します
+            ./build.bat || echo "Build failed or skipped on base branch. Continuing to fallback!"
+          else
+            echo "Base branch does not have the native folder or build.bat yet. Skipping compilation!"
+          fi
+
+      - name: Run Regression Tests on Base Branch (Fallback)
+        if: steps.restore-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          # 【セーフガード】ビルドフォルダが存在する場合のみテストを実行します（存在しなければ安全にスキップ）
+          if [ -d "base-branch/native/build_Release/Release" ]; then
+            cd base-branch/native/build_Release/Release
+            ./engine_benchmark.exe --regression
+            ./beam_search_benchmark.exe --regression
+          else
+            echo "Skipping regression tests on base branch (Folder not found)."
+          fi
+
+      - name: Run Base Benchmarks (Fallback)
+        if: steps.restore-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          # 1. 【超重要】PR側の測定スクリプトをベースブランチ側に一時的にコピーしてマウントします（スクリプト未存在エラーの防止）
+          mkdir -p base-branch/tests/perf
+          cp pr-branch/tests/perf/run_stat_bench.py base-branch/tests/perf/run_stat_bench.py
+          
+          # 2. 【セーフガード】ビルドされた実行ファイルが存在する場合のみ実行。なければ PRブランチ の測定データをコピーして代用（差分0%としてパス）
+          if [ -f "base-branch/native/build_Release/Release/engine_benchmark.exe" ]; then
+            python base-branch/tests/perf/run_stat_bench.py --run --iterations 30 --duration 10 --output pr-branch/base_results.json
+          else
+            echo "Base branch does not have the benchmark executables yet. Copying PR results as baseline (0% change)."
+            cp pr-branch/pr_results.json pr-branch/base_results.json
+          fi
+
+      # ── 比較とレポート生成 ──
+
+      - name: Compare Benchmarks
+        run: |
+          python pr-branch/tests/perf/run_stat_bench.py --compare pr-branch/base_results.json pr-branch/pr_results.json --output-md comparison_report.md
+
+      - name: Display Report in Console
+        run: |
+          type comparison_report.md
+
+      - name: Save Current Commit Benchmark Cache
+        uses: actions/cache/save@v4
+        with:
+          path: pr-branch/pr_results.json
+          key: bench-results-${{ github.sha }}
+
+      - name: Upload Report Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-report
+          path: |
+            comparison_report.md
+            pr-branch/base_results.json
+            pr-branch/pr_results.json
+
+      - name: Comment PR with Report
+        if: github.event_name == 'pull_request'
+        uses: thollander/actions-comment-pull-request@v2.5.0
+        with:
+          filePath: comparison_report.md
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

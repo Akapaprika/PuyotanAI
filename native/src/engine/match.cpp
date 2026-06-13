@@ -38,8 +38,9 @@ int PuyotanMatch::getDecisionMask() const noexcept {
     }
     return mask;
 }
-PuyotanMatch::PuyotanMatch(uint32_t seed) noexcept : seed_(seed), tsumo_(seed) {
+PuyotanMatch::PuyotanMatch(uint32_t seed) noexcept : tsumo_(seed) {
     assert(seed != 0u);
+    seed_ = tsumo_.getSeed();
 }
 void PuyotanMatch::start() noexcept {
     assert(status_ == MatchStatus::Ready && "start() should only be called once when match is ready");
@@ -191,7 +192,11 @@ void PuyotanMatch::stepNextFrame() noexcept {
             }
             // 5. Tsumo and frame transition: Otherwise, pull the next piece (unless passing)
             else if (p.current_action.action.type != ActionType::Pass) {
-                ++(p.active_next_pos);
+                if (p.active_next_pos == 999) [[unlikely]] {
+                    p.active_next_pos = 0;
+                } else {
+                    ++(p.active_next_pos);
+                }
             }
         }
         // Advance actions: current = next, and clear next for the next step.
@@ -278,7 +283,7 @@ int64_t PuyotanMatch::runBatch(int num_games, uint32_t seed) noexcept {
 int PuyotanMatch::nextInt(uint32_t& seed, int max) noexcept {
     assert(seed != 0u);
     seed ^= (seed << 13);
-    seed ^= (seed >> 17);
+    seed ^= static_cast<uint32_t>(static_cast<int32_t>(seed) >> 17);
     seed ^= (seed << 15);
     return static_cast<int>(seed % static_cast<uint32_t>(max));
 }

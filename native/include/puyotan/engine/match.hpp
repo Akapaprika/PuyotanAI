@@ -70,7 +70,7 @@ class PuyotanMatch {
     }
     /** @brief Returns a PuyoPiece from the Tsumo sequence at an offset from player's current position. */
     PuyoPiece getPiece(int player_id, int index_offset) const noexcept {
-        return const_cast<Tsumo&>(tsumo_).get(players_[player_id].active_next_pos + index_offset);
+        return tsumo_.get(players_[player_id].active_next_pos + index_offset);
     }
     /** @brief Returns the Tsumo generator used by the match. */
     const Tsumo& getTsumo() const noexcept {

@@ -17,5 +17,4 @@
 #include <tuple>
 #include <vector>
 
-// LibTorch
-#include <torch/torch.h>
+

@@ -62,6 +62,7 @@ def _build_snapshot(vm, pid: int) -> BoardSnapshot:
         active_ojama=vm.get_player_ojama(pid)[1],
         chain_count=chain_current,
         last_chain=chain_last,
+        last_chain_score=vm.last_chain_scores[pid],
         state=_state_label(pres)
     )
 
@@ -180,13 +181,15 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Slots
     # ------------------------------------------------------------------
-    def _on_start(self, agents: list) -> None:
+    def _on_start(self, agents: list, seed: int) -> None:
         """Commit agent choices, configure panels, and begin the match."""
         for pid, agent in enumerate(agents):
             self.vm.set_agent(pid, agent)
             is_human = isinstance(agent, HumanPlayerAgent)
             self._panels[pid].set_human_controlled(is_human)
 
+        self.vm.model.seed = seed
+        self._status_bar.set_seed(seed)
         self.vm.restart()
         self._stack.setCurrentIndex(self._PAGE_GAME)
         self._timer.start()
