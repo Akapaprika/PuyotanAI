@@ -2,12 +2,14 @@ name: Performance Benchmark Comparison
 
 on:
   push:
+    branches:
+      - main  # push（キャッシュの最終保存）は mainブランチ へのマージ時のみに制限
     paths:
       - 'native/**'
       - 'tests/perf/**'
   pull_request:
     branches:
-      - main
+      - main  # main向けのPR（開発中ブランチのプッシュ時）にトリガー
     paths:
       - 'native/**'
       - 'tests/perf/**'
