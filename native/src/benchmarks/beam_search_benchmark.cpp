@@ -290,7 +290,7 @@ struct ExpectedBeamStats {
 
 /// Quick verification: runs a few games with fixed seeds and prints stats for
 /// regression testing. Returns true if all stats match expected values.
-bool runRegressionTest(const BeamConfig& cfg) {
+bool runRegressionTest(const BeamConfig& /*cfg*/) { // 引数の cfg を無視するか、以下で上書きします
     printf("\n=== REGRESSION TEST (Fixed Seeds) ===\n");
     const ExpectedBeamStats expected[] = {
         {1, 5, 39.50f},
@@ -303,11 +303,20 @@ bool runRegressionTest(const BeamConfig& cfg) {
         {999999, 10, 179.70f}
     };
 
+    // 【修正箇所】テスト用の静的な設定（3手先読み、ビーム幅500）を強制します
+    // これにより、ベンチマークを10手や40手で回しても、テスト自体は常に同じ3手の基準で正しくパスします
+    BeamConfig test_cfg;
+    test_cfg.beam_width = 500;
+    test_cfg.look_ahead = 3;
+    test_cfg.eval_weights = BeamEvalWeights{}; // デフォルトの重みを使用
+
     bool all_ok = true;
     for (const auto& exp : expected) {
         PuyotanPlayer player = createTestPlayer(exp.seed);
         Tsumo tsumo(exp.seed);
-        SearchStats stats = runSingleSearch(player, tsumo, cfg);
+        
+        // 修正：引数で渡された cfg ではなく、テスト専用の test_cfg を使用して検索します
+        SearchStats stats = runSingleSearch(player, tsumo, test_cfg);
         Action a = getRLAction(stats.action);
         printf("Seed %7u: action=%3d (Put, rot=%d, x=%2d)  score=%.2f  "
                "latency=%.3fms  valid=%d\n",
