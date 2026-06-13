@@ -62,13 +62,15 @@ jobs:
           ./build.bat
 
       - name: Run Regression Tests on PR Branch
+        # 【修正点】フォルダに cd してから相対パス ./ で安全に実行（PowerShell/CMD/Bash すべてで動作します）
         run: |
-          pr-branch/native/build_Release/Release/engine_benchmark.exe --regression
-          pr-branch/native/build_Release/Release/beam_search_benchmark.exe --regression
+          cd pr-branch/native/build_Release/Release
+          ./engine_benchmark.exe --regression
+          ./beam_search_benchmark.exe --regression
 
       - name: Run PR Benchmarks (Current Commit)
         run: |
-          python pr-branch/tests/perf/run_stat_bench.py --run --iterations 15 --duration 10 --output pr-branch/pr_results.json
+          python pr-branch/tests/perf/run_stat_bench.py --run --iterations 30 --duration 10 --output pr-branch/pr_results.json
 
       # ── キャッシュの有無に応じたベース（比較元）データの準備 ──
       
@@ -94,15 +96,17 @@ jobs:
           ./build.bat
 
       - name: Run Regression Tests on Base Branch (Fallback)
+        # 【修正点】Fallback時のBase側テストも同様に cd してから相対パス ./ で安全に実行
         if: steps.restore-cache.outputs.cache-hit != 'true'
         run: |
-          base-branch/native/build_Release/Release/engine_benchmark.exe --regression
-          base-branch/native/build_Release/Release/beam_search_benchmark.exe --regression
+          cd base-branch/native/build_Release/Release
+          ./engine_benchmark.exe --regression
+          ./beam_search_benchmark.exe --regression
 
       - name: Run Base Benchmarks (Fallback)
         if: steps.restore-cache.outputs.cache-hit != 'true'
         run: |
-          python base-branch/tests/perf/run_stat_bench.py --run --iterations 15 --duration 10 --output pr-branch/base_results.json
+          python base-branch/tests/perf/run_stat_bench.py --run --iterations 30 --duration 10 --output pr-branch/base_results.json
 
       # ── 比較とレポート生成 ──
 
