@@ -4,29 +4,50 @@
 #include <puyotan/engine/match.hpp>
 #include <puyotan/engine/scorer.hpp>
 namespace puyotan {
+static constexpr auto kOjamaColumnLut = []() consteval {
+    std::array<std::array<uint8_t, 6>, 64> arr{};
+    for (int free_mask = 0; free_mask < 64; ++free_mask) {
+        for (int pos = 0; pos < 6; ++pos) {
+            int temp = free_mask;
+            int target_bit = 0;
+            int count = 0;
+            for (int b = 0; b < 6; ++b) {
+                if ((temp >> b) & 1) {
+                    if (count == pos) {
+                        target_bit = 1 << b;
+                        break;
+                    }
+                    ++count;
+                }
+            }
+            arr[free_mask][pos] = static_cast<uint8_t>(target_bit);
+        }
+    }
+    return arr;
+}();
+
 void PuyotanPlayer::fallOjama(int num, uint32_t& seed) noexcept {
     constexpr int width = config::Board::kWidth;
     while (num > 0) {
+        uint32_t mask;
+        int drop_num;
+
         if (num >= width) {
-            // Optimization: Set a full row of ojama at once if possible.
-            field.setRowMask(config::Board::kSpawnRow, Cell::Ojama, 0x3F);
-            Gravity::execute(field);
-            num -= width;
+            mask = 0x3F;
+            drop_num = width;
         } else {
-            // Randomized column selection (branchless-style bit manipulation).
-            uint32_t mask = 0;
+            mask = 0;
             for (int i = 0; i < num; ++i) {
                 const int pos = PuyotanMatch::nextInt(seed, width - i);
                 uint32_t free = ~mask & 0x3F;
-                for (int j = 0; j < pos; ++j) {
-                    free &= (free - 1); // BLSR: Clear the lowest set bit
-                }
-                mask |= (free & -free); // Extract the new lowest set bit
+                mask |= kOjamaColumnLut[free][pos];
             }
-            field.setRowMask(config::Board::kSpawnRow, Cell::Ojama, mask);
-            Gravity::execute(field);
-            break;
+            drop_num = num;
         }
+
+        field.setRowMask(config::Board::kSpawnRow, Cell::Ojama, mask);
+        Gravity::execute(field);
+        num -= drop_num;
     }
 }
 
