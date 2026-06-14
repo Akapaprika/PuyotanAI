@@ -31,9 +31,26 @@ Cell Board::get(int x, int y) const noexcept {
 
 void Board::set(int x, int y, Cell color) noexcept {
     assert(color != Cell::Empty);
-    clear(x, y);
-    boards_[toIndex(color)].set(x, y);
-    occupancy_.set(x, y);
+    const int idx = x >> 2;
+    const int shift = ((x & 3) << 4) | y;
+    const uint64_t bit = 1ULL << shift;
+    const uint64_t clear_mask = ~bit;
+
+    // Standard-compliant reinterpret_cast for safe and fast contiguous union
+    // access. Clear the bit at (x, y) across all color boards using highly
+    // efficient unrolled instructions.
+    for (auto& bb : boards_) {
+        uint64_t* board_ptr = reinterpret_cast<uint64_t*>(&bb);
+        board_ptr[idx] &= clear_mask;
+    }
+
+    // Set the bit for the target color and occupancy mask
+    uint64_t* target_board_ptr =
+        reinterpret_cast<uint64_t*>(&boards_[toIndex(color)]);
+    target_board_ptr[idx] |= bit;
+
+    uint64_t* occ_ptr = reinterpret_cast<uint64_t*>(&occupancy_);
+    occ_ptr[idx] |= bit;
 }
 
 void Board::clear(int x, int y) noexcept {
