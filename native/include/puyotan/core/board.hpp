@@ -17,10 +17,12 @@ namespace puyotan {
 
 // 4-bit PDEP LUT for 16-bit column spacing (Bits: 0, 16, 32, 48)
 static constexpr uint64_t kPdepLut[16] = {
-    0x0000000000000000ULL, 0x0000000000000001ULL, 0x0000000000010000ULL, 0x0000000000010001ULL,
-    0x0000000100000000ULL, 0x0000000100000001ULL, 0x0000000100010000ULL, 0x0000000100010001ULL,
-    0x0001000000000000ULL, 0x0001000000000001ULL, 0x0001000000010000ULL, 0x0001000000010001ULL,
-    0x0001000100000000ULL, 0x0001000100000001ULL, 0x0001000100010000ULL, 0x0001000100010001ULL};
+    0x0000000000000000ULL, 0x0000000000000001ULL, 0x0000000000010000ULL,
+    0x0000000000010001ULL, 0x0000000100000000ULL, 0x0000000100000001ULL,
+    0x0000000100010000ULL, 0x0000000100010001ULL, 0x0001000000000000ULL,
+    0x0001000000000001ULL, 0x0001000000010000ULL, 0x0001000000010001ULL,
+    0x0001000100000000ULL, 0x0001000100000001ULL, 0x0001000100010000ULL,
+    0x0001000100010001ULL};
 
 /**
  * @struct BitBoard
@@ -38,25 +40,33 @@ struct alignas(16) BitBoard {
         };
     };
 
-    BitBoard() noexcept : m128(_mm_setzero_si128()) {}
-    constexpr BitBoard(uint64_t l, uint64_t h) noexcept : lo(l), hi(h) {}
-    BitBoard(__m128i m) noexcept : m128(m) {}
+    BitBoard() noexcept : m128(_mm_setzero_si128()) {
+    }
+    constexpr BitBoard(uint64_t l, uint64_t h) noexcept : lo(l), hi(h) {
+    }
+    BitBoard(__m128i m) noexcept : m128(m) {
+    }
 
     // -----------------------------------------------------------------------
-    // Operators -- __forceinline prevents deoptimization on monomorphic hot paths.
+    // Operators -- __forceinline prevents deoptimization on monomorphic hot
+    // paths.
     // -----------------------------------------------------------------------
-    [[nodiscard]] __forceinline bool operator==(const BitBoard& o) const noexcept {
+    [[nodiscard]] __forceinline bool
+    operator==(const BitBoard& o) const noexcept {
         __m128i x = _mm_xor_si128(m128, o.m128);
         return _mm_testz_si128(x, x) != 0;
     }
-    [[nodiscard]] __forceinline bool operator!=(const BitBoard& o) const noexcept {
+    [[nodiscard]] __forceinline bool
+    operator!=(const BitBoard& o) const noexcept {
         __m128i x = _mm_xor_si128(m128, o.m128);
         return _mm_testz_si128(x, x) == 0;
     }
-    [[nodiscard]] __forceinline BitBoard operator&(const BitBoard& o) const noexcept {
+    [[nodiscard]] __forceinline BitBoard
+    operator&(const BitBoard& o) const noexcept {
         return _mm_and_si128(m128, o.m128);
     }
-    [[nodiscard]] __forceinline BitBoard operator|(const BitBoard& o) const noexcept {
+    [[nodiscard]] __forceinline BitBoard
+    operator|(const BitBoard& o) const noexcept {
         return _mm_or_si128(m128, o.m128);
     }
     [[nodiscard]] __forceinline BitBoard operator~() const noexcept {
@@ -74,7 +84,8 @@ struct alignas(16) BitBoard {
         m128 = _mm_andnot_si128(o.m128, m128);
         return *this;
     }
-    [[nodiscard]] static __forceinline BitBoard andNot(const BitBoard& a, const BitBoard& b) noexcept {
+    [[nodiscard]] static __forceinline BitBoard
+    andNot(const BitBoard& a, const BitBoard& b) noexcept {
         return _mm_andnot_si128(b.m128, a.m128); // result = (~b) & a
     }
 
@@ -105,7 +116,8 @@ struct alignas(16) BitBoard {
         int shift = ((x & 3) << 4) | y;
         (&lo)[idx] &= ~(1ULL << shift);
     }
-    static [[nodiscard]] __forceinline BitBoard fromColumnMask(uint32_t cols) noexcept {
+    static [[nodiscard]] __forceinline BitBoard
+    fromColumnMask(uint32_t cols) noexcept {
         const uint64_t mask_lo = kPdepLut[cols & 0x0Fu] * 0xFFFFULL;
         const uint64_t mask_hi = kPdepLut[(cols >> 4) & 0x03u] * 0xFFFFULL;
         return {mask_lo, mask_hi};
@@ -116,13 +128,15 @@ struct alignas(16) BitBoard {
 
     /**
      * Extracts the least significant set bit as a BitBoard (x & -x).
-     * Simplified: if lo==0 and hi==0, hi&-hi = 0 & 0 = 0, so result is {0,0} correctly.
+     * Simplified: if lo==0 and hi==0, hi&-hi = 0 & 0 = 0, so result is {0,0}
+     * correctly.
      */
     [[nodiscard]] __forceinline BitBoard extractLSB() const noexcept {
         uint64_t new_lo = lo & (0ULL - lo);
-        // Using a bitwise mask to eliminate ternary/branches while being faster than multiplication.
-        // If lo != 0, (lo | -lo) has the 63rd bit set. Arithmetic right shift makes it all 1s.
-        // We flip it to get all 1s only when lo == 0.
+        // Using a bitwise mask to eliminate ternary/branches while being faster
+        // than multiplication. If lo != 0, (lo | -lo) has the 63rd bit set.
+        // Arithmetic right shift makes it all 1s. We flip it to get all 1s only
+        // when lo == 0.
         uint64_t lo_is_zero_mask = ~((int64_t)(lo | (0ULL - lo)) >> 63);
         uint64_t new_hi = (hi & (0ULL - hi)) & lo_is_zero_mask;
         return {new_lo, new_hi};
@@ -147,25 +161,34 @@ struct alignas(16) BitBoard {
         return _mm_srli_si128(m128, 2);
     }
     [[nodiscard]] __forceinline BitBoard shiftUp() const noexcept {
-        return _mm_and_si128(shiftUpRaw().m128, _mm_set_epi64x(config::Board::kHiMask, config::Board::kLoMask));
+        return _mm_and_si128(
+            shiftUpRaw().m128,
+            _mm_set_epi64x(config::Board::kHiMask, config::Board::kLoMask));
     }
     [[nodiscard]] __forceinline BitBoard shiftDown() const noexcept {
-        return _mm_and_si128(shiftDownRaw().m128, _mm_set_epi64x(config::Board::kHiMask, config::Board::kLoMask));
+        return _mm_and_si128(
+            shiftDownRaw().m128,
+            _mm_set_epi64x(config::Board::kHiMask, config::Board::kLoMask));
     }
     [[nodiscard]] __forceinline BitBoard shiftRight() const noexcept {
-        return _mm_and_si128(shiftRightRaw().m128, _mm_set_epi64x(config::Board::kHiMask, config::Board::kLoMask));
+        return _mm_and_si128(
+            shiftRightRaw().m128,
+            _mm_set_epi64x(config::Board::kHiMask, config::Board::kLoMask));
     }
     [[nodiscard]] __forceinline BitBoard shiftLeft() const noexcept {
-        return _mm_and_si128(shiftLeftRaw().m128, _mm_set_epi64x(config::Board::kHiMask, config::Board::kLoMask));
+        return _mm_and_si128(
+            shiftLeftRaw().m128,
+            _mm_set_epi64x(config::Board::kHiMask, config::Board::kLoMask));
     }
 };
 
 /**
  * @class Board
- * @brief Manages the 6x14 Puyo Puyo playing field using bit-plane representation.
+ * @brief Manages the 6x14 Puyo Puyo playing field using bit-plane
+ * representation.
  *
- * This class provides high-performance, branchless operations for querying puyo types,
- * checking column heights, and performing piece placements.
+ * This class provides high-performance, branchless operations for querying puyo
+ * types, checking column heights, and performing piece placements.
  */
 class Board {
   public:
@@ -225,15 +248,17 @@ class Board {
      */
     inline int getColumnHeight(int x) const noexcept {
         assert(x >= 0 && x < config::Board::kWidth);
-        // BitBoard's lo and hi are contiguous, so we can access them as a 2-element array.
-        // x >> 2 (x / 4) maps 0-3 to index 0 (lo) and 4-5 to index 1 (hi).
+        // BitBoard's lo and hi are contiguous, so we can access them as a
+        // 2-element array. x >> 2 (x / 4) maps 0-3 to index 0 (lo) and 4-5 to
+        // index 1 (hi).
         const uint64_t val = (&occupancy_.lo)[x >> 2];
         const int shift = (x & 3) << 4; // x % 4 * 16 bits per col
         const uint32_t lane = static_cast<uint32_t>(val >> shift) & 0xFFFFu;
         return static_cast<int>(_mm_popcnt_u32(lane));
     }
     /**
-     * @brief Instantly drops a puyo to its final destination, bypassing gravity physics.
+     * @brief Instantly drops a puyo to its final destination, bypassing gravity
+     * physics.
      * @param x Target column (0-5).
      * @param y Target row (0-13).
      * @param color Puyo color.
@@ -241,12 +266,15 @@ class Board {
      */
     inline void dropNewPiece(int x, int y, Cell color) noexcept {
         assert(x >= 0 && x < config::Board::kWidth);
-        assert(toIndex(color) >= 0 && toIndex(color) < config::Board::kNumColors);
+        assert(toIndex(color) >= 0 &&
+               toIndex(color) < config::Board::kNumColors);
         const int idx = x >> 2;
         const int col_shift = (x & 3) << 4;
         const int shift = col_shift | y;
-        // Branchless visibility mask: y >= 13 is zeroed out by kVisibleColMask (0x1FFF)
-        const uint64_t keep_mask = static_cast<uint64_t>(config::Board::kVisibleColMask) << col_shift;
+        // Branchless visibility mask: y >= 13 is zeroed out by kVisibleColMask
+        // (0x1FFF)
+        const uint64_t keep_mask =
+            static_cast<uint64_t>(config::Board::kVisibleColMask) << col_shift;
         const uint64_t bit = (1ULL << shift) & keep_mask;
         (&boards_[toIndex(color)].lo)[idx] |= bit;
         (&occupancy_.lo)[idx] |= bit;
@@ -255,7 +283,8 @@ class Board {
     [[nodiscard]] const BitBoard& getBitboard(Cell color) const noexcept;
     /** @brief Manually overwrites the BitBoard for a specific color. */
     void setBitboard(Cell color, const BitBoard& bb) noexcept;
-    /** @brief Fully recalculates the occupancy bitmask from all color planes. */
+    /** @brief Fully recalculates the occupancy bitmask from all color planes.
+     */
     void updateOccupancyFromBoards() noexcept;
     /** @brief Sets the combined occupancy mask. */
     void updateOccupancy(const BitBoard& bb) noexcept {
@@ -267,14 +296,17 @@ class Board {
     }
 
   private:
-    friend class Gravity; // Allow direct lane access for O(1) per-column gravity
+    friend class Gravity; // Allow direct lane access for O(1) per-column
+                          // gravity
+    friend class Chain;
     /**
      * @brief Internal helper to map Cell enum to array index (Red=0...Ojama=4).
      */
     static constexpr int toIndex(Cell c) noexcept {
         return static_cast<int>(c);
     }
-    std::array<BitBoard, config::Board::kNumColors> boards_{}; ///< Per-color bitmasks
-    BitBoard occupancy_{};                                     ///< Combined occupancy mask
+    std::array<BitBoard, config::Board::kNumColors>
+        boards_{};         ///< Per-color bitmasks
+    BitBoard occupancy_{}; ///< Combined occupancy mask
 };
 } // namespace puyotan
