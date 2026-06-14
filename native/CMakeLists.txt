@@ -84,7 +84,7 @@ if (MSVC)
             /wd4819
             $<$<CONFIG:Debug>: /Od /Zi /RTC1 /W4 /MP >
             # MSVC Release optimization options
-            $<$<CONFIG:Release>: /O2 /Ot /Oy /arch:AVX2 /Gy /Gw /fp:fast /Oi /DNDEBUG /MP /Ob3 /GS- /Qspectre- >
+            $<$<CONFIG:Release>: /O2 /Ot /Oy /arch:AVX2 /Gy /Gw /fp:fast /Oi /DNDEBUG /MP /Ob3 /GS- /Qspectre- /Z7 >
         )
         # Enable Link-Time Optimization (LTO / Whole Program Optimization)
         set_property(TARGET ${T} PROPERTY INTERPROCEDURAL_OPTIMIZATION $<$<CONFIG:Release>:TRUE>)
@@ -104,7 +104,7 @@ if (MSVC)
     foreach(LT IN LISTS LINK_TARGETS)
         target_link_options(${LT} PRIVATE
             $<$<CONFIG:Debug>: /DEBUG >
-            $<$<CONFIG:Release>: /OPT:REF /OPT:ICF /INCREMENTAL:NO >
+            $<$<CONFIG:Release>: /OPT:REF /OPT:ICF /INCREMENTAL:NO /DEBUG >
         )
     endforeach()
 
