@@ -3,6 +3,7 @@
 #include <puyotan/core/gravity.hpp>
 #include <puyotan/engine/match.hpp>
 #include <puyotan/engine/scorer.hpp>
+
 namespace puyotan {
 static constexpr auto kOjamaColumnLut = []() consteval {
     std::array<std::array<uint8_t, 6>, 64> arr{};
@@ -92,13 +93,12 @@ bool PuyotanMatch::setAction(int id, Action action) noexcept {
 }
 
 bool PuyotanMatch::canStepNextFrame() const noexcept {
-    if (status_ != MatchStatus::Playing)
+    if (status_ != MatchStatus::Playing) [[unlikely]]
         return false;
-    for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
-        if (players_[id].current_action.action.type == ActionType::None)
-            return false;
-    }
-    return true;
+
+    // Fully unrolled and branchless player action type check
+    return (players_[0].current_action.action.type != ActionType::None) &
+           (players_[1].current_action.action.type != ActionType::None);
 }
 
 void PuyotanMatch::stepNextFrame() noexcept {
@@ -131,15 +131,12 @@ void PuyotanMatch::stepNextFrame() noexcept {
                                                std::max(h_axis, h_sub));
                     static_assert(config::Score::kSoftDropBonusPerGrid == 1,
                                   "Assumed 1 for multiply elision");
-                    // Direct BitBoard bit set (1 clock each, bypasses Gravity)
-                    // Puyo rules: pieces placed at the 14th row (y >= 13) or
-                    // above simply vanish instantly. The dropNewPiece method
-                    // internally applies a branchless mask to discard pieces y
-                    // >= 13 (kHeight).
+                    // Fast constant-LUT mask based placement (eliminates shift
+                    // overhead)
                     const int y_axis = h_axis + kAxisDy[r];
                     const int y_sub = h_sub + kSubDySimple[r];
-                    p.field.dropNewPiece(x_axis, y_axis, tumo.axis);
-                    p.field.dropNewPiece(x_sub, y_sub, tumo.sub);
+                    p.field.dropNewPieceFast(x_axis, y_axis, tumo.axis);
+                    p.field.dropNewPieceFast(x_sub, y_sub, tumo.sub);
                     // Zero-overhead erasure check restricted to only the 2
                     // deposited colors
                     const uint32_t dirty_colors = tumo.dirty_flag;
