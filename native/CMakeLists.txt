@@ -70,8 +70,10 @@ if (MSVC)
             /wd4267
             /wd4819
             $<$<CONFIG:Debug>: /Od /Zi /RTC1 /W4 /MP >
-            # Added /Z7 to avoid shared compiler PDB write locks during parallel compilation (/MP)
-            $<$<CONFIG:Release>: /O2 /Ot /Oy /arch:AVX2 /Gy /Gw /fp:fast /Oi /DNDEBUG /MP /Ob3 /GS- /Qspectre- /Z7 >
+            # /Z7: embed debug info in .obj to avoid PDB write-lock during /MP parallel compilation
+            # /GF: string pooling to reduce binary size and improve cache locality
+            # /favor:AMD64: tune instruction scheduling for AMD64 (benefits AMD 3020e)
+            $<$<CONFIG:Release>: /O2 /Ot /Oy /arch:AVX2 /Gy /Gw /GF /fp:fast /Oi /DNDEBUG /MP /Ob3 /GS- /Qspectre- /favor:AMD64 >
         )
     endforeach()
 
@@ -84,12 +86,15 @@ if (MSVC)
     # Re-enable Exception Handling for pybind11 module target
     target_compile_options(puyotan_native PRIVATE $<$<CONFIG:Release>: /EHsc >)
 
-    # Linker Options (Keep /DEBUG at the front to prevent overriding /OPT:REF and /OPT:ICF!)
+    # Linker Options
+    # Release: No /DEBUG to maximize LTO link-time and eliminate PDB overhead.
+    #          /OPT:REF removes unreferenced functions; /OPT:ICF folds identical COMDATs.
+    # Debug:   /DEBUG:FASTLINK for fast incremental link (no full PDB merge).
     set(LINK_TARGETS puyotan_native engine_benchmark beam_search_benchmark)
     foreach(LT IN LISTS LINK_TARGETS)
         target_link_options(${LT} PRIVATE
-            $<$<CONFIG:Debug>: /DEBUG >
-            $<$<CONFIG:Release>: /DEBUG /OPT:REF /OPT:ICF /INCREMENTAL:NO >
+            $<$<CONFIG:Debug>: /DEBUG:FASTLINK >
+            $<$<CONFIG:Release>: /OPT:REF /OPT:ICF /INCREMENTAL:NO >
         )
         
         # Unified Post-build copy commands to prevent code replication
