@@ -104,10 +104,6 @@ bool PuyotanMatch::canStepNextFrame() const noexcept {
 void PuyotanMatch::stepNextFrame() noexcept {
     if (!canStepNextFrame())
         return;
-    stepNextFrameUnchecked();
-}
-
-void PuyotanMatch::stepNextFrameUnchecked() noexcept {
     // 1. Execute or reserve actions
     for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         auto& p = players_[id];
@@ -284,15 +280,11 @@ void PuyotanMatch::activateOjama(int finishing_player_id) noexcept {
 
 int PuyotanMatch::stepUntilDecision() noexcept {
     while (status_ == MatchStatus::Playing) {
-        // Inline the decision mask check to avoid a separate function call,
-        // and use stepNextFrameUnchecked() to skip the redundant
-        // canStepNextFrame() guard (getDecisionMask()==0 already guarantees
-        // both players have a pending action).
-        const bool p0_needs = (players_[0].current_action.action.type == ActionType::None);
-        const bool p1_needs = (players_[1].current_action.action.type == ActionType::None);
-        if (p0_needs | p1_needs)
-            return static_cast<int>(p0_needs) | (static_cast<int>(p1_needs) << 1);
-        stepNextFrameUnchecked();
+        int mask = getDecisionMask();
+        if (mask != 0)
+            return mask;
+
+        stepNextFrame();
     }
     return 0;
 }

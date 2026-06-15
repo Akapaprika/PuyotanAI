@@ -139,13 +139,6 @@ class PuyotanMatch {
     MatchStatus status_ = MatchStatus::Ready;
     void sendOjama(int sender_id, int ojama) noexcept;
     void activateOjama(int finishing_player_id) noexcept;
-    /**
-     * @brief stepNextFrame without the canStepNextFrame() guard.
-     * Called internally by stepUntilDecision() when we already know both
-     * players have a pending action (getDecisionMask() == 0 guarantees this).
-     * Eliminates the redundant canStepNextFrame() re-check on every auto-frame.
-     */
-    void stepNextFrameUnchecked() noexcept;
     // Pre-computed chain group data, cached between CHAIN_FALL/PUT -> CHAIN
     // turns. Stored here (not in PuyotanPlayer) to keep PuyotanPlayer compact
     // and cache-friendly.
