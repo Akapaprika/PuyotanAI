@@ -127,19 +127,35 @@ struct alignas(16) BitBoard {
     }
 
     /**
-     * Extracts the least significant set bit as a BitBoard (x & -x).
-     * Simplified: if lo==0 and hi==0, hi&-hi = 0 & 0 = 0, so result is {0,0}
-     * correctly.
+     * Extracts the least significant set bit as a BitBoard (x & -x),
+     * implemented entirely in SIMD registers with zero SIMD→GPR round trips.
+     *
+     * The naive scalar version extracts lo/hi to GPR (vpextrq), computes
+     * lo_is_zero_mask with 5 integer ops, then moves back to __m128i —
+     * paying a ~5-7 cycle SIMD↔int bypass latency on Intel CPUs.
+     *
+     * This version stays in XMM land throughout:
+     *   1. Compute {lo & -lo, hi & -hi} in parallel with _mm_sub_epi64
+     *   2. Detect lo==0 via _mm_cmpeq_epi64
+     *   3. Broadcast lo's zero-condition to the hi lane with _mm_shuffle_epi32
+     *   4. Build mask {all-1s, lo_zero_cond} with _mm_blend_epi16
+     *   5. AND with per-lane LSBs to zero the hi result when lo != 0
      */
     [[nodiscard]] __forceinline BitBoard extractLSB() const noexcept {
-        uint64_t new_lo = lo & (0ULL - lo);
-        // Using a bitwise mask to eliminate ternary/branches while being faster
-        // than multiplication. If lo != 0, (lo | -lo) has the 63rd bit set.
-        // Arithmetic right shift makes it all 1s. We flip it to get all 1s only
-        // when lo == 0.
-        uint64_t lo_is_zero_mask = ~((int64_t)(lo | (0ULL - lo)) >> 63);
-        uint64_t new_hi = (hi & (0ULL - hi)) & lo_is_zero_mask;
-        return {new_lo, new_hi};
+        const __m128i zero = _mm_setzero_si128();
+        // Per-lane negation: {-lo, -hi}
+        const __m128i neg = _mm_sub_epi64(zero, m128);
+        // Per-lane LSB isolation: {lo & -lo, hi & -hi}
+        const __m128i per_lsb = _mm_and_si128(m128, neg);
+        // Is lo lane == 0? → all-1s in lo lane if so, all-0s otherwise
+        const __m128i lo_is_zero = _mm_cmpeq_epi64(m128, zero);
+        // Broadcast lo lane's condition to hi lane (imm8=0x44: qword0→qword0, qword0→qword1)
+        const __m128i cond_hi = _mm_shuffle_epi32(lo_is_zero, 0x44);
+        // mask: lo lane = all-1s (always keep lo result)
+        //       hi lane = all-1s only when lo was 0 (keep hi result only then)
+        // blend 0x0F: words 0-3 (lo lane) from b=all-1s; words 4-7 (hi lane) from a=cond_hi
+        const __m128i mask = _mm_blend_epi16(cond_hi, _mm_set1_epi64x(-1LL), 0x0F);
+        return _mm_and_si128(per_lsb, mask);
     }
 
     // -----------------------------------------------------------------------
