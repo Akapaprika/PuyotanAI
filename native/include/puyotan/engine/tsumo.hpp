@@ -8,34 +8,53 @@
 namespace puyotan {
 /**
  * @class Tsumo
- * @brief Thread-safe (read-only) ring-buffered puyo piece generator.
+ * @brief Ring-buffered puyo piece generator with lazy chunk generation.
  *
  * Generates a deterministic sequence of puyo pairs based on a 32-bit seed.
- * Pieces are cached in a fixed-size pool to minimize RNG overhead during simulation.
+ * Pool entries are generated on demand in chunks of kTsumoChunkSize to avoid
+ * the cost of pre-computing all 1000 entries upfront.
+ *
+ * getSeed() (= ojama RNG seed) is computed via a precomputed GF(2)^32 jump
+ * matrix, replacing the 2000-step sequential XORSHIFT with O(32) XOR ops.
  */
 class Tsumo {
   public:
     explicit Tsumo(uint32_t seed = 1u) noexcept;
+
     /**
      * @brief Retrieves a PuyoPiece at the specified absolute sequence index.
-     * @param index sequence index (starts at 0).
+     * @param index Sequence index (starts at 0, wraps at kTsumoPoolSize).
      * @return The axis and sub puyo colors.
-     * @note Performance: O(1) ring-buffer access.
+     * @note O(1) normally. The [[unlikely]] branch fires at most once per
+     *       kTsumoChunkSize calls, generating the next chunk in bulk.
      */
     inline PuyoPiece get(int32_t index) const noexcept {
         uint32_t idx = static_cast<uint32_t>(index);
-        if (idx >= 1000) [[unlikely]] {
-            idx -= 1000;
+        if (idx >= config::Rule::kTsumoPoolSize) [[unlikely]] {
+            idx -= config::Rule::kTsumoPoolSize;
+        }
+        if (idx >= generated_count_) [[unlikely]] {
+            expandTo(idx);
         }
         return pool_[idx];
     }
+
     void setSeed(uint32_t seed) noexcept;
-    uint32_t getSeed() const noexcept {
-        return seed_;
-    }
+
+    /// Returns the XORSHIFT state after all kTsumoPoolSize pairs have been
+    /// consumed. Used by PuyotanMatch to seed the ojama RNG.
+    /// Computed via jump matrix in setSeed() — O(32) ops, not O(2000).
+    uint32_t getSeed() const noexcept { return ojama_seed_; }
 
   private:
-    uint32_t seed_;
-    std::array<PuyoPiece, config::Rule::kTsumoPoolSize> pool_;
+    /// Generates pool entries up to the chunk boundary that covers target_idx.
+    /// Called lazily from get() via [[unlikely]] branch.
+    void expandTo(uint32_t target_idx) const noexcept;
+
+    uint32_t ojama_seed_;  ///< XORSHIFT state after kTsumoPoolSize pairs
+
+    mutable uint32_t rng_state_;        ///< Running state for lazy pool generation
+    mutable uint32_t generated_count_;  ///< Number of valid entries in pool_
+    mutable std::array<PuyoPiece, config::Rule::kTsumoPoolSize> pool_;
 };
 } // namespace puyotan
