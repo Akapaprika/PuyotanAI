@@ -1,15 +1,6 @@
 #include <puyotan/core/chain.hpp>
 
 namespace puyotan {
-namespace {
-// kGhostMask: masks out the ghost row (y >= 12) so those puyos don't
-// participate in connectivity or erasure.
-// Placed at file scope to avoid MSVC's per-call thread-safe static
-// initialization (hidden mutex) that would fire on every scanGroups() call.
-static const __m128i kGhostMask = _mm_set_epi64x(
-    static_cast<int64_t>(config::Board::kChainableHiMask),
-    static_cast<int64_t>(config::Board::kChainableLoMask));
-} // anonymous namespace
 // -----------------------------------------------------------------------
 // Internal BFS kernel shared by both findGroups and the legacy canFire path.
 // Fills data.erased_per_color[i], data.total_erased, group_sizes, and counts.
@@ -24,6 +15,10 @@ static void scanGroups(const Board& board, uint32_t color_mask,
             continue;
         const Cell c = static_cast<Cell>(i);
 
+        // Mask ghost puyos (y >= 12) so they don't participate in connectivity
+        // or erasure.
+        static const __m128i kGhostMask = _mm_set_epi64x(
+            config::Board::kChainableHiMask, config::Board::kChainableLoMask);
         const BitBoard color_board(
             _mm_and_si128(board.getBitboard(c).m128, kGhostMask));
         if (color_board.empty())
