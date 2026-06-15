@@ -128,18 +128,17 @@ struct alignas(16) BitBoard {
 
     /**
      * Extracts the least significant set bit as a BitBoard (x & -x).
-     * Simplified: if lo==0 and hi==0, hi&-hi = 0 & 0 = 0, so result is {0,0}
-     * correctly.
+     *
+     * Uses a predicted branch on lo != 0.  In typical Puyo boards the
+     * active color almost always occupies columns 0-3 (lo), so the branch
+     * is near-perfectly predicted and eliminates the ~8-op branchless path
+     * (neg / or / vpextrq / sar / andn ...) with just 2 ops per taken path.
      */
     [[nodiscard]] __forceinline BitBoard extractLSB() const noexcept {
-        uint64_t new_lo = lo & (0ULL - lo);
-        // Using a bitwise mask to eliminate ternary/branches while being faster
-        // than multiplication. If lo != 0, (lo | -lo) has the 63rd bit set.
-        // Arithmetic right shift makes it all 1s. We flip it to get all 1s only
-        // when lo == 0.
-        uint64_t lo_is_zero_mask = ~((int64_t)(lo | (0ULL - lo)) >> 63);
-        uint64_t new_hi = (hi & (0ULL - hi)) & lo_is_zero_mask;
-        return {new_lo, new_hi};
+        if (lo) [[likely]] {
+            return {lo & (0ULL - lo), 0ULL};
+        }
+        return {0ULL, hi & (0ULL - hi)};
     }
 
     // -----------------------------------------------------------------------
@@ -281,6 +280,17 @@ class Board {
     }
     /** @brief Retrieves the BitBoard mask for the specified color. */
     [[nodiscard]] const BitBoard& getBitboard(Cell color) const noexcept;
+    /**
+     * @brief Fast O(1) occupancy check: true if any puyo occupies (x, y).
+     * Preferred over get(x, y) when only empty-or-not is needed (e.g., death
+     * check), because it reads a single bit from the occupancy mask rather
+     * than iterating over 4 color planes.
+     */
+    [[nodiscard]] __forceinline bool isOccupied(int x, int y) const noexcept {
+        const int idx   = x >> 2;
+        const int shift = ((x & 3) << 4) | y;
+        return ((&occupancy_.lo)[idx] >> shift) & 1;
+    }
     /** @brief Manually overwrites the BitBoard for a specific color. */
     void setBitboard(Cell color, const BitBoard& bb) noexcept;
     /** @brief Fully recalculates the occupancy bitmask from all color planes.

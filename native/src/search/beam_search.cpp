@@ -137,9 +137,12 @@ PlaceResult simulatePlacement(const Board& src, PuyoPiece piece,
         ed = Chain::findGroups(res.field, fallen);
     }
 
-    // Death check (deferred until after chains resolve)
-    if (res.field.get(config::Rule::kDeathCol, config::Rule::kDeathRow) !=
-        Cell::Empty) [[unlikely]] {
+    // Death check (deferred until after all chains resolve).
+    // Must be AFTER chain resolution: a chain can clear puyos from the death
+    // cell (col 2, row 11), allowing the player to survive a seemingly fatal
+    // placement.
+    if (res.field.isOccupied(config::Rule::kDeathCol,
+                             config::Rule::kDeathRow)) [[unlikely]] {
         res.dead = true;
         return res;
     }

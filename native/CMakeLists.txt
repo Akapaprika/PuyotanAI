@@ -73,7 +73,9 @@ if (MSVC)
             # /Z7: embed debug info in .obj to avoid PDB write-lock during /MP parallel compilation
             # /GF: string pooling to reduce binary size and improve cache locality
             # /favor:AMD64: tune instruction scheduling for AMD64 (benefits AMD 3020e)
-            $<$<CONFIG:Release>: /O2 /Ot /Oy /arch:AVX2 /Gy /Gw /GF /fp:fast /Oi /DNDEBUG /MP /Ob3 /GS- /Qspectre- /favor:AMD64 >
+            # /Zi: generate PDB for profiling — does NOT affect generated machine code or runtime speed.
+            #       Combined with /OPT:REF /OPT:ICF on the linker side, there is zero performance penalty.
+            $<$<CONFIG:Release>: /O2 /Ot /Oy /arch:AVX2 /Gy /Gw /GF /fp:fast /Oi /DNDEBUG /MP /Ob3 /GS- /Qspectre- /favor:AMD64 /Zi >
         )
     endforeach()
 
@@ -87,14 +89,16 @@ if (MSVC)
     target_compile_options(puyotan_native PRIVATE $<$<CONFIG:Release>: /EHsc >)
 
     # Linker Options
-    # Release: No /DEBUG to maximize LTO link-time and eliminate PDB overhead.
-    #          /OPT:REF removes unreferenced functions; /OPT:ICF folds identical COMDATs.
+    # Release: /DEBUG generates a PDB for profiling with full function names.
+    #          /OPT:REF and /OPT:ICF are explicitly set to OVERRIDE /DEBUG's default
+    #          of disabling linker optimizations — runtime performance is identical
+    #          to a build without /DEBUG. The PDB is a side-car file only.
     # Debug:   /DEBUG:FASTLINK for fast incremental link (no full PDB merge).
     set(LINK_TARGETS puyotan_native engine_benchmark beam_search_benchmark)
     foreach(LT IN LISTS LINK_TARGETS)
         target_link_options(${LT} PRIVATE
             $<$<CONFIG:Debug>: /DEBUG:FASTLINK >
-            $<$<CONFIG:Release>: /OPT:REF /OPT:ICF /INCREMENTAL:NO >
+            $<$<CONFIG:Release>: /DEBUG /OPT:REF /OPT:ICF /INCREMENTAL:NO >
         )
         
         # Unified Post-build copy commands to prevent code replication
