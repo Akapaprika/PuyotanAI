@@ -19,10 +19,9 @@ static void scanGroups(const Board& board, uint32_t color_mask,
                        ErasureData& data) noexcept {
     uint32_t erased_color_bits = 0; // Bit i is set if color i was erased
 
-    // ぷよの4色（下位4ビット）のみを対象とする
-    uint32_t mask = color_mask & 0x0Fu;
-    while (mask > 0) {
-        const int i = std::countr_zero(mask);
+    for (int i = 0; i < config::Rule::kColors; ++i) {
+        if (!((color_mask >> i) & 1))
+            continue;
         const Cell c = static_cast<Cell>(i);
 
         // SIMDレジスタに載せる前に、メモリから一般レジスタに直接ロードして判定する
@@ -34,62 +33,58 @@ static void scanGroups(const Board& board, uint32_t color_mask,
                                          std::popcount(hi_masked));
 
         // 4個未満なら、重いSIMDレジスタへのロードやAND演算をすることすら避けて、即座にスキップ！
-        if (pop >= config::Rule::kConnectCount) {
+        if (pop < config::Rule::kConnectCount)
+            continue;
 
-            // 4個以上あることが確定した本命の色のみ、SIMDレジスタにロードして処理する
-            const BitBoard color_board(_mm_and_si128(bb.m128, kGhostMask));
+        // 4個以上あることが確定した本命の色のみ、SIMDレジスタにロードして処理する
+        const BitBoard color_board(_mm_and_si128(bb.m128, kGhostMask));
 
-            // Bitwise Connectivity Pruning ('has_2' filter):
-            // Only puyos with >= 2 neighbors of the same color can be part of a
-            // 4+ group.
-            const BitBoard U = color_board.shiftUpRaw();
-            const BitBoard D = color_board.shiftDownRaw();
-            const BitBoard L = color_board.shiftLeftRaw();
-            const BitBoard R = color_board.shiftRightRaw();
+        // Bitwise Connectivity Pruning ('has_2' filter):
+        // Only puyos with >= 2 neighbors of the same color can be part of a 4+
+        // group.
+        const BitBoard U = color_board.shiftUpRaw();
+        const BitBoard D = color_board.shiftDownRaw();
+        const BitBoard L = color_board.shiftLeftRaw();
+        const BitBoard R = color_board.shiftRightRaw();
 
-            const BitBoard ud_and = U & D;
-            const BitBoard ud_or = U | D;
-            const BitBoard lr_and = L & R;
-            const BitBoard lr_or = L | R;
-            BitBoard has_2 = color_board & (ud_and | lr_and | (ud_or & lr_or));
+        const BitBoard ud_and = U & D;
+        const BitBoard ud_or = U | D;
+        const BitBoard lr_and = L & R;
+        const BitBoard lr_or = L | R;
+        BitBoard has_2 = color_board & (ud_and | lr_and | (ud_or & lr_or));
 
-            BitBoard color_erased;
-            const __m128i cb_mask = color_board.m128;
-            while (!has_2.empty()) {
-                BitBoard group = has_2.extractLSB();
-                BitBoard prev;
-                do {
-                    prev = group;
-                    __m128i v = group.m128;
-                    // SIMD BFS: Expand seed 'group' by 1 step in all 4
-                    // directions.
-                    __m128i lr = _mm_or_si128(_mm_slli_epi64(v, 1),
-                                              _mm_srli_epi64(v, 1));
-                    __m128i ud = _mm_or_si128(_mm_slli_si128(v, 2),
-                                              _mm_srli_si128(v, 2));
-                    group.m128 = _mm_and_si128(
-                        _mm_or_si128(v, _mm_or_si128(lr, ud)), cb_mask);
-                } while (group != prev);
+        BitBoard color_erased;
+        const __m128i cb_mask = color_board.m128;
+        while (!has_2.empty()) {
+            BitBoard group = has_2.extractLSB();
+            BitBoard prev;
+            do {
+                prev = group;
+                __m128i v = group.m128;
+                // SIMD BFS: Expand seed 'group' by 1 step in all 4 directions.
+                __m128i lr =
+                    _mm_or_si128(_mm_slli_epi64(v, 1), _mm_srli_epi64(v, 1));
+                __m128i ud =
+                    _mm_or_si128(_mm_slli_si128(v, 2), _mm_srli_si128(v, 2));
+                group.m128 = _mm_and_si128(
+                    _mm_or_si128(v, _mm_or_si128(lr, ud)), cb_mask);
+            } while (group != prev);
 
-                const int sz = group.popcount();
-                if (sz >= config::Rule::kConnectCount) {
-                    data.group_sizes[data.num_groups++] =
-                        static_cast<uint8_t>(sz);
-                    data.num_erased += sz;
-                    color_erased |= group; // Accumulate for this color
-                    data.total_erased |=
-                        group; // Accumulate for overall erasure
-                    erased_color_bits |=
-                        (1u << i); // Record that this color had an erasure
-                }
-                has_2.andNot(group);
+            const int sz = group.popcount();
+            if (sz >= config::Rule::kConnectCount) {
+                data.group_sizes[data.num_groups++] = static_cast<uint8_t>(sz);
+                data.num_erased += sz;
+                color_erased |= group;      // Accumulate for this color
+                data.total_erased |= group; // Accumulate for overall erasure
+                erased_color_bits |=
+                    (1u << i); // Record that this color had an erasure
             }
-            // Store result for this color (No branch: safe even if color_erased
-            // is empty)
-            data.erased_per_color[i] = color_erased;
+            has_2.andNot(group);
         }
-        // 処理が終わったビット（色）を 1 サイクルで消去
-        mask &= (mask - 1);
+
+        // Store result for this color (No branch: safe even if color_erased is
+        // empty)
+        data.erased_per_color[i] = color_erased;
     }
 
     // Convert bitmask to color count in a single instruction
