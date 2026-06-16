@@ -73,33 +73,6 @@ void PuyotanMatch::start() noexcept {
     status_ = MatchStatus::Playing;
 }
 
-bool PuyotanMatch::setAction(int id, Action action) noexcept {
-    assert(status_ == MatchStatus::Playing &&
-           "Cannot set action to match not in PLAYING status");
-    auto& p = players_[id];
-    assert(p.current_action.action.type == ActionType::None &&
-           "Action already set for this player in this turn");
-    switch (action.type) {
-        case ActionType::Pass:
-            p.current_action = {action, 0};
-            return true;
-        case ActionType::Put:
-            p.current_action = {action, 1};
-            return true;
-        default:
-            return false;
-    }
-}
-
-bool PuyotanMatch::canStepNextFrame() const noexcept {
-    if (status_ != MatchStatus::Playing)
-        return false;
-    for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
-        if (players_[id].current_action.action.type == ActionType::None)
-            return false;
-    }
-    return true;
-}
 
 void PuyotanMatch::stepNextFrame() noexcept {
     if (!canStepNextFrame())

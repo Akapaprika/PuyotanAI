@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <cassert>
 #include <optional>
 #include <puyotan/common/types.hpp>
 #include <puyotan/core/board.hpp>
@@ -60,13 +61,37 @@ class PuyotanMatch {
      * @param action The action to perform.
      * @return True if the action was valid and accepted.
      */
-    bool setAction(int player_id, Action action) noexcept;
+    __forceinline bool setAction(int player_id, Action action) noexcept {
+        assert(status_ == MatchStatus::Playing &&
+               "Cannot set action to match not in PLAYING status");
+        auto& p = players_[player_id];
+        assert(p.current_action.action.type == ActionType::None &&
+               "Action already set for this player in this turn");
+        switch (action.type) {
+            case ActionType::Pass:
+                p.current_action = {action, 0};
+                return true;
+            case ActionType::Put:
+                p.current_action = {action, 1};
+                return true;
+            default:
+                return false;
+        }
+    }
     /**
      * @brief Checks if all required actions have been provided to advance the
      * frame.
      * @return True if the simulation can proceed.
      */
-    bool canStepNextFrame() const noexcept;
+    __forceinline bool canStepNextFrame() const noexcept {
+        if (status_ != MatchStatus::Playing)
+            return false;
+        for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
+            if (players_[id].current_action.action.type == ActionType::None)
+                return false;
+        }
+        return true;
+    }
     /**
      * @brief Advances the match simulation by exactly one frame.
      * Processes gravity, chains, and action transitions.
