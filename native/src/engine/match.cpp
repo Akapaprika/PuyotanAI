@@ -51,7 +51,16 @@ void PuyotanPlayer::fallOjama(int num, uint32_t& seed) noexcept {
     }
 }
 
+int PuyotanMatch::getDecisionMask() const noexcept {
+    if (status_ != MatchStatus::Playing) [[unlikely]]
+        return 0;
 
+    int p0_none = static_cast<int>(players_[0].current_action.action.type ==
+                                   ActionType::None);
+    int p1_none = static_cast<int>(players_[1].current_action.action.type ==
+                                   ActionType::None);
+    return p0_none | (p1_none << 1);
+}
 
 PuyotanMatch::PuyotanMatch(uint32_t seed) noexcept : tsumo_(seed) {
     assert(seed != 0u);
