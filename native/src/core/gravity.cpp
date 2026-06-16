@@ -108,7 +108,7 @@ uint32_t Gravity::execute(Board& board) noexcept {
 bool Gravity::canFall(const Board& board) noexcept {
     const __m128i occ = board.getOccupied().m128;
     const __m128i shifted = _mm_srli_epi64(occ, 1);
-    static const __m128i boundary = _mm_set1_epi64x(0x8000800080008000ULL);
+    const __m128i boundary = _mm_set1_epi64x(0x8000800080008000ULL);
 
     // shifted & ~boundary & ~occ
     const __m128i can_fall_bits = _mm_andnot_si128(occ, _mm_andnot_si128(boundary, shifted));
