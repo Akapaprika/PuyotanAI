@@ -296,7 +296,10 @@ class Board {
         (&occupancy_.lo)[idx] |= bit;
     }
     /** @brief Retrieves the BitBoard mask for the specified color. */
-    [[nodiscard]] const BitBoard& getBitboard(Cell color) const noexcept;
+    [[nodiscard]] __forceinline const BitBoard& getBitboard(
+        Cell color) const noexcept {
+        return boards_[toIndex(color)];
+    }
     /**
      * @brief Fast O(1) occupancy check: true if any puyo occupies (x, y).
      * Preferred over get(x, y) when only empty-or-not is needed (e.g., death

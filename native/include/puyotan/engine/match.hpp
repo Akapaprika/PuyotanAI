@@ -129,7 +129,15 @@ class PuyotanMatch {
      * (ActionType::None) from automatic internal frames (CHAIN, CHAIN_FALL,
      * OJAMA), which the engine drives itself.
      */
-    int getDecisionMask() const noexcept;
+    [[nodiscard]] __forceinline int getDecisionMask() const noexcept {
+        if (status_ != MatchStatus::Playing) [[unlikely]]
+            return 0;
+        const int p0_none = static_cast<int>(
+            players_[0].current_action.action.type == ActionType::None);
+        const int p1_none = static_cast<int>(
+            players_[1].current_action.action.type == ActionType::None);
+        return p0_none | (p1_none << 1);
+    }
     /**
      * @brief Performs a high-speed batch simulation of multiple games.
      *

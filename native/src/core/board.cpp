@@ -73,13 +73,7 @@ int Board::getDropDistance(int x, int y) const noexcept {
     return y - getColumnHeight(x);
 }
 
-const BitBoard& Board::getBitboard(Cell color) const noexcept {
-    return boards_[toIndex(color)];
-}
 
-void Board::setBitboard(Cell color, const BitBoard& bb) noexcept {
-    boards_[toIndex(color)] = bb;
-}
 
 void Board::updateOccupancyFromBoards() noexcept {
     occupancy_ = boards_[0];
