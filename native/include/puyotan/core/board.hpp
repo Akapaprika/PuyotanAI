@@ -149,12 +149,15 @@ struct alignas(16) BitBoard {
         const __m128i per_lsb = _mm_and_si128(m128, neg);
         // Is lo lane == 0? → all-1s in lo lane if so, all-0s otherwise
         const __m128i lo_is_zero = _mm_cmpeq_epi64(m128, zero);
-        // Broadcast lo lane's condition to hi lane (imm8=0x44: qword0→qword0, qword0→qword1)
+        // Broadcast lo lane's condition to hi lane (imm8=0x44: qword0→qword0,
+        // qword0→qword1)
         const __m128i cond_hi = _mm_shuffle_epi32(lo_is_zero, 0x44);
         // mask: lo lane = all-1s (always keep lo result)
         //       hi lane = all-1s only when lo was 0 (keep hi result only then)
-        // blend 0x0F: words 0-3 (lo lane) from b=all-1s; words 4-7 (hi lane) from a=cond_hi
-        const __m128i mask = _mm_blend_epi16(cond_hi, _mm_set1_epi64x(-1LL), 0x0F);
+        // blend 0x0F: words 0-3 (lo lane) from b=all-1s; words 4-7 (hi lane)
+        // from a=cond_hi
+        const __m128i mask =
+            _mm_blend_epi16(cond_hi, _mm_set1_epi64x(-1LL), 0x0F);
         return _mm_and_si128(per_lsb, mask);
     }
 
@@ -296,7 +299,10 @@ class Board {
         (&occupancy_.lo)[idx] |= bit;
     }
     /** @brief Retrieves the BitBoard mask for the specified color. */
-    [[nodiscard]] const BitBoard& getBitboard(Cell color) const noexcept;
+    [[nodiscard]] inline const BitBoard&
+    getBitboard(Cell color) const noexcept {
+        return boards_[static_cast<int>(color)];
+    }
     /**
      * @brief Fast O(1) occupancy check: true if any puyo occupies (x, y).
      * Preferred over get(x, y) when only empty-or-not is needed (e.g., death
@@ -304,7 +310,7 @@ class Board {
      * than iterating over 4 color planes.
      */
     [[nodiscard]] __forceinline bool isOccupied(int x, int y) const noexcept {
-        const int idx   = x >> 2;
+        const int idx = x >> 2;
         const int shift = ((x & 3) << 4) | y;
         return ((&occupancy_.lo)[idx] >> shift) & 1;
     }

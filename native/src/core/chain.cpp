@@ -24,10 +24,20 @@ static void scanGroups(const Board& board, uint32_t color_mask,
             continue;
         const Cell c = static_cast<Cell>(i);
 
-        const BitBoard color_board(
-            _mm_and_si128(board.getBitboard(c).m128, kGhostMask));
-        if (color_board.popcount() < config::Rule::kConnectCount)
+        // SIMDレジスタに載せる前に、メモリから一般レジスタに直接ロードして判定する
+        const BitBoard& bb = board.getBitboard(c);
+        const uint64_t lo_masked = bb.lo & config::Board::kChainableLoMask;
+        const uint64_t hi_masked = bb.hi & config::Board::kChainableHiMask;
+
+        const int pop = static_cast<int>(std::popcount(lo_masked) +
+                                         std::popcount(hi_masked));
+
+        // 4個未満なら、重いSIMDレジスタへのロードやAND演算をすることすら避けて、即座にスキップ！
+        if (pop < config::Rule::kConnectCount)
             continue;
+
+        // 4個以上あることが確定した本命の色のみ、SIMDレジスタにロードして処理する
+        const BitBoard color_board(_mm_and_si128(bb.m128, kGhostMask));
 
         // Bitwise Connectivity Pruning ('has_2' filter):
         // Only puyos with >= 2 neighbors of the same color can be part of a 4+
