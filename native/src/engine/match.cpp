@@ -114,7 +114,7 @@ void PuyotanMatch::stepNextFrame() noexcept {
         alive_mask |= (static_cast<uint32_t>(is_alive1) << 1);
     }
 
-    if (alive_mask != 3) {
+    if (alive_mask != 3) [[unlikely]] {
         static constexpr MatchStatus kNextStatus[] = {
             MatchStatus::Draw, MatchStatus::WinP1, MatchStatus::WinP2,
             MatchStatus::Playing};

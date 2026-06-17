@@ -10,14 +10,6 @@ static const __m128i kGhostMask =
     _mm_set_epi64x(static_cast<int64_t>(config::Board::kChainableHiMask),
                    static_cast<int64_t>(config::Board::kChainableLoMask));
 } // anonymous namespace
-// -----------------------------------------------------------------------
-// Internal BFS kernel shared by both scanGroups and the legacy canFire path.
-// Fills data.erased_per_color[i], data.total_erased, group_sizes, and counts.
-// Does NOT touch the Board.
-// -----------------------------------------------------------------------
-static void scanGroups(const Board& board, uint32_t color_mask,
-                       ErasureData& data) noexcept {
-}
 
 // -----------------------------------------------------------------------
 // PUBLIC API
