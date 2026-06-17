@@ -75,7 +75,6 @@ int PuyotanMatch::getDecisionMask() const noexcept {
 
 PuyotanMatch::PuyotanMatch(uint32_t seed) noexcept : tsumo_(seed) {
     assert(seed != 0u);
-    seed_ = tsumo_.getSeed();
 }
 
 void PuyotanMatch::start() noexcept {
@@ -241,6 +240,12 @@ __forceinline void PuyotanMatch::stepPlayerFrame(
                 int fall_num = std::min(static_cast<int>(p.active_ojama),
                                         config::Rule::kMaxOjamaPerFall);
                 p.active_ojama -= static_cast<uint16_t>(fall_num);
+                // 実際におじゃまが降る最初のフレームで、初めて getSeed()
+                // を呼ぶ（遅延評価）
+                if (seed_ == 0u) [[unlikely]] {
+                    seed_ = tsumo_.getSeed();
+                }
+
                 p.fallOjama(fall_num, seed_);
                 p.current_action = {};
                 break;

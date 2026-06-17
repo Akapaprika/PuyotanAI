@@ -44,17 +44,19 @@ class Tsumo {
     /// Returns the XORSHIFT state after all kTsumoPoolSize pairs have been
     /// consumed. Used by PuyotanMatch to seed the ojama RNG.
     /// Computed via jump matrix in setSeed() — O(32) ops, not O(2000).
-    uint32_t getSeed() const noexcept { return ojama_seed_; }
+    uint32_t getSeed() const noexcept;
 
   private:
     /// Generates pool entries up to the chunk boundary that covers target_idx.
     /// Called lazily from get() via [[unlikely]] branch.
     void expandTo(uint32_t target_idx) const noexcept;
 
-    uint32_t ojama_seed_;  ///< XORSHIFT state after kTsumoPoolSize pairs
+    uint32_t initial_seed_;                    ///< 初期シードを保持
+    mutable uint32_t ojama_seed_ = 0;          ///< 遅延計算・キャッシュ用
+    mutable bool ojama_seed_computed_ = false; ///< 計算済みフラグ
 
-    mutable uint32_t rng_state_;        ///< Running state for lazy pool generation
-    mutable uint32_t generated_count_;  ///< Number of valid entries in pool_
+    mutable uint32_t rng_state_; ///< Running state for lazy pool generation
+    mutable uint32_t generated_count_; ///< Number of valid entries in pool_
     mutable std::array<PuyoPiece, config::Rule::kTsumoPoolSize> pool_;
 };
 } // namespace puyotan

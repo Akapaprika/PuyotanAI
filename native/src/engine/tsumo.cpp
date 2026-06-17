@@ -51,7 +51,8 @@ static constexpr auto kJumpMatrix = computeJumpMatrix();
 [[nodiscard]] static inline uint32_t applyJump(uint32_t state) noexcept {
     uint32_t result = 0;
     for (int i = 0; i < 32; ++i) {
-        if ((state >> i) & 1u) result ^= kJumpMatrix[i];
+        if ((state >> i) & 1u)
+            result ^= kJumpMatrix[i];
     }
     return result;
 }
@@ -67,26 +68,25 @@ Tsumo::Tsumo(uint32_t seed) noexcept {
 }
 
 void Tsumo::setSeed(uint32_t seed) noexcept {
-    // XORSHIFT requires a non-zero seed.
     const uint32_t s0 = seed + (seed == 0u);
-
-    rng_state_       = s0;
+    rng_state_ = s0;
+    initial_seed_ = s0;
     generated_count_ = 0;
+    ojama_seed_computed_ = false;
+}
 
-    // Compute the ojama seed (state after all 1000 pairs) via jump matrix.
-    // O(32) XOR operations — replaces the original 2000-step sequential loop.
-    ojama_seed_ = applyJump(s0);
-
-    // Pre-generate the first chunk so the very first get() call is always
-    // a cache hit. kTsumoChunkSize is a power of 2 (64), keeping the chunk
-    // boundary arithmetic branchless.
-    expandTo(config::Rule::kTsumoChunkSize - 1);
+uint32_t Tsumo::getSeed() const noexcept {
+    if (!ojama_seed_computed_) {
+        ojama_seed_ = applyJump(initial_seed_);
+        ojama_seed_computed_ = true;
+    }
+    return ojama_seed_;
 }
 
 void Tsumo::expandTo(uint32_t target_idx) const noexcept {
-    constexpr uint32_t kChunk    = config::Rule::kTsumoChunkSize;
+    constexpr uint32_t kChunk = config::Rule::kTsumoChunkSize;
     constexpr uint32_t kPoolSize = config::Rule::kTsumoPoolSize;
-    constexpr uint32_t kColors   = config::Rule::kColors;
+    constexpr uint32_t kColors = config::Rule::kColors;
 
     // Round up to the next chunk boundary, capped at the pool size.
     const uint32_t new_count =
@@ -115,7 +115,7 @@ void Tsumo::expandTo(uint32_t target_idx) const noexcept {
         pool_[i] = {c1, c2, dirty, 0};
     }
 
-    rng_state_       = s;
+    rng_state_ = s;
     generated_count_ = new_count;
 }
 

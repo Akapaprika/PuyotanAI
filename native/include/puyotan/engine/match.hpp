@@ -160,7 +160,7 @@ class PuyotanMatch {
     static int nextInt(uint32_t& seed, int max) noexcept;
 
   private:
-    uint32_t seed_;
+    uint32_t seed_ = 0u;
     Tsumo tsumo_;
     PuyotanPlayer players_[config::Rule::kNumPlayers];
     int32_t frame_ = 1;
