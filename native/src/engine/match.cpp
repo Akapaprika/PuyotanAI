@@ -73,7 +73,6 @@ void PuyotanMatch::start() noexcept {
     status_ = MatchStatus::Playing;
 }
 
-
 void PuyotanMatch::stepNextFrame() noexcept {
     if (!canStepNextFrame())
         return;
@@ -116,8 +115,9 @@ void PuyotanMatch::stepNextFrame() noexcept {
                     // Zero-overhead erasure check restricted to only the 2
                     // deposited colors
                     const uint32_t dirty_colors = tumo.dirty_flag;
-                    pending_erasure_[id] =
-                        Chain::findGroups(p.field, dirty_colors);
+
+                    Chain::scanGroups(p.field, pending_erasure_[id],
+                                      dirty_colors);
                     if (pending_erasure_[id].num_erased > 0) {
                         p.next_action = {Action{ActionType::Chain}, 1};
                     }
@@ -163,8 +163,8 @@ void PuyotanMatch::stepNextFrame() noexcept {
                 }
                 case ActionType::ChainFall: {
                     uint32_t dirty_colors = Gravity::execute(p.field);
-                    pending_erasure_[id] =
-                        Chain::findGroups(p.field, dirty_colors);
+                    Chain::scanGroups(p.field, pending_erasure_[id],
+                                      dirty_colors);
                     if (pending_erasure_[id].num_erased > 0) {
                         p.next_action = {Action{ActionType::Chain}, 1};
                     } else {

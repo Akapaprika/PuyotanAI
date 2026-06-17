@@ -262,7 +262,8 @@ class BeamEvaluator {
                         Board temp = board;
                         temp.dropNewPiece(x, h, static_cast<Cell>(c));
 
-                        ErasureData ed = Chain::findGroups(temp, 1u << c);
+                        ErasureData ed;
+                        Chain::scanGroups(temp, ed, 1u << c);
                         if (ed.num_erased == 0)
                             continue;
 
@@ -273,7 +274,7 @@ class BeamEvaluator {
                                 Scorer::calculateStepScore(ed, pot_chain);
                             Chain::applyErasure(temp, ed);
                             uint32_t fallen = Gravity::execute(temp);
-                            ed = Chain::findGroups(temp, fallen);
+                            Chain::scanGroups(temp, ed, fallen);
                         }
                         max_pot_score = (pot_score > max_pot_score)
                                             ? pot_score

@@ -30,7 +30,8 @@ struct ErasureData {
  */
 class Chain {
   public:
-    static constexpr uint32_t kAllColorsMask = (1u << config::Rule::kColors) - 1u;
+    static constexpr uint32_t kAllColorsMask =
+        (1u << config::Rule::kColors) - 1u;
 
     /**
      * @brief Detects and applies erasures to the board in a single step.
@@ -38,7 +39,8 @@ class Chain {
      * @param color_mask Bitmask of which puyo colors to check for connections.
      * @return Data describing the erasures performed.
      */
-    static ErasureData execute(Board& board, uint32_t color_mask = kAllColorsMask) noexcept;
+    static ErasureData execute(Board& board,
+                               uint32_t color_mask = kAllColorsMask) noexcept;
 
     /**
      * @brief Scans for erasable groups WITHOUT modifying the board state.
@@ -46,12 +48,13 @@ class Chain {
      * @param color_mask Bitmask of colors to check.
      * @return ErasureData containing found groups and bitmasks.
      */
-    static ErasureData findGroups(const Board& board, uint32_t color_mask = kAllColorsMask) noexcept;
+    static void scanGroups(const Board& board, ErasureData& erasure_data,
+                           uint32_t color_mask = kAllColorsMask) noexcept;
 
     /**
      * @brief Commits pre-calculated erasure data to the board.
      * @param board The board to update.
-     * @param data The result of a previous findGroups() call.
+     * @param data The result of a previous scanGroups() call.
      */
     static void applyErasure(Board& board, const ErasureData& data) noexcept;
 
@@ -61,6 +64,7 @@ class Chain {
      * @param color_mask colors to consider.
      * @return True if at least one group will fire.
      */
-    static bool canFire(const Board& board, uint32_t color_mask = kAllColorsMask) noexcept;
+    static bool canFire(const Board& board,
+                        uint32_t color_mask = kAllColorsMask) noexcept;
 };
 } // namespace puyotan

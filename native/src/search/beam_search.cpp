@@ -123,9 +123,10 @@ PlaceResult simulatePlacement(const Board& src, PuyoPiece piece,
     // Resolve chain
     // 【超強力最適化】
     // 1ステップ目の連鎖判定のみ、新しく置いたぷよの色（最大2色）だけで接続判定を走らせます。
-    // これにより、連鎖が起きない約90%のノードにおいて、findGroups
+    // これにより、連鎖が起きない約90%のノードにおいて、scanGroups
     // の処理コストが 50%〜75% 削減されます。
-    ErasureData ed = Chain::findGroups(res.field, piece.dirty_flag);
+    ErasureData ed;
+    Chain::scanGroups(res.field, ed, piece.dirty_flag);
     while (ed.num_erased > 0) {
         ++res.chain;
         res.score += Scorer::calculateStepScore(ed, res.chain);
@@ -134,15 +135,15 @@ PlaceResult simulatePlacement(const Board& src, PuyoPiece piece,
         // 2ステップ目（連鎖が継続したとき）以降は、おじゃまや他の色ぷよが連動して消える可能性があるため、
         // 4色すべて（kAllColorsMask）をターゲットにして通常通り解決します。
         uint32_t fallen = Gravity::execute(res.field);
-        ed = Chain::findGroups(res.field, fallen);
+        Chain::scanGroups(res.field, ed, fallen);
     }
 
     // Death check (deferred until after all chains resolve).
     // Must be AFTER chain resolution: a chain can clear puyos from the death
     // cell (col 2, row 11), allowing the player to survive a seemingly fatal
     // placement.
-    if (res.field.isOccupied(config::Rule::kDeathCol,
-                             config::Rule::kDeathRow)) [[unlikely]] {
+    if (res.field.isOccupied(config::Rule::kDeathCol, config::Rule::kDeathRow))
+        [[unlikely]] {
         res.dead = true;
         return res;
     }

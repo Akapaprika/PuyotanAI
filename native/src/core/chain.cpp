@@ -11,12 +11,28 @@ static const __m128i kGhostMask =
                    static_cast<int64_t>(config::Board::kChainableLoMask));
 } // anonymous namespace
 // -----------------------------------------------------------------------
-// Internal BFS kernel shared by both findGroups and the legacy canFire path.
+// Internal BFS kernel shared by both scanGroups and the legacy canFire path.
 // Fills data.erased_per_color[i], data.total_erased, group_sizes, and counts.
 // Does NOT touch the Board.
 // -----------------------------------------------------------------------
 static void scanGroups(const Board& board, uint32_t color_mask,
                        ErasureData& data) noexcept {
+}
+
+// -----------------------------------------------------------------------
+// PUBLIC API
+// -----------------------------------------------------------------------
+
+void Chain::scanGroups(const Board& board, ErasureData& erasure_data,
+                       uint32_t color_mask) noexcept {
+    erasure_data.num_erased = 0;
+    erasure_data.num_colors = 0;
+    erasure_data.num_groups = 0;
+    erasure_data.total_erased = BitBoard(); // ゼロクリア
+    for (auto& bb : erasure_data.erased_per_color) {
+        bb.m128 = _mm_setzero_si128(); // 128ビットSIMDゼロクリア
+    }
+
     uint32_t erased_color_bits = 0; // Bit i is set if color i was erased
 
     for (int i = 0; i < config::Rule::kColors; ++i) {
@@ -72,10 +88,12 @@ static void scanGroups(const Board& board, uint32_t color_mask,
 
             const int sz = group.popcount();
             if (sz >= config::Rule::kConnectCount) {
-                data.group_sizes[data.num_groups++] = static_cast<uint8_t>(sz);
-                data.num_erased += sz;
-                color_erased |= group;      // Accumulate for this color
-                data.total_erased |= group; // Accumulate for overall erasure
+                erasure_data.group_sizes[erasure_data.num_groups++] =
+                    static_cast<uint8_t>(sz);
+                erasure_data.num_erased += sz;
+                color_erased |= group; // Accumulate for this color
+                erasure_data.total_erased |=
+                    group; // Accumulate for overall erasure
                 erased_color_bits |=
                     (1u << i); // Record that this color had an erasure
             }
@@ -84,38 +102,28 @@ static void scanGroups(const Board& board, uint32_t color_mask,
 
         // Store result for this color (No branch: safe even if color_erased is
         // empty)
-        data.erased_per_color[i] = color_erased;
+        erasure_data.erased_per_color[i] = color_erased;
     }
 
     // Convert bitmask to color count in a single instruction
-    data.num_colors = static_cast<uint8_t>(_mm_popcnt_u32(erased_color_bits));
+    erasure_data.num_colors =
+        static_cast<uint8_t>(_mm_popcnt_u32(erased_color_bits));
 
     // Ojama adjacency: erased if adjacent to any color erasure
-    if (data.num_erased > 0) {
+    if (erasure_data.num_erased > 0) {
         const BitBoard ojama = board.getBitboard(Cell::Ojama);
         if (!ojama.empty()) {
-            const BitBoard& t = data.total_erased;
+            const BitBoard& t = erasure_data.total_erased;
             BitBoard adj = t | t.shiftUp() | t.shiftDown() | t.shiftLeft() |
                            t.shiftRight();
             BitBoard oj_erased = ojama & adj;
             if (!oj_erased.empty()) {
-                data.erased_per_color[static_cast<int>(Cell::Ojama)] =
+                erasure_data.erased_per_color[static_cast<int>(Cell::Ojama)] =
                     oj_erased;
-                data.total_erased |= oj_erased;
+                erasure_data.total_erased |= oj_erased;
             }
         }
     }
-}
-
-// -----------------------------------------------------------------------
-// PUBLIC API
-// -----------------------------------------------------------------------
-
-ErasureData Chain::findGroups(const Board& board,
-                              uint32_t color_mask) noexcept {
-    ErasureData data;
-    scanGroups(board, color_mask, data);
-    return data;
 }
 
 void Chain::applyErasure(Board& board, const ErasureData& data) noexcept {
@@ -133,7 +141,8 @@ void Chain::applyErasure(Board& board, const ErasureData& data) noexcept {
 }
 
 ErasureData Chain::execute(Board& board, uint32_t color_mask) noexcept {
-    ErasureData data = findGroups(board, color_mask);
+    ErasureData data;
+    scanGroups(board, data, color_mask);
     if (data.num_erased > 0) {
         applyErasure(board, data);
     }
@@ -141,6 +150,8 @@ ErasureData Chain::execute(Board& board, uint32_t color_mask) noexcept {
 }
 
 bool Chain::canFire(const Board& board, uint32_t color_mask) noexcept {
-    return findGroups(board, color_mask).num_erased > 0;
+    ErasureData data;
+    scanGroups(board, data, color_mask);
+    return data.num_erased > 0;
 }
 } // namespace puyotan
