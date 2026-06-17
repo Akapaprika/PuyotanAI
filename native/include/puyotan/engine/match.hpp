@@ -83,12 +83,12 @@ class PuyotanMatch {
      * @return True if the simulation can proceed.
      */
     __forceinline bool canStepNextFrame() const noexcept {
-        if (status_ != MatchStatus::Playing)
+        if (status_ != MatchStatus::Playing) [[unlikely]]
             return false;
-        for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
-            if (players_[id].current_action.action.type == ActionType::None)
-                return false;
-        }
+        if (players_[0].current_action.action.type == ActionType::None)
+            return false;
+        if (players_[1].current_action.action.type == ActionType::None)
+            return false;
         return true;
     }
     /**

@@ -15,15 +15,12 @@ Cell Board::get(int x, int y) const noexcept {
 
     // 2.
     // 盤面が存在する場合、ループ内からは条件分岐（if）を完全に追放（ブランチレス化）します。
-    // 掛け算を OR
-    // 演算にすることで、CPUの実行ポート（ALU）での並列実行性を極限まで高めます。
     int found_index = 0;
     for (int i = 1; i < config::Board::kNumColors; ++i) {
         const uint64_t* board_ptr =
             reinterpret_cast<const uint64_t*>(&boards_[i]);
         int bit = static_cast<int>((board_ptr[idx] >> shift) & 1);
-        found_index |=
-            (bit * i); // 分岐（if）を使わず、ビット演算だけで色を蓄積
+        found_index |= (i & -bit);
     }
 
     return static_cast<Cell>(found_index);
