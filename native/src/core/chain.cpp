@@ -23,27 +23,32 @@ void Chain::scanGroups(const Board& board, ErasureData& erasure_data,
     erasure_data.total_erased = BitBoard();
 
     uint32_t erased_color_bits = 0;
-
-    for (int i = 0; i < config::Rule::kColors; ++i) {
-        if (!((color_mask >> i) & 1))
-            continue;
+    uint32_t temp_mask = color_mask & ((1u << config::Rule::kColors) - 1u);
+    while (temp_mask) {
+        // 1が立っている最も下位のビット位置（色番号）を一瞬で取得（TZCNT命令:
+        // 1サイクル）
+        const int i = std::countr_zero(temp_mask);
         const Cell c = static_cast<Cell>(i);
 
         const BitBoard& bb = board.getBitboard(c);
         const uint64_t lo_masked = bb.lo & config::Board::kChainableLoMask;
         const uint64_t hi_masked = bb.hi & config::Board::kChainableHiMask;
 
-        const int pop = static_cast<int>(std::popcount(lo_masked) +
-                                         std::popcount(hi_masked));
+        const BitBoard color_board(_mm_set_epi64x(
+            static_cast<int64_t>(hi_masked), static_cast<int64_t>(lo_masked)));
 
-        if (pop < config::Rule::kConnectCount)
-            continue;
-
-        const BitBoard color_board(_mm_and_si128(bb.m128, kGhostMask));
-
+        // ★ 1. 接続性の超高速チェック（上と左の2シフトのみ）
         const BitBoard U = color_board.shiftUpRaw();
-        const BitBoard D = color_board.shiftDownRaw();
         const BitBoard L = color_board.shiftLeftRaw();
+
+        if ((color_board & (U | L)).empty()) {
+            temp_mask &= (temp_mask - 1);
+            continue; // 隣接するペアが1組もないため、同値性を保ったまま安全にスキップ
+        }
+
+        // ★ 2. スキップを免れた（実際に隣接がある）場合のみ、残りの D と R
+        // を計算する
+        const BitBoard D = color_board.shiftDownRaw();
         const BitBoard R = color_board.shiftRightRaw();
 
         const BitBoard ud_and = U & D;
@@ -73,13 +78,12 @@ void Chain::scanGroups(const Board& board, ErasureData& erasure_data,
                     static_cast<uint8_t>(sz);
                 erasure_data.num_erased += sz;
 
-                // color_erased を介さず、直接全体の total_erased
-                // にのみ OR 結合する
                 erasure_data.total_erased |= group;
                 erased_color_bits |= (1u << i);
             }
             has_2.andNot(group);
         }
+        temp_mask &= (temp_mask - 1);
     }
 
     erasure_data.num_colors =
