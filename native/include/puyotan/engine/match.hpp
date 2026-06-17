@@ -16,8 +16,7 @@ namespace puyotan {
 struct alignas(64) PuyotanPlayer {
     Board field; ///< 6x14 BitBoard-based playing field
     ActionState
-        current_action{};      ///< Action being processed in the current frame
-    ActionState next_action{}; ///< Action scheduled for the next frame
+        current_action{}; ///< Action being processed in the current frame
     int32_t active_next_pos =
         0;              ///< Current index into the Tsumo (sequence of pieces)
     int score = 0;      ///< Cumulative raw score

@@ -76,50 +76,49 @@ void PuyotanMatch::start() noexcept {
 void PuyotanMatch::stepNextFrame() noexcept {
     if (!canStepNextFrame())
         return;
+
+    // 開始時のアクションタイプをローカルスタック（レジスタ）に保持しておく
+    std::array<ActionType, config::Rule::kNumPlayers> prev_types;
+    for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
+        prev_types[id] = players_[id].current_action.action.type;
+    }
+
     // 1. Execute or reserve actions
     for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         auto& p = players_[id];
+
+        // 残りフレームがある場合はデクリメントするだけ
         if (p.current_action.remaining_frame > 0) {
-            p.next_action = {
-                p.current_action.action,
-                static_cast<uint8_t>(p.current_action.remaining_frame - 1)};
+            p.current_action.remaining_frame--;
         } else {
             const auto& action = p.current_action.action;
             switch (action.type) {
                 case ActionType::Pass:
+                    p.current_action = {}; // 終了したのでNoneクリア
                     break;
                 case ActionType::Put: {
                     const PuyoPiece tumo = tsumo_.get(p.active_next_pos);
                     const int r = static_cast<int>(action.rotation);
                     const int x_axis = action.x;
                     const int x_sub = x_axis + kSubDx[r];
-                    // O(1) base height calculation
                     const int h_axis = p.field.getColumnHeight(x_axis);
                     const int h_sub = p.field.getColumnHeight(x_sub);
-                    // kSoftDropBonusPerGrid == 1: multiply eliminated
-                    // (static_assert below) Puyo rules: no points gained for
-                    // putting pieces above spawn row.
                     p.score += std::max(0, config::Board::kSpawnRow -
                                                std::max(h_axis, h_sub));
-                    static_assert(config::Score::kSoftDropBonusPerGrid == 1,
-                                  "Assumed 1 for multiply elision");
-                    // Direct BitBoard bit set (1 clock each, bypasses Gravity)
-                    // Puyo rules: pieces placed at the 14th row (y >= 13) or
-                    // above simply vanish instantly. The dropNewPiece method
-                    // internally applies a branchless mask to discard pieces y
-                    // >= 13 (kHeight).
+
                     const int y_axis = h_axis + kAxisDy[r];
                     const int y_sub = h_sub + kSubDySimple[r];
                     p.field.dropNewPiece(x_axis, y_axis, tumo.axis);
                     p.field.dropNewPiece(x_sub, y_sub, tumo.sub);
-                    // Zero-overhead erasure check restricted to only the 2
-                    // deposited colors
-                    const uint32_t dirty_colors = tumo.dirty_flag;
 
+                    const uint32_t dirty_colors = tumo.dirty_flag;
                     Chain::scanGroups(p.field, pending_erasure_[id],
                                       dirty_colors);
+
                     if (pending_erasure_[id].num_erased > 0) {
-                        p.next_action = {Action{ActionType::Chain}, 1};
+                        p.current_action = {Action{ActionType::Chain}, 1};
+                    } else {
+                        p.current_action = {}; // 連鎖なし、終了クリア
                     }
                     break;
                 }
@@ -133,8 +132,7 @@ void PuyotanMatch::stepNextFrame() noexcept {
                     int ojama =
                         (p.score - p.used_score) / config::Score::kTargetScore;
                     p.used_score += ojama * config::Score::kTargetScore;
-                    // Branchless ojama offset: min clamps to 0 automatically
-                    // when ojama == 0
+
                     int used_non =
                         std::min(ojama, static_cast<int>(p.non_active_ojama));
                     p.non_active_ojama -= static_cast<uint16_t>(used_non);
@@ -143,21 +141,18 @@ void PuyotanMatch::stepNextFrame() noexcept {
                         std::min(ojama, static_cast<int>(p.active_ojama));
                     p.active_ojama -= static_cast<uint16_t>(used_active);
                     ojama -= used_active;
-                    // Unconditional ojama send (branchless)
                     sendOjama(id, ojama);
-                    // All Clear check (branchless + event flag):
+
                     bool field_empty = p.field.getOccupied().empty();
                     p.score += static_cast<int>(field_empty) *
                                config::Score::kAllClearBonus;
+
                     if (Gravity::canFall(p.field)) {
-                        // After erasure, if puyos are floating, start falling
-                        // phase.
-                        p.next_action = {Action{ActionType::ChainFall}, 0};
+                        p.current_action = {Action{ActionType::ChainFall}, 0};
                     } else {
-                        // Chain finished. Reset state and allow Ojama to fall
-                        // if pending.
                         p.chain_count = 0;
                         activateOjama(id);
+                        p.current_action = {}; // 終了クリア
                     }
                     break;
                 }
@@ -166,11 +161,11 @@ void PuyotanMatch::stepNextFrame() noexcept {
                     Chain::scanGroups(p.field, pending_erasure_[id],
                                       dirty_colors);
                     if (pending_erasure_[id].num_erased > 0) {
-                        p.next_action = {Action{ActionType::Chain}, 1};
+                        p.current_action = {Action{ActionType::Chain}, 1};
                     } else {
-                        p.chain_count = 0; // Clear the active chain count now
-                                           // that it has finished
+                        p.chain_count = 0;
                         activateOjama(id);
+                        p.current_action = {}; // 終了クリア
                     }
                     break;
                 }
@@ -179,6 +174,7 @@ void PuyotanMatch::stepNextFrame() noexcept {
                                             config::Rule::kMaxOjamaPerFall);
                     p.active_ojama -= static_cast<uint16_t>(fall_num);
                     p.fallOjama(fall_num, seed_);
+                    p.current_action = {}; // 終了クリア
                     break;
                 }
                 default:
@@ -187,14 +183,12 @@ void PuyotanMatch::stepNextFrame() noexcept {
         }
     }
 
-    // 3. Death check (Branchless Status Map)
-    // PYO rules: Player dies if the 'death cell' (Col 3, Row 12) is blocked
-    // AND they are not currently in the middle of an action (remaining_frame >
-    // 0).
+    // 3. Death check
     uint32_t alive_mask = 0;
     for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         auto& p = players_[id];
-        bool is_alive = (p.next_action.action.type != ActionType::None) |
+        // 【変更】：current_action を直接チェックします
+        bool is_alive = (p.current_action.action.type != ActionType::None) |
                         !p.field.isOccupied(config::Rule::kDeathCol,
                                             config::Rule::kDeathRow);
         alive_mask |= (is_alive << id);
@@ -202,29 +196,24 @@ void PuyotanMatch::stepNextFrame() noexcept {
 
     static_assert(config::Rule::kNumPlayers == 2,
                   "Match status mapping explicitly assumes 2 players");
-    if (alive_mask != 3) { // At least one player is dead
+    if (alive_mask != 3) {
         static constexpr MatchStatus kNextStatus[] = {
-            MatchStatus::Draw,   // 00: Both dead
-            MatchStatus::WinP1,  // 01: P2 dead
-            MatchStatus::WinP2,  // 10: P1 dead
-            MatchStatus::Playing // 11: Both alive
-        };
+            MatchStatus::Draw, MatchStatus::WinP1, MatchStatus::WinP2,
+            MatchStatus::Playing};
         status_ = kNextStatus[alive_mask];
     }
 
-    // 4 & 5. Post-turn processing (Ojama, Tsumo, and Action Advance)
+    // 4 & 5. Post-turn processing
     for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
         auto& p = players_[id];
-        if (p.next_action.action.type == ActionType::None) {
-            // 4. Ojama (garbage) processing: Fall garbage if available and
-            // didn't just fall
-            if (p.active_ojama > 0 &&
-                p.current_action.action.type != ActionType::Ojama) {
-                p.next_action = {Action{ActionType::Ojama}, 0};
+        if (p.current_action.action.type == ActionType::None) {
+            // 4. Ojama (garbage) processing
+            // 開始時のアクションタイプである prev_types を用いて判定します
+            if (p.active_ojama > 0 && prev_types[id] != ActionType::Ojama) {
+                p.current_action = {Action{ActionType::Ojama}, 0};
             }
-            // 5. Tsumo and frame transition: Otherwise, pull the next piece
-            // (unless passing)
-            else if (p.current_action.action.type != ActionType::Pass) {
+            // 5. Tsumo and frame transition
+            else if (prev_types[id] != ActionType::Pass) {
                 if (p.active_next_pos == 999) [[unlikely]] {
                     p.active_next_pos = 0;
                 } else {
@@ -232,9 +221,6 @@ void PuyotanMatch::stepNextFrame() noexcept {
                 }
             }
         }
-        // Advance actions: current = next, and clear next for the next step.
-        p.current_action = p.next_action;
-        p.next_action = {};
     }
     ++frame_;
 }
