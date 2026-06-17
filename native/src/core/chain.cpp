@@ -28,19 +28,15 @@ void Chain::scanGroups(const Board& board, ErasureData& erasure_data,
     erasure_data.num_erased = 0;
     erasure_data.num_colors = 0;
     erasure_data.num_groups = 0;
-    erasure_data.total_erased = BitBoard(); // ゼロクリア
-    for (auto& bb : erasure_data.erased_per_color) {
-        bb.m128 = _mm_setzero_si128(); // 128ビットSIMDゼロクリア
-    }
+    erasure_data.total_erased = BitBoard();
 
-    uint32_t erased_color_bits = 0; // Bit i is set if color i was erased
+    uint32_t erased_color_bits = 0;
 
     for (int i = 0; i < config::Rule::kColors; ++i) {
         if (!((color_mask >> i) & 1))
             continue;
         const Cell c = static_cast<Cell>(i);
 
-        // SIMDレジスタに載せる前に、メモリから一般レジスタに直接ロードして判定する
         const BitBoard& bb = board.getBitboard(c);
         const uint64_t lo_masked = bb.lo & config::Board::kChainableLoMask;
         const uint64_t hi_masked = bb.hi & config::Board::kChainableHiMask;
@@ -48,16 +44,11 @@ void Chain::scanGroups(const Board& board, ErasureData& erasure_data,
         const int pop = static_cast<int>(std::popcount(lo_masked) +
                                          std::popcount(hi_masked));
 
-        // 4個未満なら、重いSIMDレジスタへのロードやAND演算をすることすら避けて、即座にスキップ！
         if (pop < config::Rule::kConnectCount)
             continue;
 
-        // 4個以上あることが確定した本命の色のみ、SIMDレジスタにロードして処理する
         const BitBoard color_board(_mm_and_si128(bb.m128, kGhostMask));
 
-        // Bitwise Connectivity Pruning ('has_2' filter):
-        // Only puyos with >= 2 neighbors of the same color can be part of a 4+
-        // group.
         const BitBoard U = color_board.shiftUpRaw();
         const BitBoard D = color_board.shiftDownRaw();
         const BitBoard L = color_board.shiftLeftRaw();
@@ -69,7 +60,6 @@ void Chain::scanGroups(const Board& board, ErasureData& erasure_data,
         const BitBoard lr_or = L | R;
         BitBoard has_2 = color_board & (ud_and | lr_and | (ud_or & lr_or));
 
-        BitBoard color_erased;
         const __m128i cb_mask = color_board.m128;
         while (!has_2.empty()) {
             BitBoard group = has_2.extractLSB();
@@ -77,7 +67,6 @@ void Chain::scanGroups(const Board& board, ErasureData& erasure_data,
             do {
                 prev = group;
                 __m128i v = group.m128;
-                // SIMD BFS: Expand seed 'group' by 1 step in all 4 directions.
                 __m128i lr =
                     _mm_or_si128(_mm_slli_epi64(v, 1), _mm_srli_epi64(v, 1));
                 __m128i ud =
@@ -91,25 +80,19 @@ void Chain::scanGroups(const Board& board, ErasureData& erasure_data,
                 erasure_data.group_sizes[erasure_data.num_groups++] =
                     static_cast<uint8_t>(sz);
                 erasure_data.num_erased += sz;
-                color_erased |= group; // Accumulate for this color
-                erasure_data.total_erased |=
-                    group; // Accumulate for overall erasure
-                erased_color_bits |=
-                    (1u << i); // Record that this color had an erasure
+
+                // color_erased を介さず、直接全体の total_erased
+                // にのみ OR 結合する
+                erasure_data.total_erased |= group;
+                erased_color_bits |= (1u << i);
             }
             has_2.andNot(group);
         }
-
-        // Store result for this color (No branch: safe even if color_erased is
-        // empty)
-        erasure_data.erased_per_color[i] = color_erased;
     }
 
-    // Convert bitmask to color count in a single instruction
     erasure_data.num_colors =
         static_cast<uint8_t>(_mm_popcnt_u32(erased_color_bits));
 
-    // Ojama adjacency: erased if adjacent to any color erasure
     if (erasure_data.num_erased > 0) {
         const BitBoard ojama = board.getBitboard(Cell::Ojama);
         if (!ojama.empty()) {
@@ -118,8 +101,7 @@ void Chain::scanGroups(const Board& board, ErasureData& erasure_data,
                            t.shiftRight();
             BitBoard oj_erased = ojama & adj;
             if (!oj_erased.empty()) {
-                erasure_data.erased_per_color[static_cast<int>(Cell::Ojama)] =
-                    oj_erased;
+                // こちらも全体の total_erased にのみ結合する
                 erasure_data.total_erased |= oj_erased;
             }
         }
@@ -127,14 +109,12 @@ void Chain::scanGroups(const Board& board, ErasureData& erasure_data,
 }
 
 void Chain::applyErasure(Board& board, const ErasureData& data) noexcept {
-    // andNot is executed unconditionally for all 5 colors.
-    // If erased is empty, the color board remains 100% untouched with 0-cycle
-    // branch penalty.
+    // 色別のマスクではなく、1つの結合された消去マスク data.total_erased
+    // を使って、 全色一律で andNot します。
     for (int i = 0; i < config::Board::kNumColors; ++i) {
-        board.boards_[i].andNot(data.erased_per_color[i]);
+        board.boards_[i].andNot(data.total_erased);
     }
 
-    // Fast O(1) incremental occupancy update
     BitBoard occ = board.getOccupied();
     occ.andNot(data.total_erased);
     board.updateOccupancy(occ);

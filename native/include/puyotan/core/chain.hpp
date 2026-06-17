@@ -10,18 +10,20 @@ namespace puyotan {
  * @brief Container for results of a puyo erasure scan.
  */
 struct ErasureData {
-    /// Sizes of each erased group (up to kMaxErasureGroups).
-    std::array<uint8_t, config::Rule::kMaxErasureGroups> group_sizes;
-
-    /// Bitmask of erased puyos for each color plane.
-    std::array<BitBoard, config::Board::kNumColors> erased_per_color;
-
-    /// Combined bitmask of all erased puyos (including Ojama).
     BitBoard total_erased;
 
-    int num_erased = 0; ///< Total number of non-ojama puyos erased
-    int num_colors = 0; ///< Number of distinct colors erased (for score bonus)
-    int num_groups = 0; ///< Total number of groups found
+    std::array<uint8_t, config::Rule::kMaxErasureGroups>
+        group_sizes;    // 24バイト (オフセット 16〜39)
+    int num_erased = 0; // 4バイト  (オフセット 40〜43)
+    int num_colors = 0; // 4バイト  (オフセット 44〜47)
+    int num_groups = 0; // 4バイト  (オフセット 48〜51)
+
+    void clear() noexcept {
+        total_erased = BitBoard();
+        num_erased = 0;
+        num_colors = 0;
+        num_groups = 0;
+    }
 };
 
 /**
