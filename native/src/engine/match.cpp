@@ -29,24 +29,35 @@ static constexpr auto kOjamaColumnLut = []() consteval {
 void PuyotanPlayer::fallOjama(int num, uint32_t& seed) noexcept {
     constexpr int width = config::Board::kWidth;
     while (num > 0) {
-        uint32_t mask;
         int drop_num;
 
         if (num >= width) {
-            mask = 0x3F;
+            // 1段丸ごと降る場合
+            // 単純に各列の高さに直接1個ずつおじゃまを設置して、高さを積み上げるだけ（超高速）。
+            for (int x = 0; x < width; ++x) {
+                const int h = field.getColumnHeight(x);
+                field.dropNewPiece(x, h, Cell::Ojama);
+            }
             drop_num = width;
         } else {
-            mask = 0;
+            // 5個以下の端数が降る場合
+            uint32_t mask = 0;
             for (int i = 0; i < num; ++i) {
                 const int pos = PuyotanMatch::nextInt(seed, width - i);
-                uint32_t free = ~mask & 0x3F;
-                mask |= kOjamaColumnLut[free][pos];
+                const uint32_t free = ~mask & 0x3F;
+                const uint32_t chosen_bit = kOjamaColumnLut[free][pos];
+                mask |=
+                    chosen_bit; // 次のループで重複を避けるためにビットを記録
+
+                // 決定された列（1ビット）から、TZCNT命令（std::countr_zero）で列番号を取得し、
+                // その列の高さに直接おじゃまを設置する
+                const int x = std::countr_zero(chosen_bit);
+                const int h = field.getColumnHeight(x);
+                field.dropNewPiece(x, h, Cell::Ojama);
             }
             drop_num = num;
         }
 
-        field.setRowMask(config::Board::kSpawnRow, Cell::Ojama, mask);
-        Gravity::execute(field);
         num -= drop_num;
     }
 }
@@ -73,129 +84,37 @@ void PuyotanMatch::start() noexcept {
     status_ = MatchStatus::Playing;
 }
 
+// src/engine/match.cpp 内の stepNextFrame
+
 void PuyotanMatch::stepNextFrame() noexcept {
     if (!canStepNextFrame())
         return;
 
-    // 開始時のアクションタイプをローカルスタック（レジスタ）に保持しておく
     std::array<ActionType, config::Rule::kNumPlayers> prev_types;
-    for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
-        prev_types[id] = players_[id].current_action.action.type;
-    }
+    prev_types[0] = players_[0].current_action.action.type;
+    prev_types[1] = players_[1].current_action.action.type;
 
-    // 1. Execute or reserve actions
-    for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
-        auto& p = players_[id];
+    stepPlayerFrame(0, prev_types);
+    stepPlayerFrame(1, prev_types);
 
-        // 残りフレームがある場合はデクリメントするだけ
-        if (p.current_action.remaining_frame > 0) {
-            p.current_action.remaining_frame--;
-        } else {
-            const auto& action = p.current_action.action;
-            switch (action.type) {
-                case ActionType::Pass:
-                    p.current_action = {}; // 終了したのでNoneクリア
-                    break;
-                case ActionType::Put: {
-                    const PuyoPiece tumo = tsumo_.get(p.active_next_pos);
-                    const int r = static_cast<int>(action.rotation);
-                    const int x_axis = action.x;
-                    const int x_sub = x_axis + kSubDx[r];
-                    const int h_axis = p.field.getColumnHeight(x_axis);
-                    const int h_sub = p.field.getColumnHeight(x_sub);
-                    p.score += std::max(0, config::Board::kSpawnRow -
-                                               std::max(h_axis, h_sub));
-
-                    const int y_axis = h_axis + kAxisDy[r];
-                    const int y_sub = h_sub + kSubDySimple[r];
-                    p.field.dropNewPiece(x_axis, y_axis, tumo.axis);
-                    p.field.dropNewPiece(x_sub, y_sub, tumo.sub);
-
-                    const uint32_t dirty_colors = tumo.dirty_flag;
-                    Chain::scanGroups(p.field, pending_erasure_[id],
-                                      dirty_colors);
-
-                    if (pending_erasure_[id].num_erased > 0) {
-                        p.current_action = {Action{ActionType::Chain}, 1};
-                    } else {
-                        p.current_action = {}; // 連鎖なし、終了クリア
-                    }
-                    break;
-                }
-                case ActionType::Chain: {
-                    Chain::applyErasure(p.field, pending_erasure_[id]);
-                    const ErasureData& info = pending_erasure_[id];
-                    ++p.chain_count;
-                    int step_score =
-                        Scorer::calculateStepScore(info, p.chain_count);
-                    p.score += step_score;
-                    int ojama =
-                        (p.score - p.used_score) / config::Score::kTargetScore;
-                    p.used_score += ojama * config::Score::kTargetScore;
-
-                    int used_non =
-                        std::min(ojama, static_cast<int>(p.non_active_ojama));
-                    p.non_active_ojama -= static_cast<uint16_t>(used_non);
-                    ojama -= used_non;
-                    int used_active =
-                        std::min(ojama, static_cast<int>(p.active_ojama));
-                    p.active_ojama -= static_cast<uint16_t>(used_active);
-                    ojama -= used_active;
-                    sendOjama(id, ojama);
-
-                    bool field_empty = p.field.getOccupied().empty();
-                    p.score += static_cast<int>(field_empty) *
-                               config::Score::kAllClearBonus;
-
-                    if (Gravity::canFall(p.field)) {
-                        p.current_action = {Action{ActionType::ChainFall}, 0};
-                    } else {
-                        p.chain_count = 0;
-                        activateOjama(id);
-                        p.current_action = {}; // 終了クリア
-                    }
-                    break;
-                }
-                case ActionType::ChainFall: {
-                    uint32_t dirty_colors = Gravity::execute(p.field);
-                    Chain::scanGroups(p.field, pending_erasure_[id],
-                                      dirty_colors);
-                    if (pending_erasure_[id].num_erased > 0) {
-                        p.current_action = {Action{ActionType::Chain}, 1};
-                    } else {
-                        p.chain_count = 0;
-                        activateOjama(id);
-                        p.current_action = {}; // 終了クリア
-                    }
-                    break;
-                }
-                case ActionType::Ojama: {
-                    int fall_num = std::min(static_cast<int>(p.active_ojama),
-                                            config::Rule::kMaxOjamaPerFall);
-                    p.active_ojama -= static_cast<uint16_t>(fall_num);
-                    p.fallOjama(fall_num, seed_);
-                    p.current_action = {}; // 終了クリア
-                    break;
-                }
-                default:
-                    break;
-            }
-        }
-    }
-
-    // 3. Death check
+    // 3. Death check (ループを廃止してプレイヤー 0 と 1 を個別にベタ書き)
     uint32_t alive_mask = 0;
-    for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
-        auto& p = players_[id];
-        // 【変更】：current_action を直接チェックします
-        bool is_alive = (p.current_action.action.type != ActionType::None) |
-                        !p.field.isOccupied(config::Rule::kDeathCol,
-                                            config::Rule::kDeathRow);
-        alive_mask |= (is_alive << id);
+    {
+        // プレイヤー0
+        bool is_alive0 =
+            (players_[0].current_action.action.type != ActionType::None) |
+            !players_[0].field.isOccupied(config::Rule::kDeathCol,
+                                          config::Rule::kDeathRow);
+        alive_mask |= (static_cast<uint32_t>(is_alive0) << 0);
+
+        // プレイヤー1
+        bool is_alive1 =
+            (players_[1].current_action.action.type != ActionType::None) |
+            !players_[1].field.isOccupied(config::Rule::kDeathCol,
+                                          config::Rule::kDeathRow);
+        alive_mask |= (static_cast<uint32_t>(is_alive1) << 1);
     }
 
-    static_assert(config::Rule::kNumPlayers == 2,
-                  "Match status mapping explicitly assumes 2 players");
     if (alive_mask != 3) {
         static constexpr MatchStatus kNextStatus[] = {
             MatchStatus::Draw, MatchStatus::WinP1, MatchStatus::WinP2,
@@ -203,26 +122,133 @@ void PuyotanMatch::stepNextFrame() noexcept {
         status_ = kNextStatus[alive_mask];
     }
 
-    // 4 & 5. Post-turn processing
-    for (int id = 0; id < config::Rule::kNumPlayers; ++id) {
-        auto& p = players_[id];
-        if (p.current_action.action.type == ActionType::None) {
-            // 4. Ojama (garbage) processing
-            // 開始時のアクションタイプである prev_types を用いて判定します
-            if (p.active_ojama > 0 && prev_types[id] != ActionType::Ojama) {
-                p.current_action = {Action{ActionType::Ojama}, 0};
-            }
-            // 5. Tsumo and frame transition
-            else if (prev_types[id] != ActionType::Pass) {
-                if (p.active_next_pos == 999) [[unlikely]] {
-                    p.active_next_pos = 0;
-                } else {
-                    ++(p.active_next_pos);
-                }
+    // 4 & 5. Post-turn processing (こちらもループを廃止して個別処理)
+    // プレイヤー0
+    if (players_[0].current_action.action.type == ActionType::None) {
+        if (players_[0].active_ojama > 0 &&
+            prev_types[0] != ActionType::Ojama) {
+            players_[0].current_action = {Action{ActionType::Ojama}, 0};
+        } else if (prev_types[0] != ActionType::Pass) {
+            if (players_[0].active_next_pos == 999) [[unlikely]] {
+                players_[0].active_next_pos = 0;
+            } else {
+                ++(players_[0].active_next_pos);
             }
         }
     }
+    // プレイヤー1
+    if (players_[1].current_action.action.type == ActionType::None) {
+        if (players_[1].active_ojama > 0 &&
+            prev_types[1] != ActionType::Ojama) {
+            players_[1].current_action = {Action{ActionType::Ojama}, 0};
+        } else if (prev_types[1] != ActionType::Pass) {
+            if (players_[1].active_next_pos == 999) [[unlikely]] {
+                players_[1].active_next_pos = 0;
+            } else {
+                ++(players_[1].active_next_pos);
+            }
+        }
+    }
+
     ++frame_;
+}
+
+// プレイヤー1人分の個別ステップ関数を実装
+__forceinline void PuyotanMatch::stepPlayerFrame(
+    int id, const std::array<ActionType, 2>& prev_types) noexcept {
+    auto& p = players_[id];
+
+    if (p.current_action.remaining_frame > 0) {
+        p.current_action.remaining_frame--;
+    } else {
+        const auto& action = p.current_action.action;
+        switch (action.type) {
+            case ActionType::Pass:
+                p.current_action = {};
+                break;
+            case ActionType::Put: {
+                const PuyoPiece tumo = tsumo_.get(p.active_next_pos);
+                const int r = static_cast<int>(action.rotation);
+                const int x_axis = action.x;
+                const int x_sub = x_axis + kSubDx[r];
+                const int h_axis = p.field.getColumnHeight(x_axis);
+                const int h_sub = p.field.getColumnHeight(x_sub);
+                p.score += std::max(0, config::Board::kSpawnRow -
+                                           std::max(h_axis, h_sub));
+
+                const int y_axis = h_axis + kAxisDy[r];
+                const int y_sub = h_sub + kSubDySimple[r];
+                p.field.dropNewPiece(x_axis, y_axis, tumo.axis);
+                p.field.dropNewPiece(x_sub, y_sub, tumo.sub);
+
+                const uint32_t dirty_colors = tumo.dirty_flag;
+                Chain::scanGroups(p.field, pending_erasure_[id], dirty_colors);
+
+                if (pending_erasure_[id].num_erased > 0) {
+                    p.current_action = {Action{ActionType::Chain}, 1};
+                } else {
+                    p.current_action = {};
+                }
+                break;
+            }
+            case ActionType::Chain: {
+                Chain::applyErasure(p.field, pending_erasure_[id]);
+                const ErasureData& info = pending_erasure_[id];
+                ++p.chain_count;
+                int step_score =
+                    Scorer::calculateStepScore(info, p.chain_count);
+                p.score += step_score;
+                int ojama =
+                    (p.score - p.used_score) / config::Score::kTargetScore;
+                p.used_score += ojama * config::Score::kTargetScore;
+
+                int used_non =
+                    std::min(ojama, static_cast<int>(p.non_active_ojama));
+                p.non_active_ojama -= static_cast<uint16_t>(used_non);
+                ojama -= used_non;
+                int used_active =
+                    std::min(ojama, static_cast<int>(p.active_ojama));
+                p.active_ojama -= static_cast<uint16_t>(used_active);
+                ojama -= used_active;
+                sendOjama(id, ojama);
+
+                bool field_empty = p.field.getOccupied().empty();
+                p.score += static_cast<int>(field_empty) *
+                           config::Score::kAllClearBonus;
+
+                if (Gravity::canFall(p.field)) {
+                    p.current_action = {Action{ActionType::ChainFall}, 0};
+                } else {
+                    p.chain_count = 0;
+                    activateOjama(id);
+                    p.current_action = {};
+                }
+                break;
+            }
+            case ActionType::ChainFall: {
+                uint32_t dirty_colors = Gravity::execute(p.field);
+                Chain::scanGroups(p.field, pending_erasure_[id], dirty_colors);
+                if (pending_erasure_[id].num_erased > 0) {
+                    p.current_action = {Action{ActionType::Chain}, 1};
+                } else {
+                    p.chain_count = 0;
+                    activateOjama(id);
+                    p.current_action = {};
+                }
+                break;
+            }
+            case ActionType::Ojama: {
+                int fall_num = std::min(static_cast<int>(p.active_ojama),
+                                        config::Rule::kMaxOjamaPerFall);
+                p.active_ojama -= static_cast<uint16_t>(fall_num);
+                p.fallOjama(fall_num, seed_);
+                p.current_action = {};
+                break;
+            }
+            default:
+                break;
+        }
+    }
 }
 
 void PuyotanMatch::sendOjama(int sender_id, int ojama) noexcept {

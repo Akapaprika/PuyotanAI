@@ -96,6 +96,10 @@ class PuyotanMatch {
      * Processes gravity, chains, and action transitions.
      */
     void stepNextFrame() noexcept;
+    // プレイヤー1人分のフレーム処理を行う高速なインライン関数
+    __forceinline void
+    stepPlayerFrame(int id,
+                    const std::array<ActionType, 2>& prev_types) noexcept;
     /** @brief Returns a reference to the specified player's state. */
     const PuyotanPlayer& getPlayer(int id) const noexcept {
         return players_[id];
