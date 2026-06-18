@@ -7,23 +7,19 @@ Cell Board::get(int x, int y) const noexcept {
     const int idx = x >> 2;
     const int shift = ((x & 3) << 4) | y;
 
-    // 1. occupancy のチェック
-    const uint64_t* occ_ptr = reinterpret_cast<const uint64_t*>(&occupancy_);
-    if (!((occ_ptr[idx] >> shift) & 1)) {
-        return Cell::Empty;
-    }
+    // Red(0) のロードをスキップし、他の色と占有状況のみをロード
+    const int b1 = static_cast<int>(((&boards_[1].lo)[idx] >> shift) & 1);
+    const int b2 = static_cast<int>(((&boards_[2].lo)[idx] >> shift) & 1);
+    const int b3 = static_cast<int>(((&boards_[3].lo)[idx] >> shift) & 1);
+    const int b4 = static_cast<int>(((&boards_[4].lo)[idx] >> shift) & 1);
+    const int occ = static_cast<int>(((&occupancy_.lo)[idx] >> shift) & 1);
 
-    // 2.
-    // 盤面が存在する場合、ループ内からは条件分岐（if）を完全に追放（ブランチレス化）します。
-    int found_index = 0;
-    for (int i = 1; i < config::Board::kNumColors; ++i) {
-        const uint64_t* board_ptr =
-            reinterpret_cast<const uint64_t*>(&boards_[i]);
-        int bit = static_cast<int>((board_ptr[idx] >> shift) & 1);
-        found_index |= (i & -bit);
-    }
-
-    return static_cast<Cell>(found_index);
+    // 分岐もループも使わない完全等価な状態方程式
+    // - 空 (occ=0) なら、式は 5 * (1 - 0) = 5 (Cell::Empty) となる
+    // - 赤 (occ=1, 他が0) なら、式は 0 + 5 * 0 = 0 (Cell::Red) となる
+    // - 他の色 (occ=1) なら、各ビットに対応するインデックス (1〜4) に収束する
+    const int color = (b1 * 1) + (b2 * 2) + (b3 * 3) + (b4 * 4) + (5 * (1 - occ));
+    return static_cast<Cell>(color);
 }
 
 void Board::set(int x, int y, Cell color) noexcept {

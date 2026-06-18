@@ -82,14 +82,13 @@ class PuyotanMatch {
      * frame.
      * @return True if the simulation can proceed.
      */
-    __forceinline bool canStepNextFrame() const noexcept {
-        if (status_ != MatchStatus::Playing) [[unlikely]]
-            return false;
-        if (players_[0].current_action.action.type == ActionType::None)
-            return false;
-        if (players_[1].current_action.action.type == ActionType::None)
-            return false;
-        return true;
+     __forceinline bool canStepNextFrame() const noexcept {
+        const int playing = static_cast<int>(status_ == MatchStatus::Playing);
+        const int p0_ready = static_cast<int>(players_[0].current_action.action.type != ActionType::None);
+        const int p1_ready = static_cast<int>(players_[1].current_action.action.type != ActionType::None);
+
+        // 短絡評価による分岐を生成せず、ビットワイズ論理積で一括判定
+        return (playing & p0_ready & p1_ready) != 0;
     }
     /**
      * @brief Advances the match simulation by exactly one frame.
