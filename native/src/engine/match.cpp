@@ -323,15 +323,28 @@ int64_t PuyotanMatch::runBatch(int num_games, uint32_t seed) noexcept {
 }
 
 inline int fast_modulo(uint32_t val, int max) noexcept {
-    switch (max) {
-        case 1: return 0;
-        case 2: return val & 1;
-        case 3: return val % 3; // コンパイラが「乗算+シフト」の最適化を行います
-        case 4: return val & 3;
-        case 5: return val % 5; // 同上
-        case 6: return val % 6; // 同上
-        default: return val % max; // 念のためのフォールバック
-    }
+    struct Magic {
+        uint64_t mul;
+        uint8_t shift;
+    };
+
+    // 32ビット符号なし整数 [0, 2^32-1] の全域で、
+    // (val * mul) >> shift が val / d と厳密に一致する定数テーブル
+    static constexpr Magic kMagic[7] = {
+        {0, 0},
+        {1ULL, 0},             // d = 1 -> (val * 1) >> 0
+        {1ULL, 1},             // d = 2 -> (val * 1) >> 1
+        {0xAAAAAAABULL, 33},  // d = 3 -> (val * 0xAAAAAAAB) >> 33
+        {1ULL, 2},             // d = 4 -> (val * 1) >> 2
+        {0xCCCCCCCDULL, 34},  // d = 5 -> (val * 0xCCCCCCCD) >> 34
+        {0xAAAAAAABULL, 34}   // d = 6 -> (val * 0xAAAAAAAB) >> 34 (33 + 1)
+    };
+
+    assert(max >= 1 && max <= 6);
+
+    // 1回の乗算・1回のシフト・1回の積和演算だけで完結（完全分岐レス、定数時間で実行可能）
+    const uint32_t quotient = static_cast<uint32_t>((static_cast<uint64_t>(val) * kMagic[max].mul) >> kMagic[max].shift);
+    return static_cast<int>(val - quotient * max);
 }
 
 int PuyotanMatch::nextInt(uint32_t& seed, int max) noexcept {

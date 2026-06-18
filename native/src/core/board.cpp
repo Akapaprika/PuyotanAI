@@ -33,21 +33,14 @@ void Board::set(int x, int y, Cell color) noexcept {
     const uint64_t bit = 1ULL << shift;
     const uint64_t clear_mask = ~bit;
 
-    // Standard-compliant reinterpret_cast for safe and fast contiguous union
-    // access. Clear the bit at (x, y) across all color boards using highly
-    // efficient unrolled instructions.
+    // 共用体の構成要素である lo のポインタを経由させることで、
+    // キャストを使わず安全かつ高速に連続メモリアクセスを行います。
     for (auto& bb : boards_) {
-        uint64_t* board_ptr = reinterpret_cast<uint64_t*>(&bb);
-        board_ptr[idx] &= clear_mask;
+        (&bb.lo)[idx] &= clear_mask;
     }
 
-    // Set the bit for the target color and occupancy mask
-    uint64_t* target_board_ptr =
-        reinterpret_cast<uint64_t*>(&boards_[toIndex(color)]);
-    target_board_ptr[idx] |= bit;
-
-    uint64_t* occ_ptr = reinterpret_cast<uint64_t*>(&occupancy_);
-    occ_ptr[idx] |= bit;
+    (&boards_[toIndex(color)].lo)[idx] |= bit;
+    (&occupancy_.lo)[idx] |= bit;
 }
 
 void Board::clear(int x, int y) noexcept {
