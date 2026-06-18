@@ -141,20 +141,25 @@ struct alignas(16) BitBoard {
      *   4. Build mask {all-1s, lo_zero_cond} with _mm_blend_epi16
      *   5. AND with per-lane LSBs to zero the hi result when lo != 0
      */
-     [[nodiscard]] __forceinline BitBoard extractLSB() const noexcept {
-        // lo が 0 なら全1(0xFF..FF)、それ以外なら全0(0x00..00)のマスクを生成
-        const uint64_t mask = -static_cast<int64_t>(lo == 0ULL);
-        
-        const uint64_t res_lo = lo & (0ULL - lo);
-        const uint64_t res_hi = hi & (0ULL - hi);
+    [[nodiscard]] __forceinline BitBoard extractLSB() const noexcept {
+        // 1. 各64ビットレーンで個別に LSB を抽出する（lsb = m128 & -m128）
+        const __m128i neg = _mm_sub_epi64(_mm_setzero_si128(), m128);
+        const __m128i lsb = _mm_and_si128(m128, neg);
     
-        const uint64_t final_lo = res_lo & ~mask;
-        const uint64_t final_hi = res_hi & mask;
+        // 2. 下位64ビット（lo）がゼロかどうかを判定
+        const __m128i cmp = _mm_cmpeq_epi64(m128, _mm_setzero_si128());
     
-        // スタックを介さず、汎用レジスタから直接SIMD（XMM）レジスタへ移動して合成
-        __m128i m_lo = _mm_cvtsi64_si128(final_lo);
-        __m128i m_hi = _mm_slli_si128(_mm_cvtsi64_si128(final_hi), 8);
-        return _mm_or_si128(m_lo, m_hi);
+        // 3. 下位64ビットの比較結果（全0 or 全1）を、上位64ビットへも複製する
+        const __m128i lo_zero_mask = _mm_shuffle_epi32(cmp, _MM_SHUFFLE(1, 0, 1, 0));
+    
+        // 4. マスク処理とブレンド
+        //    lo != 0 なら lower レーンの lsb を採用、lo == 0 なら upper レーンの lsb を採用
+        const __m128i res_lo = _mm_andnot_si128(lo_zero_mask, lsb);
+        const __m128i res_hi = _mm_and_si128(lo_zero_mask, lsb);
+    
+        // 0xF0 マスクにより、下位64ビット（words 0..3）は res_lo から、
+        // 上位64ビット（words 4..7）は res_hi からそれぞれ高速にブレンド
+        return _mm_blend_epi16(res_lo, res_hi, 0xF0);
     }
 
     // -----------------------------------------------------------------------
