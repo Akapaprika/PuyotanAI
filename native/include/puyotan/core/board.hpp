@@ -142,23 +142,13 @@ struct alignas(16) BitBoard {
      *   5. AND with per-lane LSBs to zero the hi result when lo != 0
      */
     [[nodiscard]] __forceinline BitBoard extractLSB() const noexcept {
-        const __m128i zero = _mm_setzero_si128();
-        // Per-lane negation: {-lo, -hi}
-        const __m128i neg = _mm_sub_epi64(zero, m128);
-        // Per-lane LSB isolation: {lo & -lo, hi & -hi}
-        const __m128i per_lsb = _mm_and_si128(m128, neg);
-        // Is lo lane == 0? → all-1s in lo lane if so, all-0s otherwise
-        const __m128i lo_is_zero = _mm_cmpeq_epi64(m128, zero);
-        // Broadcast lo lane's condition to hi lane (imm8=0x44: qword0→qword0,
-        // qword0→qword1)
-        const __m128i cond_hi = _mm_shuffle_epi32(lo_is_zero, 0x44);
-        // mask: lo lane = all-1s (always keep lo result)
-        //       hi lane = all-1s only when lo was 0 (keep hi result only then)
-        // blend 0x0F: words 0-3 (lo lane) from b=all-1s; words 4-7 (hi lane)
-        // from a=cond_hi
-        const __m128i mask =
-            _mm_blend_epi16(cond_hi, _mm_set1_epi64x(-1LL), 0x0F);
-        return _mm_and_si128(per_lsb, mask);
+        if (lo != 0ULL) {
+            // lo & -lo を計算し、直接XMMレジスタの低位64bitへ移動 (高位64bitは自動的に0クリア)
+            return _mm_cvtsi64_si128(lo & (0ULL - lo));
+        } else {
+            // hi & -hi を計算してXMMレジスタに入れ、8バイト（64bit）左シフトして高位へ移動
+            return _mm_slli_si128(_mm_cvtsi64_si128(hi & (0ULL - hi)), 8);
+        }
     }
 
     // -----------------------------------------------------------------------
