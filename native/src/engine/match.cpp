@@ -83,8 +83,6 @@ void PuyotanMatch::start() noexcept {
     status_ = MatchStatus::Playing;
 }
 
-// src/engine/match.cpp 内の stepNextFrame
-
 void PuyotanMatch::stepNextFrame() noexcept {
     if (!canStepNextFrame())
         return;
@@ -167,22 +165,18 @@ __forceinline void PuyotanMatch::stepPlayerFrame(
                 break;
             case ActionType::Put: {
                 const PuyoPiece tumo = tsumo_.get(p.active_next_pos);
-                const int r = static_cast<int>(action.rotation);
-                const int x_axis = action.x;
-                const int x_sub = x_axis + kSubDx[r];
-                const int h_axis = p.field.getColumnHeight(x_axis);
-                const int h_sub = p.field.getColumnHeight(x_sub);
-                p.score += std::max(0, config::Board::kSpawnRow -
-                                           std::max(h_axis, h_sub));
-
-                const int y_axis = h_axis + kAxisDy[r];
-                const int y_sub = h_sub + kSubDySimple[r];
-                p.field.dropNewPiece(x_axis, y_axis, tumo.axis);
-                p.field.dropNewPiece(x_sub, y_sub, tumo.sub);
-
+                
+                // 従来の getColumnHeight や dropNewPiece の複数回呼び出しを、上記関数1回に集約！
+                int h_axis = 0;
+                int h_sub = 0;
+                p.field.dropPiecePair(action.x, action.rotation, tumo.axis, tumo.sub, h_axis, h_sub);
+            
+                // スコア計算（h_axis, h_sub がすでに取得できているためそのまま利用）
+                p.score += std::max(0, config::Board::kSpawnRow - std::max(h_axis, h_sub));
+            
                 const uint32_t dirty_colors = tumo.dirty_flag;
                 Chain::scanGroups(p.field, pending_erasure_[id], dirty_colors);
-
+            
                 if (pending_erasure_[id].num_erased > 0) {
                     p.current_action = {Action{ActionType::Chain}, 1};
                 } else {

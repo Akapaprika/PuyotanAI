@@ -299,6 +299,57 @@ class Board {
         (&boards_[toIndex(color)].lo)[idx] |= bit;
         (&occupancy_.lo)[idx] |= bit;
     }
+    /**
+    * @brief 2つのぷよ（Axis, Sub）を1手として高速に落とす（完全分岐レス・TZCNT削減版）
+    */
+    inline void dropPiecePair(int col, Rotation r, Cell color_axis, Cell color_sub, int& out_h_axis, int& out_h_sub) noexcept {
+        const int r_idx = static_cast<int>(r);
+        const int x_axis = col;
+        const int x_sub = col + kSubDx[r_idx];
+
+        // 1. 各列のビット演算用インデックスとシフト量を取得
+        const int idx_axis = x_axis >> 2;
+        const int shift_axis = (x_axis & 3) << 4;
+        uint64_t& occ_axis = (&occupancy_.lo)[idx_axis];
+        const uint32_t lane_axis = static_cast<uint32_t>(occ_axis >> shift_axis) & 0xFFFFu;
+
+        const int idx_sub = x_sub >> 2;
+        const int shift_sub = (x_sub & 3) << 4;
+        uint64_t& occ_sub = (&occupancy_.lo)[idx_sub];
+        const uint32_t lane_sub = static_cast<uint32_t>(occ_sub >> shift_sub) & 0xFFFFu;
+
+        // 2. それぞれの列の「1番目の空きビット」を計算
+        const uint32_t bit1_axis = (~lane_axis) & (lane_axis + 1);
+        const uint32_t bit1_sub  = (~lane_sub)  & (lane_sub + 1);
+
+        // 3. スコアイベント用に、落下前の「元の列の高さ」を高速に取得
+        //    縦置き時であっても、bit1_axis と bit1_sub は同一の値を指すため、
+        //    スコア計算ロジック（std::max）との整合性が自動的に保たれます。
+        out_h_axis = std::countr_zero(bit1_axis);
+        out_h_sub  = std::countr_zero(bit1_sub);
+
+        // 4. 同一点（縦置き）かどうかの判定および、シフト要否（0 or 1）の算出
+        //    （コンパイラはこれを setcc や論理積を用いて完全に非分岐でコンパイルします）
+        const bool is_same_col = (x_axis == x_sub);
+        const int use_2nd_axis = static_cast<int>(is_same_col && (r == Rotation::Down));
+        const int use_2nd_sub  = static_cast<int>(is_same_col && (r == Rotation::Up));
+
+        // 5. 2段目へのシフトを反映（横置きの場合は 0 シフトなので bit1 のまま）
+        const uint32_t bit_axis_raw = bit1_axis << use_2nd_axis;
+        const uint32_t bit_sub_raw  = bit1_sub  << use_2nd_sub;
+
+        // 6. 表示可能領域（0〜12行）のみを有効にする
+        const uint32_t bit_axis = bit_axis_raw & config::Board::kVisibleColMask;
+        const uint32_t bit_sub  = bit_sub_raw  & config::Board::kVisibleColMask;
+
+        // 7. ビットプレーンと occupancy_ を更新
+        //    縦置き時（idx_axis == idx_sub）でも、OR代入演算を重ねるだけなので正しく動作します。
+        (&boards_[static_cast<int>(color_axis)].lo)[idx_axis] |= (static_cast<uint64_t>(bit_axis) << shift_axis);
+        (&boards_[static_cast<int>(color_sub)].lo)[idx_sub]   |= (static_cast<uint64_t>(bit_sub) << shift_sub);
+
+        (&occupancy_.lo)[idx_axis] |= (static_cast<uint64_t>(bit_axis) << shift_axis);
+        (&occupancy_.lo)[idx_sub]  |= (static_cast<uint64_t>(bit_sub) << shift_sub);
+    }
     /** @brief Retrieves the BitBoard mask for the specified color. */
     [[nodiscard]] inline const BitBoard&
     getBitboard(Cell color) const noexcept {
