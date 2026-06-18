@@ -322,11 +322,23 @@ int64_t PuyotanMatch::runBatch(int num_games, uint32_t seed) noexcept {
     return total_frames;
 }
 
+inline int fast_modulo(uint32_t val, int max) noexcept {
+    switch (max) {
+        case 1: return 0;
+        case 2: return val & 1;
+        case 3: return val % 3; // コンパイラが「乗算+シフト」の最適化を行います
+        case 4: return val & 3;
+        case 5: return val % 5; // 同上
+        case 6: return val % 6; // 同上
+        default: return val % max; // 念のためのフォールバック
+    }
+}
+
 int PuyotanMatch::nextInt(uint32_t& seed, int max) noexcept {
     assert(seed != 0u);
     seed ^= (seed << 13);
     seed ^= static_cast<uint32_t>(static_cast<int32_t>(seed) >> 17);
     seed ^= (seed << 15);
-    return static_cast<int>(seed % static_cast<uint32_t>(max));
+    return fast_modulo(seed, max);
 }
 } // namespace puyotan
