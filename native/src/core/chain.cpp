@@ -93,21 +93,8 @@ void Chain::scanGroups(const Board& board, ErasureData& erasure_data,
         const BitBoard ojama = board.getBitboard(Cell::Ojama);
         if (!ojama.empty()) {
             const BitBoard& t = erasure_data.total_erased;
-
-            // 1. 境界マスクを適用しない「生の高速なシフト演算」をレジスタ内で行う
-            const __m128i raw_up    = _mm_slli_epi64(t.m128, 1);
-            const __m128i raw_down  = _mm_srli_epi64(t.m128, 1);
-            const __m128i raw_right = _mm_slli_si128(t.m128, 2);
-            const __m128i raw_left  = _mm_srli_si128(t.m128, 2);
-
-            // 2. 生のシフト結果を並列にマージ
-            const __m128i combined = _mm_or_si128(t.m128, 
-                _mm_or_si128(_mm_or_si128(raw_up, raw_down),
-                            _mm_or_si128(raw_right, raw_left)));
-
-            // 3. 最後に1回だけ境界マスクを適用（4回あったAND演算を1回に集約！）
-            const __m128i boundary_mask = _mm_set_epi64x(config::Board::kHiMask, config::Board::kLoMask);
-            const BitBoard adj = _mm_and_si128(combined, boundary_mask);
+            BitBoard adj = t | t.shiftUp() | t.shiftDown() | t.shiftLeft() |
+                           t.shiftRight();
             BitBoard oj_erased = ojama & adj;
             if (!oj_erased.empty()) {
                 // こちらも全体の total_erased にのみ結合する
