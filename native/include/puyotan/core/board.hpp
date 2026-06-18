@@ -141,14 +141,20 @@ struct alignas(16) BitBoard {
      *   4. Build mask {all-1s, lo_zero_cond} with _mm_blend_epi16
      *   5. AND with per-lane LSBs to zero the hi result when lo != 0
      */
-    [[nodiscard]] __forceinline BitBoard extractLSB() const noexcept {
-        if (lo != 0ULL) {
-            // lo & -lo を計算し、直接XMMレジスタの低位64bitへ移動 (高位64bitは自動的に0クリア)
-            return _mm_cvtsi64_si128(lo & (0ULL - lo));
-        } else {
-            // hi & -hi を計算してXMMレジスタに入れ、8バイト（64bit）左シフトして高位へ移動
-            return _mm_slli_si128(_mm_cvtsi64_si128(hi & (0ULL - hi)), 8);
-        }
+     [[nodiscard]] __forceinline BitBoard extractLSB() const noexcept {
+        // lo が 0 なら全1(0xFF..FF)、それ以外なら全0(0x00..00)のマスクを生成
+        const uint64_t mask = -static_cast<int64_t>(lo == 0ULL);
+        
+        const uint64_t res_lo = lo & (0ULL - lo);
+        const uint64_t res_hi = hi & (0ULL - hi);
+    
+        const uint64_t final_lo = res_lo & ~mask;
+        const uint64_t final_hi = res_hi & mask;
+    
+        // スタックを介さず、汎用レジスタから直接SIMD（XMM）レジスタへ移動して合成
+        __m128i m_lo = _mm_cvtsi64_si128(final_lo);
+        __m128i m_hi = _mm_slli_si128(_mm_cvtsi64_si128(final_hi), 8);
+        return _mm_or_si128(m_lo, m_hi);
     }
 
     // -----------------------------------------------------------------------
