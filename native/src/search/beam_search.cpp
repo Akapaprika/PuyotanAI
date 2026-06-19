@@ -265,23 +265,23 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
     return {0, -10000.0f};
 }
 
-std::pair<int, float> beamSearch(const PuyotanPlayer& player,
-                                 const Tsumo& tsumo_const,
-                                 const BeamConfig& cfg) noexcept {
-    const bool has_ojama = !player.field.getBitboard(Cell::Ojama).empty();
-
+std::pair<int, float> soloBeamSearch(const PuyotanPlayer& player,
+                                     const Tsumo& tsumo_const,
+                                     const BeamConfig& cfg) noexcept {
     if (cfg.eval_weights.use_fast_potential) {
-        if (has_ojama) {
-            return beamSearchImpl<true, true>(player, tsumo_const, cfg);
-        } else {
-            return beamSearchImpl<true, false>(player, tsumo_const, cfg);
-        }
+        return beamSearchImpl<true, false>(player, tsumo_const, cfg);
     } else {
-        if (has_ojama) {
-            return beamSearchImpl<false, true>(player, tsumo_const, cfg);
-        } else {
-            return beamSearchImpl<false, false>(player, tsumo_const, cfg);
-        }
+        return beamSearchImpl<false, false>(player, tsumo_const, cfg);
+    }
+}
+
+std::pair<int, float> vsBeamSearch(const PuyotanPlayer& player,
+                                   const Tsumo& tsumo_const,
+                                   const BeamConfig& cfg) noexcept {
+    if (cfg.eval_weights.use_fast_potential) {
+        return beamSearchImpl<true, true>(player, tsumo_const, cfg);
+    } else {
+        return beamSearchImpl<false, true>(player, tsumo_const, cfg);
     }
 }
 

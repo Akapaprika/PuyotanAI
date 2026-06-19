@@ -106,7 +106,7 @@ SearchStats runSingleSearch(const PuyotanPlayer& player, const Tsumo& tsumo,
     SearchStats stats;
     auto start = std::chrono::high_resolution_clock::now();
 
-    auto result = beamSearch(player, tsumo, cfg);
+    auto result = soloBeamSearch(player, tsumo, cfg);
 
     auto end = std::chrono::high_resolution_clock::now();
     stats.latency_ms =
@@ -165,7 +165,7 @@ BenchmarkResult runBenchmark(double duration_seconds, const BeamConfig& cfg,
             // Run beam search once at Player 0 (1P) decision timing
             if (decision_mask & 1) {
                 auto start = std::chrono::high_resolution_clock::now();
-                auto search_res = beamSearch(match.getPlayer(0), tsumo, cfg);
+                auto search_res = soloBeamSearch(match.getPlayer(0), tsumo, cfg);
                 auto end = std::chrono::high_resolution_clock::now();
 
                 double latency_ms =

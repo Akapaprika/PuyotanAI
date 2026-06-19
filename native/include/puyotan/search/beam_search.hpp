@@ -34,8 +34,12 @@ struct BeamConfig {
  * @param cfg     Beam search configuration (width, depth, weights).
  * @return        std::pair of RL action index and its expected score.
  */
-std::pair<int, float> beamSearch(const PuyotanPlayer& player,
-                                 const Tsumo&         tsumo,
-                                 const BeamConfig&    cfg) noexcept;
+std::pair<int, float> soloBeamSearch(const PuyotanPlayer& player,
+                                     const Tsumo&         tsumo,
+                                     const BeamConfig&    cfg) noexcept;
+
+std::pair<int, float> vsBeamSearch(const PuyotanPlayer& player,
+                                   const Tsumo&         tsumo,
+                                   const BeamConfig&    cfg) noexcept;
 
 } // namespace puyotan::search
