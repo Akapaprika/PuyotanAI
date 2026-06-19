@@ -126,6 +126,7 @@ BenchmarkResult runBenchmark(double duration_seconds, const BeamConfig& cfg,
     latencies.reserve(200000);
     std::vector<float> expected_scores;
     expected_scores.reserve(200000);
+    double total_search_time_ms = 0.0;
 
     auto start_time = std::chrono::high_resolution_clock::now();
     uint32_t seed = base_seed;
@@ -150,14 +151,6 @@ BenchmarkResult runBenchmark(double duration_seconds, const BeamConfig& cfg,
         // Match progression loop
         while (match.getStatus() == MatchStatus::Playing &&
                game_moves < max_moves_per_game) {
-            // Periodical duration timeout check
-            auto current_time = std::chrono::high_resolution_clock::now();
-            double elapsed_current =
-                std::chrono::duration<double>(current_time - start_time)
-                    .count();
-            if (elapsed_current >= duration_seconds) {
-                break;
-            }
 
             bool action_set = false;
             int decision_mask = match.getDecisionMask();
@@ -172,6 +165,7 @@ BenchmarkResult runBenchmark(double duration_seconds, const BeamConfig& cfg,
                     std::chrono::duration<double, std::milli>(end - start)
                         .count();
                 latencies.push_back(latency_ms);
+                total_search_time_ms += latency_ms;
                 expected_scores.push_back(search_res.second);
 
                 int action_idx = search_res.first;
@@ -213,9 +207,15 @@ BenchmarkResult runBenchmark(double duration_seconds, const BeamConfig& cfg,
     result.elapsed_seconds =
         std::chrono::duration<double>(end_time - start_time).count();
 
-    // Throughput metrics
-    result.searches_per_sec = result.total_searches / result.elapsed_seconds;
-    result.nodes_per_sec = result.total_nodes / result.elapsed_seconds;
+    // Throughput metrics (Use pure search time for search speed metrics)
+    double total_search_time_sec = total_search_time_ms / 1000.0;
+    if (total_search_time_sec > 1e-6) {
+        result.searches_per_sec = result.total_searches / total_search_time_sec;
+        result.nodes_per_sec = result.total_nodes / total_search_time_sec;
+    } else {
+        result.searches_per_sec = 0.0;
+        result.nodes_per_sec = 0.0;
+    }
     result.fps = result.total_frames / result.elapsed_seconds;
     result.moves_per_sec = result.total_moves / result.elapsed_seconds;
 
