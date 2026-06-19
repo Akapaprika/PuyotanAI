@@ -51,13 +51,7 @@ void Board::placePiece(int col, Cell color) noexcept {
     set(col, config::Board::kSpawnRow, color);
 }
 
-int Board::getDropDistance(int x, int y) const noexcept {
-    assert(x >= 0 && x < config::Board::kWidth);
-    assert(y > 0 && y <= static_cast<int>(config::Board::kHeight));
-    // Implementation note: This assumes 13th row (spawn) and visible field are
-    // contiguous. Distance = current Y - top of existing stack.
-    return y - getColumnHeight(x);
-}
+
 
 void Board::setBitboard(Cell color, const BitBoard& bb) noexcept {
     boards_[toIndex(color)] = bb;

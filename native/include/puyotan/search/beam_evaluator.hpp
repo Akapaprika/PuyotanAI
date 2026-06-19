@@ -26,24 +26,12 @@ struct BeamEvalWeights {
     float isolated_penalty = -0.6f;
     // Penalty per puyo of any color that lies beneath an ojama
     float buried_penalty = -1.5f;
-    // Penalty proportional to height variance across columns
-    float height_variance_penalty = -0.3f;
-    // Penalty per unit of height in the death column (col 2)
-    float death_col_penalty = -1.0f;
     // Multiplier applied to the best immediate fire score when comparing
     // fire-now vs. beam-continuation at depth 0.
     // fire_bias > 1.0  => prefer firing earlier
     // fire_bias == 1.0 => fire only if it strictly beats the beam score
     // fire_bias < 1.0  => prefer building (fire must be clearly better)
     float fire_bias = 1.0f;
-    // Bonus applied to edge columns (col 0 and 5) to encourage building from
-    // sides. Decays linearly as total puyos on board increases, reaching 0 at
-    // edge_column_threshold puyos. Set edge_column_threshold <= 0 to apply the
-    // bonus at full strength regardless of board fill.
-    float edge_column_bonus = 0.0f;
-    // Total puyo count at which edge_column_bonus decays to zero.
-    // 0 (or negative): always apply at full strength (no decay).
-    float edge_column_threshold = 0.0f;
     // Use fast approximate potential calculation (flood-fill).
     // NOTE: Disabling this gives more accurate multi-chain evaluation.
     // Fast mode only counts connected group size and cannot detect multi-step
@@ -143,46 +131,6 @@ class BeamEvaluator {
 
         r += static_cast<float>(conn) * w.connectivity_bonus;
         r += static_cast<float>(iso) * w.isolated_penalty;
-
-        // --- Height variance (fully unrolled for kWidth=6, zero loop overhead)
-        // ---
-        {
-            const float h0 = static_cast<float>(heights[0]);
-            const float h1 = static_cast<float>(heights[1]);
-            const float h2 = static_cast<float>(heights[2]);
-            const float h3 = static_cast<float>(heights[3]);
-            const float h4 = static_cast<float>(heights[4]);
-            const float h5 = static_cast<float>(heights[5]);
-            constexpr float inv6 =
-                1.0f / static_cast<float>(config::Board::kWidth);
-            const float sum = h0 + h1 + h2 + h3 + h4 + h5;
-            const float sum_sq =
-                h0 * h0 + h1 * h1 + h2 * h2 + h3 * h3 + h4 * h4 + h5 * h5;
-            const float mean = sum * inv6;
-            const float var = sum_sq * inv6 - mean * mean;
-            r += var * w.height_variance_penalty;
-        }
-
-        // --- Death column height (uses cached heights[], no extra popcnt call)
-        // ---
-        r += static_cast<float>(heights[config::Rule::kDeathCol]) *
-             w.death_col_penalty;
-
-        // --- Edge column bonus (col 0 and 5) ---
-        // Encourages building from edge columns. Decays linearly as total puyos
-        // increase. If edge_column_threshold <= 0, the full bonus is always
-        // applied.
-        if (w.edge_column_bonus != 0.0f) {
-            const int total_puyos = board.getOccupied().popcount();
-            const int edge_height = heights[0] + heights[5];
-            const float edge_factor =
-                (w.edge_column_threshold > 0.0f)
-                    ? std::max(0.0f, 1.0f - static_cast<float>(total_puyos) /
-                                                w.edge_column_threshold)
-                    : 1.0f;
-            r += static_cast<float>(edge_height) * w.edge_column_bonus *
-                 edge_factor;
-        }
 
         // --- Buried puyo count (colored puyos beneath any ojama shadow) ---
         if constexpr (HasOjama) {

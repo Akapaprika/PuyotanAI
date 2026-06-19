@@ -253,13 +253,7 @@ class Board {
      * @param color Color of the puyo.
      */
     void placePiece(int col, Cell color) noexcept;
-    /**
-     * @brief Calculates the vertical distance a puyo would fall at (x, y).
-     * @param x Column index (0-5).
-     * @param y Starting row index.
-     * @return Number of rows to the nearest obstacle/bottom.
-     */
-    int getDropDistance(int x, int y) const noexcept;
+
     /**
      * @brief Returns the height of the puyo stack in a column.
      * @param x Column index (0-5).
@@ -350,27 +344,7 @@ class Board {
         (&occupancy_.lo)[idx_axis] |= (static_cast<uint64_t>(bit_axis) << shift_axis);
         (&occupancy_.lo)[idx_sub]  |= (static_cast<uint64_t>(bit_sub) << shift_sub);
     }
-    /**
-     * @brief Drops a single puyo into a pre-calculated position (extremely fast for search engines).
-     */
-    inline void dropPieceSingleFast(int x, int y, Cell color) noexcept {
-        const int idx = x >> 2;
-        const int shift = ((x & 3) << 4) | y;
-        const uint64_t bit = 1ULL << shift;
-        (&boards_[static_cast<int>(color)].lo)[idx] |= bit;
-        (&occupancy_.lo)[idx] |= bit;
-    }
-    /**
-     * @brief Clears a single puyo from a pre-calculated position (extremely fast for search engines).
-     */
-    inline void clearPieceSingleFast(int x, int y, Cell color) noexcept {
-        const int idx = x >> 2;
-        const int shift = ((x & 3) << 4) | y;
-        const uint64_t bit = 1ULL << shift;
-        const uint64_t clear_mask = ~bit;
-        (&boards_[static_cast<int>(color)].lo)[idx] &= clear_mask;
-        (&occupancy_.lo)[idx] &= clear_mask;
-    }
+
     /**
      * @brief High-performance placement helper. Placed pieces at specific pre-calculated heights.
      */
