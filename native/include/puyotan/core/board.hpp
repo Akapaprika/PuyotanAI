@@ -300,7 +300,7 @@ class Board {
         (&occupancy_.lo)[idx] |= bit;
     }
     /**
-    * @brief 2つのぷよ（Axis, Sub）を1手として高速に落とす（完全分岐レス・TZCNT削減版）
+    * @brief 2つのぷよ（Axis, Sub）を1手として高速に落とす（メモリロード最小化・TZCNT削減版）
     */
     inline void dropPiecePair(int col, Rotation r, Cell color_axis, Cell color_sub, int& out_h_axis, int& out_h_sub) noexcept {
         const int r_idx = static_cast<int>(r);
@@ -322,14 +322,11 @@ class Board {
         const uint32_t bit1_axis = (~lane_axis) & (lane_axis + 1);
         const uint32_t bit1_sub  = (~lane_sub)  & (lane_sub + 1);
 
-        // 3. スコアイベント用に、落下前の「元の列の高さ」を高速に取得
-        //    縦置き時であっても、bit1_axis と bit1_sub は同一の値を指すため、
-        //    スコア計算ロジック（std::max）との整合性が自動的に保たれます。
+        // 3. スコアイベント用に、元の列の高さを高速に取得
         out_h_axis = std::countr_zero(bit1_axis);
         out_h_sub  = std::countr_zero(bit1_sub);
 
         // 4. 同一点（縦置き）かどうかの判定および、シフト要否（0 or 1）の算出
-        //    （コンパイラはこれを setcc や論理積を用いて完全に非分岐でコンパイルします）
         const bool is_same_col = (x_axis == x_sub);
         const int use_2nd_axis = static_cast<int>(is_same_col && (r == Rotation::Down));
         const int use_2nd_sub  = static_cast<int>(is_same_col && (r == Rotation::Up));
@@ -343,12 +340,50 @@ class Board {
         const uint32_t bit_sub  = bit_sub_raw  & config::Board::kVisibleColMask;
 
         // 7. ビットプレーンと occupancy_ を更新
-        //    縦置き時（idx_axis == idx_sub）でも、OR代入演算を重ねるだけなので正しく動作します。
         (&boards_[static_cast<int>(color_axis)].lo)[idx_axis] |= (static_cast<uint64_t>(bit_axis) << shift_axis);
         (&boards_[static_cast<int>(color_sub)].lo)[idx_sub]   |= (static_cast<uint64_t>(bit_sub) << shift_sub);
 
         (&occupancy_.lo)[idx_axis] |= (static_cast<uint64_t>(bit_axis) << shift_axis);
         (&occupancy_.lo)[idx_sub]  |= (static_cast<uint64_t>(bit_sub) << shift_sub);
+    }
+    /**
+     * @brief Drops a single puyo into a pre-calculated position (extremely fast for search engines).
+     */
+    inline void dropPieceSingleFast(int x, int y, Cell color) noexcept {
+        const int idx = x >> 2;
+        const int shift = ((x & 3) << 4) | y;
+        const uint64_t bit = 1ULL << shift;
+        (&boards_[static_cast<int>(color)].lo)[idx] |= bit;
+        (&occupancy_.lo)[idx] |= bit;
+    }
+    /**
+     * @brief Clears a single puyo from a pre-calculated position (extremely fast for search engines).
+     */
+    inline void clearPieceSingleFast(int x, int y, Cell color) noexcept {
+        const int idx = x >> 2;
+        const int shift = ((x & 3) << 4) | y;
+        const uint64_t bit = 1ULL << shift;
+        const uint64_t clear_mask = ~bit;
+        (&boards_[static_cast<int>(color)].lo)[idx] &= clear_mask;
+        (&occupancy_.lo)[idx] &= clear_mask;
+    }
+    /**
+     * @brief High-performance placement helper. Placed pieces at specific pre-calculated heights.
+     */
+    inline void dropPiecePairFast(int ax, int sx, int y_axis, int y_sub, Cell color_axis, Cell color_sub) noexcept {
+        const int idx_axis = ax >> 2;
+        const int shift_axis = ((ax & 3) << 4) | y_axis;
+        const uint64_t mask_axis = -static_cast<uint64_t>(y_axis < config::Board::kHeight);
+        const uint64_t bit_axis = (1ULL << shift_axis) & mask_axis;
+        (&boards_[static_cast<int>(color_axis)].lo)[idx_axis] |= bit_axis;
+        (&occupancy_.lo)[idx_axis] |= bit_axis;
+
+        const int idx_sub = sx >> 2;
+        const int shift_sub = ((sx & 3) << 4) | y_sub;
+        const uint64_t mask_sub = -static_cast<uint64_t>(y_sub < config::Board::kHeight);
+        const uint64_t bit_sub = (1ULL << shift_sub) & mask_sub;
+        (&boards_[static_cast<int>(color_sub)].lo)[idx_sub] |= bit_sub;
+        (&occupancy_.lo)[idx_sub] |= bit_sub;
     }
     /** @brief Retrieves the BitBoard mask for the specified color. */
     [[nodiscard]] inline const BitBoard&

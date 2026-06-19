@@ -117,8 +117,7 @@ PlaceResult simulatePlacement(const Board& src, PuyoPiece piece,
     }
 
     PlaceResult res{src, 0, 0, false}; // 96-byte copy only for valid placements
-    res.field.dropNewPiece(ax, y_axis, piece.axis);
-    res.field.dropNewPiece(sx, y_sub, piece.sub);
+    res.field.dropPiecePairFast(ax, sx, y_axis, y_sub, piece.axis, piece.sub);
 
     // Resolve chain
     // 【超強力最適化】
