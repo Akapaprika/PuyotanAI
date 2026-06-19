@@ -78,6 +78,17 @@ struct ScoreIdx {
 
 // Thread-local vector to avoid dynamic allocation overhead in the hot loop
 thread_local std::vector<ScoreIdx> tl_sort_buf;
+thread_local std::vector<BeamNode> tl_current_beam;
+thread_local std::vector<BeamNode> tl_next_beam;
+
+// Pack 6 column heights into a single 32-bit register to minimize memory spills and popcounts.
+__forceinline uint32_t packHeights(const Board& field) noexcept {
+    uint32_t packed = 0;
+    for (int col = 0; col < 6; ++col) {
+        packed |= (static_cast<uint32_t>(field.getColumnHeight(col)) << (col << 2));
+    }
+    return packed;
+}
 
 // ---------------------------------------------------------------------------
 // Simulate placing one tsumo piece (axis + sub) onto the board.
@@ -92,14 +103,14 @@ struct PlaceResult {
 };
 
 PlaceResult simulatePlacement(const Board& src, PuyoPiece piece,
-                              const BeamAction& action) noexcept {
+                              const BeamAction& action,
+                              uint32_t packed_heights) noexcept {
     const int ax = action.ax;
     const int sx = action.sx;
 
-    // Read heights from src BEFORE copying — avoids 96-byte Board copy on dead
-    // placements.
-    const int h_axis = src.getColumnHeight(ax);
-    const int h_sub = src.getColumnHeight(sx);
+    // Decode heights from the packed register
+    const int h_axis = (packed_heights >> (ax << 2)) & 0xFu;
+    const int h_sub  = (packed_heights >> (sx << 2)) & 0xFu;
 
     const int y_axis = h_axis + action.axis_dy;
     const int y_sub = h_sub + action.sub_dy;
@@ -164,11 +175,12 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
     int fire_best_action = -1;
     float fire_best_score = 0.0f;
     {
+        uint32_t packed_heights_root = packHeights(player.field);
         PuyoPiece piece0 = tsumo.get(tsumo_base + 0);
         const bool is_zoro0 = (piece0.axis == piece0.sub);
         const auto& actions0 = is_zoro0 ? getZoroActions() : getPutActions();
         for (const auto& entry : actions0) {
-            PlaceResult pr = simulatePlacement(player.field, piece0, entry);
+            PlaceResult pr = simulatePlacement(player.field, piece0, entry, packed_heights_root);
             if (pr.dead || pr.score == 0)
                 continue;
             float s = static_cast<float>(pr.score);
@@ -180,24 +192,25 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
     }
 
     // Initialise beam with a single root node (no action taken yet)
-    std::vector<BeamNode> current_beam;
-    current_beam.reserve(static_cast<std::size_t>(cfg.beam_width));
+    tl_current_beam.clear();
+    tl_current_beam.reserve(static_cast<std::size_t>(cfg.beam_width));
 
-    std::vector<BeamNode> next_beam;
-    next_beam.reserve(static_cast<std::size_t>(cfg.beam_width) * kNumRLActions);
+    tl_next_beam.clear();
+    tl_next_beam.reserve(static_cast<std::size_t>(cfg.beam_width) * kNumRLActions);
 
     // Seed the beam with the current board state
-    current_beam.emplace_back(player.field, 0.0f, 0.0f, -1);
+    tl_current_beam.emplace_back(player.field, 0.0f, 0.0f, -1);
 
     for (int depth = 0; depth < cfg.look_ahead; ++depth) {
         PuyoPiece piece = tsumo.get(tsumo_base + depth);
         const bool is_zoro = (piece.axis == piece.sub);
-        next_beam.clear();
+        tl_next_beam.clear();
 
         const auto& actions = is_zoro ? getZoroActions() : getPutActions();
-        for (const BeamNode& node : current_beam) {
+        for (const BeamNode& node : tl_current_beam) {
+            uint32_t packed_heights = packHeights(node.field);
             for (const auto& entry : actions) {
-                PlaceResult pr = simulatePlacement(node.field, piece, entry);
+                PlaceResult pr = simulatePlacement(node.field, piece, entry, packed_heights);
                 if (pr.dead)
                     continue;
 
@@ -210,19 +223,19 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                     next_accum * cfg.eval_weights.potential_score_scale + eval;
 
                 int first = (depth == 0) ? entry.idx : node.first_action;
-                next_beam.emplace_back(pr.field, total_score, next_accum, first);
+                tl_next_beam.emplace_back(pr.field, total_score, next_accum, first);
             }
         }
 
-        if (next_beam.empty())
+        if (tl_next_beam.empty())
             break;
 
         // Sort descending by score and trim to beam_width using lightweight
         // index sort
-        int keep = std::min(static_cast<int>(next_beam.size()), cfg.beam_width);
-        tl_sort_buf.resize(next_beam.size());
-        for (std::size_t i = 0; i < next_beam.size(); ++i) {
-            tl_sort_buf[i] = {next_beam[i].score, static_cast<int>(i)};
+        int keep = std::min(static_cast<int>(tl_next_beam.size()), cfg.beam_width);
+        tl_sort_buf.resize(tl_next_beam.size());
+        for (std::size_t i = 0; i < tl_next_beam.size(); ++i) {
+            tl_sort_buf[i] = {tl_next_beam[i].score, static_cast<int>(i)};
         }
 
         std::nth_element(tl_sort_buf.begin(), tl_sort_buf.begin() + keep,
@@ -236,9 +249,9 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                       return a.score > b.score;
                   });
 
-        current_beam.resize(keep);
+        tl_current_beam.resize(keep);
         for (int i = 0; i < keep; ++i) {
-            current_beam[i] = std::move(next_beam[tl_sort_buf[i].idx]);
+            tl_current_beam[i] = std::move(tl_next_beam[tl_sort_buf[i].idx]);
         }
     }
 
@@ -250,16 +263,16 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
     // fire_bias == 1.0: fire only when it strictly beats the beam continuation
     // fire_bias < 1.0 : favour building (need clearly dominant fire to switch)
     // -----------------------------------------------------------------------
-    if (fire_best_action >= 0 && !current_beam.empty()) {
-        const float beam_score = current_beam[0].score;
+    if (fire_best_action >= 0 && !tl_current_beam.empty()) {
+        const float beam_score = tl_current_beam[0].score;
         if (fire_best_score * cfg.eval_weights.fire_bias > beam_score) {
             return {fire_best_action, fire_best_score};
         }
     }
 
     // Return the action and its expected score from the best surviving leaf
-    if (!current_beam.empty() && current_beam[0].first_action >= 0)
-        return {current_beam[0].first_action, current_beam[0].score};
+    if (!tl_current_beam.empty() && tl_current_beam[0].first_action >= 0)
+        return {tl_current_beam[0].first_action, tl_current_beam[0].score};
 
     // Fallback: return action 0 (Up, col 0) if search found nothing valid
     return {0, -10000.0f};

@@ -57,10 +57,8 @@ class BeamEvaluator {
         component.set(x, h);
 
         for (;;) {
-            BitBoard next = component | (component.shiftUpRaw() & bb_plus) |
-                            (component.shiftDownRaw() & bb_plus) |
-                            (component.shiftRightRaw() & bb_plus) |
-                            (component.shiftLeftRaw() & bb_plus);
+            BitBoard next = component | (((component.shiftUpRaw() | component.shiftDownRaw()) |
+                                          (component.shiftRightRaw() | component.shiftLeftRaw())) & bb_plus);
             if (next == component)
                 break;
             component = next;
