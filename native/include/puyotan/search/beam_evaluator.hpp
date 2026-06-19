@@ -213,14 +213,6 @@ class BeamEvaluator {
 
         // --- Potential chain score ---
         if constexpr (CalculatePotential) {
-            // Precompute neighbors for all colors to avoid redundant shift and OR operations in the loops
-            BitBoard neighbors[config::Rule::kColors];
-            for (int c = 0; c < config::Rule::kColors; ++c) {
-                const BitBoard& bb = board.getBitboard(static_cast<Cell>(c));
-                neighbors[c] = bb.shiftUpRaw() | bb.shiftDownRaw() |
-                               bb.shiftLeftRaw() | bb.shiftRightRaw();
-            }
-
             if constexpr (UseFastPotential) {
                 int max_gs = 0;
                 for (int x = 0; x < config::Board::kWidth; ++x) {
@@ -229,11 +221,16 @@ class BeamEvaluator {
                         continue;
 
                     for (int c = 0; c < config::Rule::kColors; ++c) {
-                        if (!neighbors[c].get(x, h))
-                            continue;
-
                         const BitBoard& bb =
                             board.getBitboard(static_cast<Cell>(c));
+                        // SIMD neighbor mask: 4 shift ops replace 3 conditional
+                        // bb.get() calls. No per-bit boundary checks needed.
+                        const BitBoard neighbor =
+                            bb.shiftUpRaw() | bb.shiftDownRaw() |
+                            bb.shiftLeftRaw() | bb.shiftRightRaw();
+                        if (!neighbor.get(x, h))
+                            continue;
+
                         int gs = fastGroupSize(bb, x, h);
                         max_gs = (gs > max_gs) ? gs : max_gs;
                     }
@@ -251,21 +248,23 @@ class BeamEvaluator {
                         continue;
 
                     for (int c = 0; c < config::Rule::kColors; ++c) {
-                        if (!neighbors[c].get(x, h))
+                        const BitBoard& bb =
+                            board.getBitboard(static_cast<Cell>(c));
+                        // SIMD neighbor mask: 4 shifts replace 3 conditional
+                        // bb.get() calls.
+                        const BitBoard neighbor =
+                            bb.shiftUpRaw() | bb.shiftDownRaw() |
+                            bb.shiftLeftRaw() | bb.shiftRightRaw();
+                        if (!neighbor.get(x, h))
                             continue;
 
-                        Board& mutable_board = const_cast<Board&>(board);
-                        mutable_board.dropPieceSingleFast(x, h, static_cast<Cell>(c));
+                        Board temp = board;
+                        temp.dropNewPiece(x, h, static_cast<Cell>(c));
 
                         ErasureData ed;
-                        Chain::scanGroups(mutable_board, ed, 1u << c);
-                        if (ed.num_erased == 0) {
-                            mutable_board.clearPieceSingleFast(x, h, static_cast<Cell>(c));
+                        Chain::scanGroups(temp, ed, 1u << c);
+                        if (ed.num_erased == 0)
                             continue;
-                        }
-
-                        Board temp = mutable_board;
-                        mutable_board.clearPieceSingleFast(x, h, static_cast<Cell>(c));
 
                         int pot_chain = 0, pot_score = 0;
                         while (ed.num_erased > 0) {
