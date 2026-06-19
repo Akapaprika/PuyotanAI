@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <cassert>
 #include <optional>
 #include <puyotan/common/types.hpp>
 #include <puyotan/core/board.hpp>
@@ -9,18 +10,22 @@
 namespace puyotan {
 /**
  * @struct PuyotanPlayer
- * @brief Encapsulates a single player's game state, including their board and scoring.
+ * @brief Encapsulates a single player's game state, including their board and
+ * scoring.
  */
-struct PuyotanPlayer {
-    Board field;                      ///< 6x14 BitBoard-based playing field
-    ActionState current_action{};     ///< Action being processed in the current frame
-    ActionState next_action{};        ///< Action scheduled for the next frame
-    int32_t active_next_pos = 0;      ///< Current index into the Tsumo (sequence of pieces)
-    int score = 0;                    ///< Cumulative raw score
-    int used_score = 0;               ///< Score already converted into Ojama puyos
-    uint16_t non_active_ojama = 0;    ///< Incoming Ojama not yet "active" (can be offset)
-    uint16_t active_ojama = 0;        ///< Ojama puyos ready to fall on the board
-    uint8_t chain_count = 0;          ///< current active chain length (0 if not chaining)
+struct alignas(64) PuyotanPlayer {
+    Board field; ///< 6x14 BitBoard-based playing field
+    ActionState
+        current_action{}; ///< Action being processed in the current frame
+    int32_t active_next_pos =
+        0;              ///< Current index into the Tsumo (sequence of pieces)
+    int score = 0;      ///< Cumulative raw score
+    int used_score = 0; ///< Score already converted into Ojama puyos
+    uint16_t non_active_ojama =
+        0; ///< Incoming Ojama not yet "active" (can be offset)
+    uint16_t active_ojama = 0; ///< Ojama puyos ready to fall on the board
+    uint8_t chain_count =
+        0; ///< current active chain length (0 if not chaining)
     PuyotanPlayer() = default;
     /**
      * @brief Drops a specific number of Ojama puyos onto the player's board.
@@ -33,13 +38,14 @@ struct PuyotanPlayer {
  * @class PuyotanMatch
  * @brief Orchestrates a Puyo Puyo match between two players.
  *
- * Handles frame-by-frame simulation, action processing, Tsumo (piece) management,
- * and Ojama (nuisance) distribution.
+ * Handles frame-by-frame simulation, action processing, Tsumo (piece)
+ * management, and Ojama (nuisance) distribution.
  */
 class PuyotanMatch {
   public:
     /**
-     * @brief Constructs a new match with a specific RNG seed for Tsumo sequences.
+     * @brief Constructs a new match with a specific RNG seed for Tsumo
+     * sequences.
      * @param seed The random seed (must be non-zero).
      */
     explicit PuyotanMatch(uint32_t seed = 1u) noexcept;
@@ -48,27 +54,57 @@ class PuyotanMatch {
     /** @brief Transitions the match from Ready to Playing. */
     void start() noexcept;
     /**
-     * @brief Assigns an action to a specific player for the current decision point.
+     * @brief Assigns an action to a specific player for the current decision
+     * point.
      * @param player_id ID of the player (0 or 1).
      * @param action The action to perform.
      * @return True if the action was valid and accepted.
      */
-    bool setAction(int player_id, Action action) noexcept;
+    __forceinline bool setAction(int player_id, Action action) noexcept {
+        assert(status_ == MatchStatus::Playing &&
+               "Cannot set action to match not in PLAYING status");
+        auto& p = players_[player_id];
+        assert(p.current_action.action.type == ActionType::None &&
+               "Action already set for this player in this turn");
+        switch (action.type) {
+            case ActionType::Pass:
+                p.current_action = {action, 0};
+                return true;
+            case ActionType::Put:
+                p.current_action = {action, 1};
+                return true;
+            default:
+                return false;
+        }
+    }
     /**
-     * @brief Checks if all required actions have been provided to advance the frame.
+     * @brief Checks if all required actions have been provided to advance the
+     * frame.
      * @return True if the simulation can proceed.
      */
-    bool canStepNextFrame() const noexcept;
+     __forceinline bool canStepNextFrame() const noexcept {
+        const int playing = static_cast<int>(status_ == MatchStatus::Playing);
+        const int p0_ready = static_cast<int>(players_[0].current_action.action.type != ActionType::None);
+        const int p1_ready = static_cast<int>(players_[1].current_action.action.type != ActionType::None);
+
+        // 短絡評価による分岐を生成せず、ビットワイズ論理積で一括判定
+        return (playing & p0_ready & p1_ready) != 0;
+    }
     /**
      * @brief Advances the match simulation by exactly one frame.
      * Processes gravity, chains, and action transitions.
      */
     void stepNextFrame() noexcept;
+    // プレイヤー1人分のフレーム処理を行う高速なインライン関数
+    __forceinline void
+    stepPlayerFrame(int id,
+                    const std::array<ActionType, 2>& prev_types) noexcept;
     /** @brief Returns a reference to the specified player's state. */
     const PuyotanPlayer& getPlayer(int id) const noexcept {
         return players_[id];
     }
-    /** @brief Returns a PuyoPiece from the Tsumo sequence at an offset from player's current position. */
+    /** @brief Returns a PuyoPiece from the Tsumo sequence at an offset from
+     * player's current position. */
     PuyoPiece getPiece(int player_id, int index_offset) const noexcept {
         return tsumo_.get(players_[player_id].active_next_pos + index_offset);
     }
@@ -76,7 +112,8 @@ class PuyotanMatch {
     const Tsumo& getTsumo() const noexcept {
         return tsumo_;
     }
-    /** @brief Returns the current total frame count since the start of the match. */
+    /** @brief Returns the current total frame count since the start of the
+     * match. */
     int32_t getFrame() const noexcept {
         return frame_;
     }
@@ -87,12 +124,12 @@ class PuyotanMatch {
     /**
      * Returns a bitmask of player IDs that need a human PUT decision.
      * Bit 0 = Player 0, Bit 1 = Player 1.
-     *   0  -> No decisions needed; all players are processing auto-frames (chain, ojama, etc.)
-     *   1  -> Player 0 needs to confirm their PUT
-     *   2  -> Player 1 needs to confirm their PUT
-     *   3  -> Both players need to confirm their PUT
-     * The engine differentiates genuine decision points (ActionType::None) from
-     * automatic internal frames (CHAIN, CHAIN_FALL, OJAMA), which the engine drives itself.
+     *   0  -> No decisions needed; all players are processing auto-frames
+     * (chain, ojama, etc.) 1  -> Player 0 needs to confirm their PUT 2  ->
+     * Player 1 needs to confirm their PUT 3  -> Both players need to confirm
+     * their PUT The engine differentiates genuine decision points
+     * (ActionType::None) from automatic internal frames (CHAIN, CHAIN_FALL,
+     * OJAMA), which the engine drives itself.
      */
     int getDecisionMask() const noexcept;
     /**
@@ -113,7 +150,8 @@ class PuyotanMatch {
      */
     int stepUntilDecision() noexcept;
     /**
-     * @brief PCG-like simple Xorshift RNG for internal engine use (e.g. Ojama positions).
+     * @brief PCG-like simple Xorshift RNG for internal engine use (e.g. Ojama
+     * positions).
      * @param seed Reference to the 32-bit state.
      * @param max Exclusive upper bound.
      * @return Random integer in range [0, max-1].
@@ -121,15 +159,16 @@ class PuyotanMatch {
     static int nextInt(uint32_t& seed, int max) noexcept;
 
   private:
-    uint32_t seed_;
+    uint32_t seed_ = 0u;
     Tsumo tsumo_;
     PuyotanPlayer players_[config::Rule::kNumPlayers];
     int32_t frame_ = 1;
     MatchStatus status_ = MatchStatus::Ready;
     void sendOjama(int sender_id, int ojama) noexcept;
     void activateOjama(int finishing_player_id) noexcept;
-    // Pre-computed chain group data, cached between CHAIN_FALL/PUT -> CHAIN turns.
-    // Stored here (not in PuyotanPlayer) to keep PuyotanPlayer compact and cache-friendly.
+    // Pre-computed chain group data, cached between CHAIN_FALL/PUT -> CHAIN
+    // turns. Stored here (not in PuyotanPlayer) to keep PuyotanPlayer compact
+    // and cache-friendly.
     std::array<ErasureData, config::Rule::kNumPlayers> pending_erasure_;
 };
 } // namespace puyotan

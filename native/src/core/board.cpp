@@ -4,32 +4,39 @@
 
 namespace puyotan {
 Cell Board::get(int x, int y) const noexcept {
-    if (!occupancy_.get(x, y)) {
-        return Cell::Empty;
-    }
+    const int idx = x >> 2;
+    const int shift = ((x & 3) << 4) | y;
 
-    // SNEAKY OPTIMIZATION: This branchless implementation relies on the specific order
-    // of Cell enum (0, 1, 2, 3, 4). Each color's bit contribution is multiplied by its index.
-    // This avoids a 5-way conditional branch or map lookup.
-    static_assert(static_cast<int>(Cell::Red) == 0);
-    static_assert(static_cast<int>(Cell::Green) == 1);
-    static_assert(static_cast<int>(Cell::Blue) == 2);
-    static_assert(static_cast<int>(Cell::Yellow) == 3);
-    static_assert(static_cast<int>(Cell::Ojama) == 4);
-    static_assert(config::Board::kNumColors == 5);
+    // Red(0) のロードをスキップし、他の色と占有状況のみをロード
+    const int b1 = static_cast<int>(((&boards_[1].lo)[idx] >> shift) & 1);
+    const int b2 = static_cast<int>(((&boards_[2].lo)[idx] >> shift) & 1);
+    const int b3 = static_cast<int>(((&boards_[3].lo)[idx] >> shift) & 1);
+    const int b4 = static_cast<int>(((&boards_[4].lo)[idx] >> shift) & 1);
+    const int occ = static_cast<int>(((&occupancy_.lo)[idx] >> shift) & 1);
 
-    int found_index = 0;
-    for (int i = 1; i < config::Board::kNumColors; ++i) {
-        found_index += boards_[i].get(x, y) * i;
-    }
-    return static_cast<Cell>(found_index);
+    // 分岐もループも使わない完全等価な状態方程式
+    // - 空 (occ=0) なら、式は 5 * (1 - 0) = 5 (Cell::Empty) となる
+    // - 赤 (occ=1, 他が0) なら、式は 0 + 5 * 0 = 0 (Cell::Red) となる
+    // - 他の色 (occ=1) なら、各ビットに対応するインデックス (1〜4) に収束する
+    const int color = (b1 * 1) + (b2 * 2) + (b3 * 3) + (b4 * 4) + (5 * (1 - occ));
+    return static_cast<Cell>(color);
 }
 
 void Board::set(int x, int y, Cell color) noexcept {
     assert(color != Cell::Empty);
-    clear(x, y);
-    boards_[toIndex(color)].set(x, y);
-    occupancy_.set(x, y);
+    const int idx = x >> 2;
+    const int shift = ((x & 3) << 4) | y;
+    const uint64_t bit = 1ULL << shift;
+    const uint64_t clear_mask = ~bit;
+
+    // 共用体の構成要素である lo のポインタを経由させることで、
+    // キャストを使わず安全かつ高速に連続メモリアクセスを行います。
+    for (auto& bb : boards_) {
+        (&bb.lo)[idx] &= clear_mask;
+    }
+
+    (&boards_[toIndex(color)].lo)[idx] |= bit;
+    (&occupancy_.lo)[idx] |= bit;
 }
 
 void Board::clear(int x, int y) noexcept {
@@ -44,17 +51,7 @@ void Board::placePiece(int col, Cell color) noexcept {
     set(col, config::Board::kSpawnRow, color);
 }
 
-int Board::getDropDistance(int x, int y) const noexcept {
-    assert(x >= 0 && x < config::Board::kWidth);
-    assert(y > 0 && y <= static_cast<int>(config::Board::kHeight));
-    // Implementation note: This assumes 13th row (spawn) and visible field are contiguous.
-    // Distance = current Y - top of existing stack.
-    return y - getColumnHeight(x);
-}
 
-const BitBoard& Board::getBitboard(Cell color) const noexcept {
-    return boards_[toIndex(color)];
-}
 
 void Board::setBitboard(Cell color, const BitBoard& bb) noexcept {
     boards_[toIndex(color)] = bb;

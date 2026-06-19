@@ -115,7 +115,7 @@ BenchmarkResult runBenchmark(double duration_seconds, uint32_t base_seed = 1) {
     while (true) {
         // Query clock only once every 1000 games to minimize clock-call
         // overhead
-        if (++check_counter >= 100000) {
+        if (++check_counter >= 1000) {
             auto now = std::chrono::high_resolution_clock::now();
             double elapsed =
                 std::chrono::duration<double>(now - start_time).count();

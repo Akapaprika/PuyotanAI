@@ -8,7 +8,7 @@ BoardSnapshot dataclass objects and has no knowledge of the ViewModel or engine.
 from __future__ import annotations
 from dataclasses import dataclass
 import dataclasses
-from typing import List, Tuple, Optional, Any
+from typing import Optional, Any
 import puyotan_native as p
 
 from PyQt6.QtWidgets import QWidget, QSizePolicy

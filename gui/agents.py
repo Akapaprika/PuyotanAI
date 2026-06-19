@@ -84,8 +84,10 @@ class EmptyPlayerAgent(BasePlayerAgent):
 
 
 # ---------------------------------------------------------------------------
+import threading
+
 # Beam Search AI
-# -----------------------------------------------------------# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # Beam Search
 # ---------------------------------------------------------------------------
 class BeamSearchAgent(BasePlayerAgent):
@@ -107,22 +109,43 @@ class BeamSearchAgent(BasePlayerAgent):
         self._look_ahead = look_ahead
         self._score_history = []
         self._is_solo = False
+        
+        # Thread management for async non-blocking search
+        self._thread: threading.Thread | None = None
+        self._result: tuple[int, float] | None = None
+        self._lock = threading.Lock()
 
     def adjust_for_mode(self, is_solo: bool) -> None:
         self._is_solo = is_solo
 
-    def get_action(self, match, player_id: int, pres) -> p.Action:
+    def get_action(self, match, player_id: int, pres) -> p.Action | None:
+        with self._lock:
+            # If the background search finished and has a result, retrieve it and return
+            if self._result is not None:
+                idx, expected_score = self._result
+                self._result = None
+                self._thread = None
+                
+                # Update score history (keep up to 10 moves)
+                self._score_history.append(expected_score)
+                if len(self._score_history) > 10:
+                    self._score_history.pop(0)
+                
+                return p.get_rl_action(idx)
+            
+            # If the search is still running, return None to wait (non-blocking)
+            if self._thread is not None and self._thread.is_alive():
+                return None
+
         player = match.match.getPlayer(player_id)
         tsumo  = match.match.getTsumo()
 
-        # 盤面の色ぷよ総数を集計 (おじゃま除く)
-        puyo_count = 0
-        for c in [p.Cell.Red, p.Cell.Green, p.Cell.Blue, p.Cell.Yellow]:
-            puyo_count += player.field.getBitboard(c).popcount()
+        # Count total puyos (including Ojama) on the board
+        total_puyos = player.field.getOccupied().popcount()
 
-        # 停滞度の判定 (過去3手で期待スコアの伸びがなく、かつぷよ密度が4段以上の場合)
+        # Stagnation check (stagnated only when board is highly populated: >= 10 rows equivalent)
         is_stagnated = False
-        if len(self._score_history) >= 3 and puyo_count >= 24:
+        if len(self._score_history) >= 3 and total_puyos >= 60:
             growth = self._score_history[-1] - self._score_history[-3]
             if growth <= 0.5:
                 is_stagnated = True
@@ -130,17 +153,18 @@ class BeamSearchAgent(BasePlayerAgent):
         width = self._beam_width if self._beam_width is not None else -1
         depth = self._look_ahead if self._look_ahead is not None else -1
 
-        # C++側で設定ファイルをキャッシュ/ロードし、かつプロファイル(solo/vs/stagnated)を動的に適用
-        idx, expected_score = p.beam_search_action(
-            player, tsumo, _CONFIG_PATH, width, depth, self._is_solo, is_stagnated
-        )
+        # Define thread worker (GIL is released inside C++ bindings.cpp)
+        def worker():
+            res = p.beam_search_action(
+                player, tsumo, _CONFIG_PATH, width, depth, self._is_solo, is_stagnated
+            )
+            with self._lock:
+                self._result = res
 
-        # スコア履歴を更新 (最大10手分保持)
-        self._score_history.append(expected_score)
-        if len(self._score_history) > 10:
-            self._score_history.pop(0)
+        self._thread = threading.Thread(target=worker, daemon=True)
+        self._thread.start()
 
-        return p.get_rl_action(idx)
+        return None
 
 
 

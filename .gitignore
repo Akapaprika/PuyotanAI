@@ -25,3 +25,4 @@ native/dist/
 
 # Test artifacts
 tests/*.txt
+bench_results_*.json

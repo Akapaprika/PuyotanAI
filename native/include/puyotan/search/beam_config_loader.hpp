@@ -10,7 +10,7 @@ namespace puyotan::search {
 
 /**
  * @class BeamConfigLoader
- * @brief Loads and patches BeamConfig from/to a JSON file with static in-memory caching.
+ * @brief Loads and saves Solo/VS BeamConfig from/to a JSON file with static in-memory caching.
  */
 class BeamConfigLoader {
   private:
@@ -44,58 +44,91 @@ class BeamConfigLoader {
     }
 
   public:
-    static BeamConfig load(const std::string& path) {
+    static BeamConfig loadSolo(const std::string& path) {
         BeamConfig cfg{};
         nlohmann::json j = getJson(path);
         if (j.is_discarded() || j.empty()) return cfg;
+        if (!j.contains("solo") || !j["solo"].is_object()) return cfg;
 
-        if (j.contains("beam_width") && j["beam_width"].is_number_integer())
-            cfg.beam_width = j["beam_width"].get<int>();
+        const auto& section = j["solo"];
+        if (section.contains("beam_width") && section["beam_width"].is_number_integer())
+            cfg.beam_width = section["beam_width"].get<int>();
 
-        if (j.contains("look_ahead") && j["look_ahead"].is_number_integer())
-            cfg.look_ahead = j["look_ahead"].get<int>();
+        if (section.contains("look_ahead") && section["look_ahead"].is_number_integer())
+            cfg.look_ahead = section["look_ahead"].get<int>();
 
-        if (j.contains("eval_weights") && j["eval_weights"].is_object())
-            applyPatch(cfg.eval_weights, j["eval_weights"]);
+        if (section.contains("eval_weights") && section["eval_weights"].is_object())
+            applyPatch(cfg.eval_weights, section["eval_weights"]);
 
         return cfg;
     }
 
-    static BeamConfig applyProfile(BeamConfig cfg,
-                                   const std::string& path,
-                                   const std::string& profile_name) {
+    static BeamConfig loadVs(const std::string& path) {
+        BeamConfig cfg{};
         nlohmann::json j = getJson(path);
         if (j.is_discarded() || j.empty()) return cfg;
+        if (!j.contains("vs") || !j["vs"].is_object()) return cfg;
 
-        if (!j.contains("profiles") || !j["profiles"].is_object()) return cfg;
-        const auto& profiles = j["profiles"];
-        if (!profiles.contains(profile_name)) return cfg;
-        if (!profiles[profile_name].is_object()) return cfg;
+        const auto& section = j["vs"];
+        if (section.contains("beam_width") && section["beam_width"].is_number_integer())
+            cfg.beam_width = section["beam_width"].get<int>();
 
-        applyPatch(cfg.eval_weights, profiles[profile_name]);
+        if (section.contains("look_ahead") && section["look_ahead"].is_number_integer())
+            cfg.look_ahead = section["look_ahead"].get<int>();
+
+        if (section.contains("eval_weights") && section["eval_weights"].is_object())
+            applyPatch(cfg.eval_weights, section["eval_weights"]);
+
         return cfg;
     }
 
-    static void save(const std::string& path, const BeamConfig& cfg) {
+    static void saveSolo(const std::string& path, const BeamConfig& cfg) {
         nlohmann::json j = getJson(path);
         if (j.empty() || j.is_discarded()) {
             j = nlohmann::json::object();
         }
 
-        j["beam_width"]  = cfg.beam_width;
-        j["look_ahead"]  = cfg.look_ahead;
+        auto& solo = j["solo"];
+        solo["beam_width"] = cfg.beam_width;
+        solo["look_ahead"] = cfg.look_ahead;
 
-        auto& ew = j["eval_weights"];
+        auto& ew = solo["eval_weights"];
+        const auto& w = cfg.eval_weights;
+        ew["potential_score_scale"]   = w.potential_score_scale;
+        ew["connectivity_bonus"]      = w.connectivity_bonus;
+        ew["isolated_penalty"]        = w.isolated_penalty;
+        ew["use_fast_potential"]      = w.use_fast_potential;
+
+        std::ofstream ofs(path);
+        ofs << j.dump(2);
+
+        try {
+            s_cached_json = j;
+            s_last_write_time = std::filesystem::last_write_time(path);
+            s_cached_path = path;
+            s_has_cache = true;
+        } catch (...) {
+            s_has_cache = false;
+        }
+    }
+
+    static void saveVs(const std::string& path, const BeamConfig& cfg) {
+        nlohmann::json j = getJson(path);
+        if (j.empty() || j.is_discarded()) {
+            j = nlohmann::json::object();
+        }
+
+        auto& vs = j["vs"];
+        vs["beam_width"] = cfg.beam_width;
+        vs["look_ahead"] = cfg.look_ahead;
+
+        auto& ew = vs["eval_weights"];
         const auto& w = cfg.eval_weights;
         ew["potential_score_scale"]   = w.potential_score_scale;
         ew["connectivity_bonus"]      = w.connectivity_bonus;
         ew["isolated_penalty"]        = w.isolated_penalty;
         ew["buried_penalty"]          = w.buried_penalty;
-        ew["height_variance_penalty"] = w.height_variance_penalty;
-        ew["death_col_penalty"]       = w.death_col_penalty;
         ew["fire_bias"]               = w.fire_bias;
-        ew["edge_column_bonus"]       = w.edge_column_bonus;
-        ew["edge_column_threshold"]   = w.edge_column_threshold;
         ew["use_fast_potential"]      = w.use_fast_potential;
 
         std::ofstream ofs(path);
@@ -119,11 +152,7 @@ class BeamConfigLoader {
             else if (key == "connectivity_bonus"       && val.is_number()) w.connectivity_bonus       = val.get<float>();
             else if (key == "isolated_penalty"         && val.is_number()) w.isolated_penalty         = val.get<float>();
             else if (key == "buried_penalty"           && val.is_number()) w.buried_penalty           = val.get<float>();
-            else if (key == "height_variance_penalty"  && val.is_number()) w.height_variance_penalty  = val.get<float>();
-            else if (key == "death_col_penalty"        && val.is_number()) w.death_col_penalty        = val.get<float>();
             else if (key == "fire_bias"                && val.is_number()) w.fire_bias                = val.get<float>();
-            else if (key == "edge_column_bonus"        && val.is_number()) w.edge_column_bonus        = val.get<float>();
-            else if (key == "edge_column_threshold"    && val.is_number()) w.edge_column_threshold    = val.get<float>();
             else if (key == "use_fast_potential"       && val.is_boolean()) w.use_fast_potential      = val.get<bool>();
         }
     }

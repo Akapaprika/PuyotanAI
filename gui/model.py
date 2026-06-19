@@ -44,8 +44,7 @@ class GameModel:
         """
         return self.match.setAction(player_id, action)
 
-    def can_step(self):
-        return self.match.canStepNextFrame()
+
 
     def step(self):
         """

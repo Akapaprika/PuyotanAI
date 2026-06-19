@@ -1,3 +1,5 @@
+#include <map>
+#include <optional>
 #include <puyotan/common/config.hpp>
 #include <puyotan/common/types.hpp>
 #include <puyotan/core/board.hpp>
@@ -9,7 +11,6 @@
 #include <puyotan/search/beam_config_loader.hpp>
 #include <puyotan/search/beam_evaluator.hpp>
 #include <puyotan/search/beam_search.hpp>
-#include <map>
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -67,20 +68,22 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("getOccupied", &Board::getOccupied);
 
     pybind11::class_<ErasureData>(m, "ErasureData")
-        .def_property_readonly("erased", [](const ErasureData& d) { return d.num_erased > 0; })
+        .def_property_readonly(
+            "erased", [](const ErasureData& d) { return d.num_erased > 0; })
         .def_readwrite("num_erased", &ErasureData::num_erased)
         .def_readwrite("num_colors", &ErasureData::num_colors)
         .def_readwrite("num_groups", &ErasureData::num_groups)
         .def_property_readonly("group_sizes", [](const ErasureData& d) {
-            return std::vector<int>(d.group_sizes.begin(), d.group_sizes.begin() + d.num_groups);
+            return std::vector<int>(d.group_sizes.begin(),
+                                    d.group_sizes.begin() + d.num_groups);
         });
 
     pybind11::class_<Gravity>(m, "Gravity")
         .def_static("execute", &Gravity::execute);
 
     pybind11::class_<Chain>(m, "Chain")
-        .def_static("execute", &Chain::execute,
-                    pybind11::arg("board"), pybind11::arg("color_mask") = 0x0F);
+        .def_static("execute", &Chain::execute, pybind11::arg("board"),
+                    pybind11::arg("color_mask") = 0x0F);
 
     // =========================================================================
     // Engine
@@ -105,8 +108,7 @@ PYBIND11_MODULE(puyotan_native, m) {
 
     pybind11::class_<Action>(m, "Action")
         .def(pybind11::init<ActionType, int, Rotation>(),
-             pybind11::arg("type") = ActionType::Pass,
-             pybind11::arg("x") = 0,
+             pybind11::arg("type") = ActionType::Pass, pybind11::arg("x") = 0,
              pybind11::arg("rotation") = Rotation::Up)
         .def_readwrite("type", &Action::type)
         .def_readwrite("x", &Action::x)
@@ -124,8 +126,7 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("non_active_ojama", &PuyotanPlayer::non_active_ojama)
         .def_readwrite("active_ojama", &PuyotanPlayer::active_ojama)
         .def_readwrite("chain_count", &PuyotanPlayer::chain_count)
-        .def_readwrite("current_action", &PuyotanPlayer::current_action)
-        .def_readwrite("next_action", &PuyotanPlayer::next_action);
+        .def_readwrite("current_action", &PuyotanPlayer::current_action);
 
     pybind11::enum_<MatchStatus>(m, "MatchStatus")
         .value("READY", MatchStatus::Ready)
@@ -147,8 +148,10 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("stepNextFrame", &PuyotanMatch::stepNextFrame)
         .def("stepUntilDecision", &PuyotanMatch::stepUntilDecision,
              pybind11::call_guard<pybind11::gil_scoped_release>())
-        .def("getPlayer", &PuyotanMatch::getPlayer, pybind11::return_value_policy::reference_internal)
-        .def("getTsumo", &PuyotanMatch::getTsumo, pybind11::return_value_policy::reference_internal)
+        .def("getPlayer", &PuyotanMatch::getPlayer,
+             pybind11::return_value_policy::reference_internal)
+        .def("getTsumo", &PuyotanMatch::getTsumo,
+             pybind11::return_value_policy::reference_internal)
         .def("getPiece", &PuyotanMatch::getPiece)
         .def_property_readonly("frame", &PuyotanMatch::getFrame)
         .def_property_readonly("status", &PuyotanMatch::getStatus)
@@ -166,54 +169,63 @@ PYBIND11_MODULE(puyotan_native, m) {
           "Convert a flat RL action index to an Action (col, rotation). "
           "Returns Pass action for out-of-range indices.");
 
-
     // =========================================================================
     // Beam Search
     // =========================================================================
-    m.def("beam_search_action",
-          [](const PuyotanPlayer& player, const Tsumo& tsumo,
-             const std::string& config_path,
-             int beam_width,
-             int look_ahead,
-             bool is_solo,
-             bool is_stagnated) {
-              pybind11::gil_scoped_release release;
+    pybind11::class_<search::BeamEvalWeights>(m, "BeamEvalWeights")
+        .def(pybind11::init<>())
+        .def_readwrite("potential_score_scale", &search::BeamEvalWeights::potential_score_scale)
+        .def_readwrite("connectivity_bonus", &search::BeamEvalWeights::connectivity_bonus)
+        .def_readwrite("isolated_penalty", &search::BeamEvalWeights::isolated_penalty)
+        .def_readwrite("buried_penalty", &search::BeamEvalWeights::buried_penalty)
+        .def_readwrite("fire_bias", &search::BeamEvalWeights::fire_bias)
+        .def_readwrite("use_fast_potential", &search::BeamEvalWeights::use_fast_potential);
 
-              // Load configuration with static in-memory caching
-              search::BeamConfig cfg = search::BeamConfigLoader::load(config_path);
+    m.def(
+        "beam_search_action",
+        [](const PuyotanPlayer& player, const Tsumo& tsumo,
+           const std::string& config_path, int beam_width, int look_ahead,
+           bool is_solo, bool is_stagnated,
+           const std::optional<search::BeamEvalWeights>& custom_weights) {
+            pybind11::gil_scoped_release release;
 
-              // Override parameters if specified
-              if (beam_width > 0) {
-                  cfg.beam_width = beam_width;
-              }
-              if (look_ahead > 0) {
-                  cfg.look_ahead = look_ahead;
-              }
+            search::BeamConfig cfg;
+            if (custom_weights.has_value()) {
+                cfg.eval_weights = custom_weights.value();
+            } else {
+                if (is_solo) {
+                    cfg = search::BeamConfigLoader::loadSolo(config_path);
+                } else {
+                    cfg = search::BeamConfigLoader::loadVs(config_path);
+                }
+            }
 
-              // Apply profiles
-              if (cfg.look_ahead >= 4) {
-                  cfg = search::BeamConfigLoader::applyProfile(std::move(cfg), config_path, "deep_search");
-              }
+            // Override parameters if specified
+            if (beam_width > 0) {
+                cfg.beam_width = beam_width;
+            }
+            if (look_ahead > 0) {
+                cfg.look_ahead = look_ahead;
+            }
 
-              if (is_solo) {
-                  cfg = search::BeamConfigLoader::applyProfile(std::move(cfg), config_path, "solo_mode");
-              } else {
-                  cfg = search::BeamConfigLoader::applyProfile(std::move(cfg), config_path, "vs_mode");
-              }
+            // Apply stagnated override dynamically for VS mode
+            if (is_stagnated && !is_solo) {
+                cfg.eval_weights.fire_bias = 0.97f;
+                cfg.eval_weights.potential_score_scale = 0.0f;
+            }
 
-              if (is_stagnated) {
-                  cfg = search::BeamConfigLoader::applyProfile(std::move(cfg), config_path, "stagnated");
-              }
-
-              return search::beamSearch(player, tsumo, cfg);
-          },
-          pybind11::arg("player"),
-          pybind11::arg("tsumo"),
-          pybind11::arg("config_path"),
-          pybind11::arg("beam_width") = -1,
-          pybind11::arg("look_ahead") = -1,
-          pybind11::arg("is_solo") = false,
-          pybind11::arg("is_stagnated") = false,
-          "Run beam search internally managing config loading and profiling. Returns tuple of (RL action index, expected score).");
+            if (is_solo) {
+                return search::soloBeamSearch(player, tsumo, cfg);
+            } else {
+                return search::vsBeamSearch(player, tsumo, cfg);
+            }
+        },
+        pybind11::arg("player"), pybind11::arg("tsumo"),
+        pybind11::arg("config_path"), pybind11::arg("beam_width") = -1,
+        pybind11::arg("look_ahead") = -1, pybind11::arg("is_solo") = false,
+        pybind11::arg("is_stagnated") = false,
+        pybind11::arg("custom_weights") = std::nullopt,
+        "Run beam search internally managing config loading. "
+        "Returns tuple of (RL action index, expected score).");
 }
 } // namespace puyotan

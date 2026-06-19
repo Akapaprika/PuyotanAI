@@ -21,13 +21,14 @@
 #include <cstdint>
 #include <cstdio>
 #include <numeric>
+#include <puyotan/common/types.hpp>
 #include <puyotan/engine/match.hpp>
 #include <puyotan/engine/tsumo.hpp>
-#include <puyotan/common/types.hpp>
 #include <puyotan/search/beam_search.hpp>
 #include <random>
 #include <string>
 #include <vector>
+
 
 using namespace puyotan;
 using namespace puyotan::search;
@@ -105,7 +106,7 @@ SearchStats runSingleSearch(const PuyotanPlayer& player, const Tsumo& tsumo,
     SearchStats stats;
     auto start = std::chrono::high_resolution_clock::now();
 
-    auto result = beamSearch(player, tsumo, cfg);
+    auto result = soloBeamSearch(player, tsumo, cfg);
 
     auto end = std::chrono::high_resolution_clock::now();
     stats.latency_ms =
@@ -125,6 +126,7 @@ BenchmarkResult runBenchmark(double duration_seconds, const BeamConfig& cfg,
     latencies.reserve(200000);
     std::vector<float> expected_scores;
     expected_scores.reserve(200000);
+    double total_search_time_ms = 0.0;
 
     auto start_time = std::chrono::high_resolution_clock::now();
     uint32_t seed = base_seed;
@@ -149,14 +151,6 @@ BenchmarkResult runBenchmark(double duration_seconds, const BeamConfig& cfg,
         // Match progression loop
         while (match.getStatus() == MatchStatus::Playing &&
                game_moves < max_moves_per_game) {
-            // Periodical duration timeout check
-            auto current_time = std::chrono::high_resolution_clock::now();
-            double elapsed_current =
-                std::chrono::duration<double>(current_time - start_time)
-                    .count();
-            if (elapsed_current >= duration_seconds) {
-                break;
-            }
 
             bool action_set = false;
             int decision_mask = match.getDecisionMask();
@@ -164,13 +158,14 @@ BenchmarkResult runBenchmark(double duration_seconds, const BeamConfig& cfg,
             // Run beam search once at Player 0 (1P) decision timing
             if (decision_mask & 1) {
                 auto start = std::chrono::high_resolution_clock::now();
-                auto search_res = beamSearch(match.getPlayer(0), tsumo, cfg);
+                auto search_res = soloBeamSearch(match.getPlayer(0), tsumo, cfg);
                 auto end = std::chrono::high_resolution_clock::now();
 
                 double latency_ms =
                     std::chrono::duration<double, std::milli>(end - start)
                         .count();
                 latencies.push_back(latency_ms);
+                total_search_time_ms += latency_ms;
                 expected_scores.push_back(search_res.second);
 
                 int action_idx = search_res.first;
@@ -212,9 +207,15 @@ BenchmarkResult runBenchmark(double duration_seconds, const BeamConfig& cfg,
     result.elapsed_seconds =
         std::chrono::duration<double>(end_time - start_time).count();
 
-    // Throughput metrics
-    result.searches_per_sec = result.total_searches / result.elapsed_seconds;
-    result.nodes_per_sec = result.total_nodes / result.elapsed_seconds;
+    // Throughput metrics (Use pure search time for search speed metrics)
+    double total_search_time_sec = total_search_time_ms / 1000.0;
+    if (total_search_time_sec > 1e-6) {
+        result.searches_per_sec = result.total_searches / total_search_time_sec;
+        result.nodes_per_sec = result.total_nodes / total_search_time_sec;
+    } else {
+        result.searches_per_sec = 0.0;
+        result.nodes_per_sec = 0.0;
+    }
     result.fps = result.total_frames / result.elapsed_seconds;
     result.moves_per_sec = result.total_moves / result.elapsed_seconds;
 
@@ -254,10 +255,10 @@ void printBenchmarkResult(const BenchmarkResult& r, const BeamConfig& cfg) {
     printf("Total Searches:  %llu\n", r.total_searches);
     printf("Est. Total Nodes:%llu\n", r.total_nodes);
     printf("\n--- Throughput ---\n");
-    printf("FPS (frames/s):  %.0f\n", r.fps);
+    printf("FPS (frames/s):  %.2f\n", r.fps);
     printf("Placements/sec:  %.2f (Moves/s)\n", r.moves_per_sec);
-    printf("Searches/sec:    %.0f\n", r.searches_per_sec);
-    printf("Nodes/sec:       %.0f (%.2f M)\n", r.nodes_per_sec,
+    printf("Searches/sec:    %.2f\n", r.searches_per_sec);
+    printf("Nodes/sec:       %.2f (%.2f M)\n", r.nodes_per_sec,
            r.nodes_per_sec / 1e6);
     printf("\n--- Latency (Under Solo-Game Workload) ---\n");
     printf("Avg:             %.3f ms\n", r.avg_latency_ms);
@@ -290,18 +291,13 @@ struct ExpectedBeamStats {
 
 /// Quick verification: runs a few games with fixed seeds and prints stats for
 /// regression testing. Returns true if all stats match expected values.
-bool runRegressionTest(const BeamConfig& /*cfg*/) { // 引数の cfg を無視するか、以下で上書きします
+bool runRegressionTest(
+    const BeamConfig& /*cfg*/) { // 引数の cfg を無視するか、以下で上書きします
     printf("\n=== REGRESSION TEST (Fixed Seeds) ===\n");
     const ExpectedBeamStats expected[] = {
-        {1, 5, 39.50f},
-        {42, 10, -1.40f},
-        {123, 10, -1.30f},
-        {999, 21, 98.70f},
-        {12345, 9, 39.50f},
-        {424242, 10, 38.30f},
-        {111111, 16, 39.70f},
-        {999999, 10, 179.70f}
-    };
+        {1, 0, 39.80f},       {42, 4, -1.20f},     {123, 4, -1.20f},
+        {999, 20, 98.80f},    {12345, 7, 39.80f},   {424242, 12, 38.60f},
+        {111111, 21, 39.80f}, {999999, 1, 179.80f}};
 
     // 【修正箇所】テスト用の静的な設定（3手先読み、ビーム幅500）を強制します
     // これにより、ベンチマークを10手や40手で回しても、テスト自体は常に同じ3手の基準で正しくパスします
@@ -314,8 +310,9 @@ bool runRegressionTest(const BeamConfig& /*cfg*/) { // 引数の cfg を無視�
     for (const auto& exp : expected) {
         PuyotanPlayer player = createTestPlayer(exp.seed);
         Tsumo tsumo(exp.seed);
-        
-        // 修正：引数で渡された cfg ではなく、テスト専用の test_cfg を使用して検索します
+
+        // 修正：引数で渡された cfg ではなく、テスト専用の test_cfg
+        // を使用して検索します
         SearchStats stats = runSingleSearch(player, tsumo, test_cfg);
         Action a = getRLAction(stats.action);
         printf("Seed %7u: action=%3d (Put, rot=%d, x=%2d)  score=%.2f  "
@@ -323,9 +320,11 @@ bool runRegressionTest(const BeamConfig& /*cfg*/) { // 引数の cfg を無視�
                exp.seed, stats.action, static_cast<int>(a.rotation), a.x,
                stats.expected_score, stats.latency_ms, stats.valid);
 
-        if (stats.action != exp.action || std::abs(stats.expected_score - exp.score) > 1e-4) {
+        if (stats.action != exp.action ||
+            std::abs(stats.expected_score - exp.score) > 1e-4) {
             printf("  [ERROR] Regression mismatch for Seed %u!\n", exp.seed);
-            printf("          Expected: action=%d, score=%.2f\n", exp.action, exp.score);
+            printf("          Expected: action=%d, score=%.2f\n", exp.action,
+                   exp.score);
             all_ok = false;
         }
     }

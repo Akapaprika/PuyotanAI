@@ -29,7 +29,7 @@ class SetupWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self._agents: list[BasePlayerAgent | None] = [HumanPlayerAgent(), EmptyPlayerAgent()]
+
 
         root = QVBoxLayout(self)
         root.setContentsMargins(40, 40, 40, 40)
@@ -54,7 +54,6 @@ class SetupWidget(QWidget):
         settings_row.setSpacing(40)
 
         self._p1_settings = PlayerSettingsWidget(0, allow_empty=False)
-        self._p1_settings.agent_changed.connect(lambda pid, a: self._on_agent_changed(pid, a))
         settings_row.addWidget(self._p1_settings)
 
         vs_lbl = QLabel("VS")
@@ -63,7 +62,6 @@ class SetupWidget(QWidget):
         settings_row.addWidget(vs_lbl)
 
         self._p2_settings = PlayerSettingsWidget(1, allow_empty=True, default_index=2)
-        self._p2_settings.agent_changed.connect(lambda pid, a: self._on_agent_changed(pid, a))
         settings_row.addWidget(self._p2_settings)
 
         root.addLayout(settings_row)
@@ -125,9 +123,7 @@ class SetupWidget(QWidget):
         self._start_btn.clicked.connect(self._on_start)
         root.addWidget(self._start_btn)
 
-    # ------------------------------------------------------------------
-    def _on_agent_changed(self, pid: int, agent: BasePlayerAgent) -> None:
-        self._agents[pid] = agent
+
 
     def _on_random_seed(self) -> None:
         r = random.randint(1, 2147483647)

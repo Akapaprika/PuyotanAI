@@ -2,16 +2,18 @@
 """Statistical benchmarking orchestrator for PuyotanAI.
 
 Runs engine and beam search benchmarks multiple times to collect samples,
-calculates basic statistics, and performs Welch's t-test to check if
-performance improvements are statistically significant.
+calculates basic statistics, and performs Welch's t-test with 10% Trimmed Mean
+to eliminate outlier noise and maximize statistical power.
 """
 
 import argparse
+import datetime  # 追加：タイムスタンプ生成に使用
 import json
 import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 # Setup paths
@@ -117,17 +119,38 @@ def collect_data(iterations, duration, beam_width, look_ahead):
         combined = {**engine_metrics, **beam_metrics}
         results.append(combined)
         
+        time.sleep(1.0)
     return results
+
+
+def trim_raw_samples(samples, trim_pct=0.1):
+    """【新設】上下一定割合（デフォルト10%）のハズレ値をカットするトリム関数"""
+    n = len(samples)
+    if n < 5:  # サンプル数が少なすぎる場合はトリムしない
+        return samples
+    sorted_samples = sorted(samples)
+    k = int(n * trim_pct)
+    if k == 0:
+        k = 1
+    # 最も速い上位k個、最も遅い下位k個を完全に切り捨てて返します
+    return sorted_samples[k : n - k]
 
 
 def perform_statistical_test(base_results, pr_results):
     keys = set(base_results[0].keys()) & set(pr_results[0].keys())
     comparison = {}
-    import math # 標準ライブラリのみ使用
+    import math  # 標準ライブラリのみ使用
+
+    # トリム率の定義（10%を上下からカット）
+    trim_pct = 0.1
     
     for key in sorted(keys):
-        base_samples = [r[key] for r in base_results if key in r]
-        pr_samples = [r[key] for r in pr_results if key in r]
+        base_raw = [r[key] for r in base_results if key in r]
+        pr_raw = [r[key] for r in pr_results if key in r]
+        
+        # --- ここで外れ値（異常スパイク）を完全にカット ---
+        base_samples = trim_raw_samples(base_raw, trim_pct)
+        pr_samples = trim_raw_samples(pr_raw, trim_pct)
         
         n_base = len(base_samples)
         n_pr = len(pr_samples)
@@ -157,17 +180,13 @@ def perform_statistical_test(base_results, pr_results):
             )
             
             # 【超高精度なWilson-Hilferty近似による純粋Python p値算出】
-            # 自由度 df におけるスチューデントt値を、標準正規分布の Z値 に変換します
-            # 自由度 3 以上において誤差 0.001 以下の極めて高い精度を誇ります
             f_val = 1.0 - 2.0 / (9.0 * df)
-            # ゼロ除算防止
             denom = math.sqrt(f_val + (2.0 / (9.0 * df)) * (t_stat ** 2))
             if denom == 0:
                 z_val = 0.0
             else:
                 z_val = (f_val * t_stat) / denom
                 
-            # Z値 から2テイラー（両側）p値を算出
             p_value = 1.0 - math.erf(abs(z_val) / (2 ** 0.5))
         
         lower_is_better = "latency" in key
@@ -201,7 +220,7 @@ def perform_statistical_test(base_results, pr_results):
 def generate_markdown_report(comparison, iterations):
     md = []
     md.append("# PuyotanAI Performance Benchmark Report")
-    md.append(f"Statistically compared using Welch's t-test over **{iterations} repetitions** of 10s runs.")
+    md.append(f"Statistically compared using Welch's t-test over **{iterations} repetitions** of 10s runs (with 10% outlier trimming).")
     md.append("")
     md.append("| Metric | Base Mean | PR Mean | Change (%) | p-value | Significant? | Status |")
     md.append("| :--- | :---: | :---: | :---: | :---: | :---: | :---: |")
@@ -237,32 +256,75 @@ def main():
         sys.stdout.reconfigure(encoding='utf-8')
     except AttributeError:
         pass
+    
+    # 起動時の現在日時から、ローカル実行用のデフォルトファイル名を動的に生成
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    default_output = f"bench_results_{timestamp}.json"
+    
     parser = argparse.ArgumentParser()
     parser.add_argument("--run", action="store_true", help="Run the benchmarks and save output")
-    parser.add_argument("--compare", nargs=2, metavar=("BASE", "PR"), help="Compare two benchmark JSON results and output stats")
+    
+    # --compare, -c を可変長引数 (nargs='*') に変更し、短縮形 -c を追加
+    parser.add_argument("--compare", "-c", nargs="*", metavar="FILE", help="Compare benchmark results. 0 args: compare two newest; 1 arg: compare specified vs newest; 2 args: compare specified base vs specified pr.")
+    
     parser.add_argument("--iterations", type=int, default=30, help="Number of repetitions to run")
     parser.add_argument("--duration", type=float, default=10.0, help="Duration of each benchmark run in seconds")
     parser.add_argument("--beam-width", type=int, default=500, help="Beam width for beam search benchmark")
     parser.add_argument("--look-ahead", type=int, default=10, help="Lookahead depth for beam search benchmark")
-    parser.add_argument("--output", type=str, default="bench_results.json", help="Path to output JSON")
+    parser.add_argument("--output", type=str, default=default_output, help="Path to output JSON")
     parser.add_argument("--output-md", type=str, default=None, help="Path to output Markdown report")
     args = parser.parse_args()
 
     if args.run:
         results = collect_data(args.iterations, args.duration, args.beam_width, args.look_ahead)
         with open(args.output, "w") as f:
-            json.dump({"iterations": args.iterations, "duration": args.duration, "results": results}, f, indent=2)
+            # データの履歴追跡を容易にするため、jsonの内部にも実行時のタイムスタンプを保存します
+            json.dump({
+                "timestamp": timestamp,
+                "iterations": args.iterations, 
+                "duration": args.duration, 
+                "results": results
+            }, f, indent=2)
         print(f"Results successfully saved to {args.output}")
         
-    elif args.compare:
+    elif args.compare is not None:
+        # 自動比較用のロジック
+        num_args = len(args.compare)
+        
+        # フォルダ内の bench_results_*.json を探し、日時順（昇順）にソート
+        bench_files = sorted([str(p) for p in Path(".").glob("bench_results_*.json")])
+        
+        if num_args == 0:
+            # 引数なし：最新の2ファイルを自動比較
+            if len(bench_files) < 2:
+                print("Error: Auto-compare requires at least 2 saved benchmark files in the current directory.", file=sys.stderr)
+                sys.exit(1)
+            base_path = bench_files[-2]
+            pr_path = bench_files[-1]
+            print(f"Auto-comparing two newest results:\n  Base (Previous): {base_path}\n  PR   (Newest)  : {pr_path}\n")
+        elif num_args == 1:
+            # 引数1個：指定された古いファイル ↔ 最も新しいファイルを比較
+            if len(bench_files) < 1:
+                print("Error: No local benchmark files found to compare against.", file=sys.stderr)
+                sys.exit(1)
+            base_path = args.compare[0]
+            pr_path = bench_files[-1]
+            print(f"Comparing specified base against newest result:\n  Base: {base_path}\n  PR   (Newest): {pr_path}\n")
+        elif num_args == 2:
+            # 引数2個：従来通りの指定ファイル同士の比較（GHAでの動作を保証）
+            base_path = args.compare[0]
+            pr_path = args.compare[1]
+        else:
+            print("Error: --compare / -c takes at most 2 arguments (base, pr).", file=sys.stderr)
+            sys.exit(1)
+
         # Load datasets
-        base_path, pr_path = args.compare
         with open(base_path) as f:
             base_data = json.load(f)
         with open(pr_path) as f:
             pr_data = json.load(f)
             
-        iterations = base_data.get("iterations", 30)
+        iterations = base_data.get("iterations", 20)
         comparison = perform_statistical_test(base_data["results"], pr_data["results"])
         report = generate_markdown_report(comparison, iterations)
         

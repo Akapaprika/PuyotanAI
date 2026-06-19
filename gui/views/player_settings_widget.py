@@ -2,20 +2,18 @@
 gui/views/player_settings_widget.py
 
 A compact widget row placed above each player's board (on the Setup screen).
-Exposes a QComboBox for mode selection (Human / AI / Empty) and a
-"Browse…" button that appears only when AI is selected.
+Exposes a QComboBox for mode selection (Human / Beam Search / Empty) and parameters
+for configuring beam search.
 
 Emits `agent_changed(player_id, BasePlayerAgent)` whenever the user
 makes a new selection so the ViewModel can swap out the agent.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QComboBox, QPushButton,
-    QFileDialog, QLabel, QSpinBox
+    QLabel, QSpinBox
 )
 
 from ..agents import (
@@ -28,7 +26,7 @@ from ..agents import (
 
 class PlayerSettingsWidget(QWidget):
     """
-    Thin settings row: [P# ▼ Mode] [Browse...] [path label]
+    Thin settings row: [P# ▼ Mode] and optional Beam Search parameters.
     """
 
     #: Emitted with (player_id, new_agent) whenever the agent type or model changes.
