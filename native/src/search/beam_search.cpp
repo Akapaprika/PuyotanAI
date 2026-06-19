@@ -24,6 +24,10 @@ struct BeamAction {
     int idx;
     int ax;
     int sx;
+    int ax_idx;
+    int ax_shift;
+    int sx_idx;
+    int sx_shift;
     int axis_dy;
     int sub_dy;
     bool is_death_col_related;
@@ -39,12 +43,16 @@ const std::vector<BeamAction>& getPutActions() noexcept {
                 const int rot = static_cast<int>(a.rotation) & 3;
                 const int ax = a.x;
                 const int sx = ax + kSubDx[rot];
+                const int ax_idx = ax >> 2;
+                const int ax_shift = (ax & 3) << 4;
+                const int sx_idx = sx >> 2;
+                const int sx_shift = (sx & 3) << 4;
                 const int axis_dy = kAxisDy[rot];
                 const int sub_dy = kSubDySimple[rot];
                 const bool is_death_col_related =
                     (ax == config::Rule::kDeathCol ||
                      sx == config::Rule::kDeathCol);
-                r.push_back({i, ax, sx, axis_dy, sub_dy, is_death_col_related});
+                r.emplace_back(i, ax, sx, ax_idx, ax_shift, sx_idx, sx_shift, axis_dy, sub_dy, is_death_col_related);
             }
         }
         return r;
@@ -66,11 +74,15 @@ const std::vector<BeamAction>& getZoroActions() noexcept {
             const int rot = static_cast<int>(a.rotation) & 3;
             const int ax = a.x;
             const int sx = ax + kSubDx[rot];
+            const int ax_idx = ax >> 2;
+            const int ax_shift = (ax & 3) << 4;
+            const int sx_idx = sx >> 2;
+            const int sx_shift = (sx & 3) << 4;
             const int axis_dy = kAxisDy[rot];
             const int sub_dy = kSubDySimple[rot];
             const bool is_death_col_related = (ax == config::Rule::kDeathCol ||
                                                sx == config::Rule::kDeathCol);
-            r.push_back({i, ax, sx, axis_dy, sub_dy, is_death_col_related});
+            r.emplace_back(i, ax, sx, ax_idx, ax_shift, sx_idx, sx_shift, axis_dy, sub_dy, is_death_col_related);
         }
         return r;
     }();
@@ -117,7 +129,8 @@ PlaceResult simulatePlacement(const Board& src, PuyoPiece piece,
     }
 
     PlaceResult res{src, 0, 0, false}; // 96-byte copy only for valid placements
-    res.field.dropPiecePairFast(ax, sx, y_axis, y_sub, piece.axis, piece.sub);
+    res.field.dropPiecePairFast(action.ax_idx, action.ax_shift, action.sx_idx, action.sx_shift,
+                                y_axis, y_sub, piece.axis, piece.sub);
 
     // Resolve chain
     // 【超強力最適化】
@@ -193,7 +206,7 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
     next_beam.reserve(static_cast<std::size_t>(cfg.beam_width) * kNumRLActions);
 
     // Seed the beam with the current board state
-    current_beam.push_back({player.field, 0.0f, 0.0f, -1});
+    current_beam.emplace_back(player.field, 0.0f, 0.0f, -1);
 
     for (int depth = 0; depth < cfg.look_ahead; ++depth) {
         PuyoPiece piece = tsumo.get(tsumo_base + depth);
@@ -216,7 +229,7 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                     next_accum * cfg.eval_weights.potential_score_scale + eval;
 
                 int first = (depth == 0) ? entry.idx : node.first_action;
-                next_beam.push_back({pr.field, total_score, next_accum, first});
+                next_beam.emplace_back(pr.field, total_score, next_accum, first);
             }
         }
 

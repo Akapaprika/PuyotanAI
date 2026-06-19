@@ -385,6 +385,23 @@ class Board {
         (&boards_[static_cast<int>(color_sub)].lo)[idx_sub] |= bit_sub;
         (&occupancy_.lo)[idx_sub] |= bit_sub;
     }
+    /**
+     * @brief High-performance placement helper using precomputed index/shifts.
+     */
+    inline void dropPiecePairFast(int ax_idx, int ax_shift, int sx_idx, int sx_shift,
+                                  int y_axis, int y_sub, Cell color_axis, Cell color_sub) noexcept {
+        const int shift_axis = ax_shift | y_axis;
+        const uint64_t mask_axis = -static_cast<uint64_t>(y_axis < config::Board::kHeight);
+        const uint64_t bit_axis = (1ULL << shift_axis) & mask_axis;
+        (&boards_[static_cast<int>(color_axis)].lo)[ax_idx] |= bit_axis;
+        (&occupancy_.lo)[ax_idx] |= bit_axis;
+
+        const int shift_sub = sx_shift | y_sub;
+        const uint64_t mask_sub = -static_cast<uint64_t>(y_sub < config::Board::kHeight);
+        const uint64_t bit_sub = (1ULL << shift_sub) & mask_sub;
+        (&boards_[static_cast<int>(color_sub)].lo)[sx_idx] |= bit_sub;
+        (&occupancy_.lo)[sx_idx] |= bit_sub;
+    }
     /** @brief Retrieves the BitBoard mask for the specified color. */
     [[nodiscard]] inline const BitBoard&
     getBitboard(Cell color) const noexcept {

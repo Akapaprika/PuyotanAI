@@ -127,14 +127,17 @@ class BeamEvaluator {
             const BitBoard L = bb.shiftLeftRaw();
             const BitBoard R = bb.shiftRightRaw();
 
+            const BitBoard UD = U | D;
+            const BitBoard LR = L | R;
+
             // Puyos with >= 2 same-color neighbors
             const BitBoard has2 =
-                bb & ((U & D) | (L & R) | ((U | D) & (L | R)));
+                bb & ((U & D) | (L & R) | (UD & LR));
             conn += has2.popcount();
 
             // Isolated: no same-color neighbors
             BitBoard iso_bb = bb;
-            iso_bb.andNot(U | D | L | R);
+            iso_bb.andNot(UD | LR);
             iso += iso_bb.popcount();
         }
 
@@ -193,12 +196,8 @@ class BeamEvaluator {
                 s_reg = _mm_or_si128(s_reg, _mm_srli_epi64(s_reg, 4));
                 s_reg = _mm_or_si128(s_reg, _mm_srli_epi64(s_reg, 8));
 
-                // Combine all colored boards using parallel register ORs
-                __m128i all_colored = _mm_or_si128(
-                    _mm_or_si128(board.getBitboard(Cell::Red).m128,
-                                 board.getBitboard(Cell::Blue).m128),
-                    _mm_or_si128(board.getBitboard(Cell::Green).m128,
-                                 board.getBitboard(Cell::Yellow).m128));
+                // Combine all colored boards using parallel register ANDNOT (Occupied & ~Ojama)
+                __m128i all_colored = _mm_andnot_si128(oj.m128, board.getOccupied().m128);
 
                 __m128i buried_reg = _mm_and_si128(all_colored, s_reg);
 
