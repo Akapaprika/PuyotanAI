@@ -6,6 +6,7 @@
 #include <puyotan/engine/tsumo.hpp>
 #include <puyotan/search/beam_search.hpp>
 #include <vector>
+#include <unordered_map>
 
 namespace puyotan::search {
 namespace {
@@ -238,20 +239,45 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
             tl_sort_buf[i] = {tl_next_beam[i].score, static_cast<int>(i)};
         }
 
-        std::nth_element(tl_sort_buf.begin(), tl_sort_buf.begin() + keep,
-                         tl_sort_buf.end(),
-                         [](const ScoreIdx& a, const ScoreIdx& b) {
-                             return a.score > b.score;
-                         });
+        if (cfg.dbs_max_similar >= 1) {
+            std::sort(tl_sort_buf.begin(), tl_sort_buf.end(),
+                      [](const ScoreIdx& a, const ScoreIdx& b) {
+                          return a.score > b.score;
+                      });
 
-        std::sort(tl_sort_buf.begin(), tl_sort_buf.begin() + keep,
-                  [](const ScoreIdx& a, const ScoreIdx& b) {
-                      return a.score > b.score;
-                  });
+            thread_local std::unordered_map<uint32_t, int> tl_dbs_map;
+            tl_dbs_map.clear();
 
-        tl_current_beam.resize(keep);
-        for (int i = 0; i < keep; ++i) {
-            tl_current_beam[i] = std::move(tl_next_beam[tl_sort_buf[i].idx]);
+            tl_current_beam.clear();
+            for (const auto& item : tl_sort_buf) {
+                BeamNode& cand = tl_next_beam[item.idx];
+                uint32_t key = packHeights(cand.field);
+
+                int& count = tl_dbs_map[key];
+                if (count < cfg.dbs_max_similar) {
+                    count++;
+                    tl_current_beam.push_back(std::move(cand));
+                    if (static_cast<int>(tl_current_beam.size()) == keep) {
+                        break;
+                    }
+                }
+            }
+        } else {
+            std::nth_element(tl_sort_buf.begin(), tl_sort_buf.begin() + keep,
+                             tl_sort_buf.end(),
+                             [](const ScoreIdx& a, const ScoreIdx& b) {
+                                 return a.score > b.score;
+                             });
+
+            std::sort(tl_sort_buf.begin(), tl_sort_buf.begin() + keep,
+                      [](const ScoreIdx& a, const ScoreIdx& b) {
+                          return a.score > b.score;
+                      });
+
+            tl_current_beam.resize(keep);
+            for (int i = 0; i < keep; ++i) {
+                tl_current_beam[i] = std::move(tl_next_beam[tl_sort_buf[i].idx]);
+            }
         }
     }
 

@@ -16,6 +16,8 @@ struct BeamConfig {
     /// Number of tsumo pieces to look ahead (depth of the search tree).
     /// Uses the shared Tsumo sequence starting from the player's active_next_pos.
     int look_ahead = 3;
+    /// Diverse Beam Search (DBS) parameters.
+    int dbs_max_similar = 0;
     /// Evaluation weights applied at every leaf node and intermediate node.
     BeamEvalWeights eval_weights;
 };
