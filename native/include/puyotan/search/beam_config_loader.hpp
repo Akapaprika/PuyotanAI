@@ -57,6 +57,9 @@ class BeamConfigLoader {
         if (section.contains("look_ahead") && section["look_ahead"].is_number_integer())
             cfg.look_ahead = section["look_ahead"].get<int>();
 
+        if (section.contains("dbs_max_similar") && section["dbs_max_similar"].is_number_integer())
+            cfg.dbs_max_similar = section["dbs_max_similar"].get<int>();
+
         if (section.contains("eval_weights") && section["eval_weights"].is_object())
             applyPatch(cfg.eval_weights, section["eval_weights"]);
 
@@ -76,6 +79,9 @@ class BeamConfigLoader {
         if (section.contains("look_ahead") && section["look_ahead"].is_number_integer())
             cfg.look_ahead = section["look_ahead"].get<int>();
 
+        if (section.contains("dbs_max_similar") && section["dbs_max_similar"].is_number_integer())
+            cfg.dbs_max_similar = section["dbs_max_similar"].get<int>();
+
         if (section.contains("eval_weights") && section["eval_weights"].is_object())
             applyPatch(cfg.eval_weights, section["eval_weights"]);
 
@@ -91,6 +97,7 @@ class BeamConfigLoader {
         auto& solo = j["solo"];
         solo["beam_width"] = cfg.beam_width;
         solo["look_ahead"] = cfg.look_ahead;
+        solo["dbs_max_similar"] = cfg.dbs_max_similar;
 
         auto& ew = solo["eval_weights"];
         const auto& w = cfg.eval_weights;
@@ -121,6 +128,7 @@ class BeamConfigLoader {
         auto& vs = j["vs"];
         vs["beam_width"] = cfg.beam_width;
         vs["look_ahead"] = cfg.look_ahead;
+        vs["dbs_max_similar"] = cfg.dbs_max_similar;
 
         auto& ew = vs["eval_weights"];
         const auto& w = cfg.eval_weights;

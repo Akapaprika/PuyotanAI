@@ -145,8 +145,8 @@ class BeamSearchAgent(BasePlayerAgent):
 
         # Stagnation check (stagnated only when board is highly populated: >= 10 rows equivalent)
         is_stagnated = False
-        if len(self._score_history) >= 3 and total_puyos >= 60:
-            growth = self._score_history[-1] - self._score_history[-3]
+        if len(self._score_history) >= 4 and total_puyos >= 66:
+            growth = self._score_history[-1] - self._score_history[-4]
             if growth <= 0.5:
                 is_stagnated = True
 
