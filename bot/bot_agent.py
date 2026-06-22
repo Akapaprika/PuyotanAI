@@ -203,13 +203,25 @@ class PuyotanBot:
     def _start_solo_game(self) -> None:
         """
         ソロモード（両席がBot）のときにゲームを自動開始する。
-        ランダムな seed を生成して /games に新ゲームを作成する。
+        サイトの opsStart() と完全に同等の処理を行う:
+          newGame()   → /games に新ゲームを作成
+          sendChat()  → ルームチャットに「ゲーム開始」を通知
         """
         seed = random.randint(0, 999999)
         seed_str = num_to_base64s(seed)
         self._log(f"ゲーム自動開始: seed='{seed_str}' ({seed})")
         try:
             game_id = self.client.new_game(self.room_id, seed_str)
+            # サイトの opsStart と同様にチャットにゲーム開始メッセージを送信
+            p0 = self.bot_name
+            p1 = self.bot_name
+            self.client.send_chat(
+                self.room_id,
+                text=f"ゲーム開始 {p0} vs {p1}",
+                color="#0000ff",
+                uid=self._bot_uid,
+                name=self.bot_name,
+            )
             self._log(f"ゲーム開始完了: gameId={game_id}")
         except Exception as e:
             self._log(f"[ERROR] ゲーム開始失敗: {e}")
@@ -224,6 +236,8 @@ class PuyotanBot:
         with self._lock:
             if new_game_id == self._game_id:
                 return
+
+            old_game_id = self._game_id
             self._game_id = new_game_id
             self._state = None
             self._submitted = {0: set(), 1: set()}
@@ -236,27 +250,17 @@ class PuyotanBot:
             if new_game_id:
                 self._log(f"ゲーム検知: {new_game_id}")
             else:
-                self._log("ゲーム終了（gameId=null）")
-                # ソロモードなら次のゲームを自動開始
-                if self.is_solo:
-                    threading.Thread(
-                        target=self._restart_solo_game, daemon=True
-                    ).start()
+                # gameId が null になった
+                if old_game_id is not None:
+                    # アクティブなゲームが強制終了または自然終了された
+                    self._log("ゲーム終了（強制終了またはゲーム終了）。Bot を停止します。")
+                    self._should_stop = True
                 return
 
         # 別スレッドでゲームセットアップ
         threading.Thread(
             target=self._setup_game, args=(new_game_id,), daemon=True
         ).start()
-
-    def _restart_solo_game(self) -> None:
-        """ソロモードでゲーム終了後に次のゲームを自動開始する。"""
-        time.sleep(1.5)  # 少し待つ（ゲーム終了のFirestore反映を待つ）
-        with self._lock:
-            if self._game_id is not None:
-                return  # 既に次のゲームが始まっていたら不要
-        self._log("次のゲームを自動開始します...")
-        self._start_solo_game()
 
     def _setup_game(self, game_id: str) -> None:
         """ゲームドキュメントを取得して GameState を初期化する。"""
@@ -350,6 +354,18 @@ class PuyotanBot:
         # ゲーム終了検知
         if not state.is_playing:
             self._log("ゲーム終了。Bot を停止します。")
+            # サイトの P1 と同様にゲーム終了チャットを送信
+            try:
+                self.client.send_chat(
+                    self.room_id,
+                    text="ゲームが終了しました",
+                    color="#0000ff",
+                    uid=self._bot_uid,
+                    name=self.bot_name,
+                    game_id=game_id,
+                )
+            except Exception:
+                pass
             self._should_stop = True
             return
 

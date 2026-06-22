@@ -207,6 +207,7 @@ class FirebaseClient:
         """
         ゲームを強制終了する。
         両プレイヤーを退席させ、gameIdをnullに設定する。
+        サイトの finishGame() と同等。
         """
         for slot in [0, 1]:
             try:
@@ -216,6 +217,38 @@ class FirebaseClient:
         self.db.collection("rooms").document(room_id).set(
             {"gameId": None}, merge=True
         )
+
+    def send_chat(
+        self,
+        room_id: str,
+        text: str,
+        color: str = "#000000",
+        uid: str = "",
+        name: str = "",
+        game_id: str = None,
+    ) -> None:
+        """
+        /rooms/{roomId}/chats にチャットメッセージを追加する。
+        サイトの S.sendChat() と完全に同等。
+
+        Firestore ドキュメントスキーマ:
+          uid       : BotのUID（チャット表示に使用）
+          name      : 表示名（誰が操作したかを表示）
+          text      : チャットに表示するテキスト（'message'ではなく 'text'）
+          color     : 文字色 (CSS形式）
+          gameId    : リプレイリンク用の gameId（オプショナル）
+          createdAt : Firestore サーバータイムスタンプ
+        """
+        doc: dict = {
+            "uid":       uid,
+            "name":      name,
+            "text":      text,
+            "color":     color,
+            "createdAt": gf.SERVER_TIMESTAMP,
+        }
+        if game_id is not None:
+            doc["gameId"] = game_id
+        self.db.collection("rooms").document(room_id).collection("chats").add(doc)
 
     # ------------------------------------------------------------------
     # クリーンアップ
