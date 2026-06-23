@@ -86,7 +86,7 @@ class GameState:
         match = p.PuyotanMatch(self.seed_num)
         match.start()
 
-        for frame in range(1, 1001):
+        for frame in range(1, 10001):  # フレームは1,3,5...と進む。10000で安全に打ち止め
             a0 = self.action_maps[0].get(frame)
             a1 = self.action_maps[1].get(frame)
             if a0 is not None:

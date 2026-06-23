@@ -36,8 +36,40 @@ class FirebaseClient:
         self._listeners: list = []
 
     # ------------------------------------------------------------------
-    # ルーム監視
+    # ルーム監視・取得
     # ------------------------------------------------------------------
+
+    def fetch_room(self, room_id: str) -> Optional[dict]:
+        """
+        /rooms/{roomId} を一度だけ取得する。
+
+        Returns
+        -------
+        dictなど : {
+          "gameId": str | None,
+          "users":  {"0": {"uid": str, "name": str}, ...}
+        }
+        None : ドキュメントが存在しない場合
+        """
+        doc = self.db.collection("rooms").document(room_id).get()
+        if not doc.exists:
+            return None
+        data = doc.to_dict() or {}
+        # users サブコレクションを取得して data["users"] にマージ
+        users: dict = {}
+        for slot in ["0", "1"]:
+            u = (
+                self.db.collection("rooms")
+                .document(room_id)
+                .collection("users")
+                .document(slot)
+                .get()
+            )
+            if u.exists:
+                users[slot] = u.to_dict() or {}
+        data["users"] = users
+        return data
+
     def observe_room(
         self, room_id: str, callback: Callable[[dict], None]
     ) -> Callable[[], None]:

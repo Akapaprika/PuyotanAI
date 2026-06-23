@@ -1,18 +1,18 @@
 {
   "solo": {
     "_comment_beam_width": "探索中に保持する最大盤面数（処理速度と探索精度のトレードオフ）",
-    "beam_width": 3000,
+    "beam_width": 30000,
     "_comment_look_ahead": "ツモの先読み手数量（ソロ部門用の深い先読み）",
-    "look_ahead": 30,
+    "look_ahead": 25,
     "_comment_dbs_max_similar": "同一高さプロファイル(packHeights)を持つ盤面の最大許容重複件数 (0でDBS無効, 1以上でDBS有効)",
-    "dbs_max_similar": 20,
+    "dbs_max_similar": 60,
     "eval_weights": {
       "_comment_potential_score_scale": "ポテンシャル連鎖スコアへの乗数。高いほど将来の連鎖を重視。",
       "potential_score_scale": 1.0,
       "_comment_connectivity_bonus": "同色隣接が2つ以上あるぷよ1個あたりのボーナス。",
-      "connectivity_bonus": 10.0,
+      "connectivity_bonus": 0.0,
       "_comment_isolated_penalty": "同色隣接ゼロの孤立ぷよ1個あたりのペナルティ（負の値）。",
-      "isolated_penalty": --5.0,
+      "isolated_penalty": 0.0,
       "_comment_use_fast_potential": "true: flood-fill 近似（高速）、false: 完全チェーンシミュレーション（高精度）。",
       "use_fast_potential": false
     }

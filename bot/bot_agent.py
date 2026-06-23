@@ -164,15 +164,56 @@ class PuyotanBot:
         """
         Bot起動時に前回セッションの残留データをリセットし着席する。
 
-        リセットにより以下がクリアされる:
-          - /rooms/{roomId}/users/0・1（古いBot UIDが残ると人間が操作できない）
-          - /rooms/{roomId}.gameId  （古いgameIdが残るとゲーム画面が凍まる）
+        安全チェック:
+          - アクティブなゲーム中 (gameId != null) は起動拒否
+          - Bot以外のユーザーが席占めしている場合は起動拒否
         """
-        self._log("前回セッションのデータをリセット中...")
+        # --- 事前チェック ---
+        self._log("ルームの状態を確認中...")
         try:
-            self.client.abort_game(self.room_id)
+            room_data = self.client.fetch_room(self.room_id)
         except Exception as e:
-            self._log(f"[WARN] リセット中にエラー: {e}")
+            self._log(f"[WARN] ルーム取得失敗: {e}")
+            room_data = None
+
+        if room_data:
+            existing_game_id = room_data.get("gameId")
+            if existing_game_id:
+                self._log(
+                    f"[警告] 部屋 '{self.room_id}' は現在対戦中です (gameId={existing_game_id})。"
+                    f"\n         対戦終了後に再起動してください。"
+                )
+                self._should_stop = True
+                return
+
+            users = room_data.get("users", {})
+            for pid in self.bot_players:
+                user = users.get(str(pid), {})
+                uid = user.get("uid", "")
+                if uid and not uid.startswith("bot-"):
+                    self._log(
+                        f"[警告] P{pid+1}席は他のユーザーが使用中です"
+                        f" (name='{user.get('name', '?')}', uid={uid})。"
+                        f"\n         その席が空くのを待ってから再起動してください。"
+                    )
+                    self._should_stop = True
+                    return
+
+        # --- リセット・着席 ---
+        self._log("前回セッションのデータをリセット中...")
+        if self.is_solo:
+            # both モード: 両席・ gameId を全クリア（Botの前回セッション残留を消去）
+            try:
+                self.client.abort_game(self.room_id)
+            except Exception as e:
+                self._log(f"[WARN] リセット中にエラー: {e}")
+        else:
+            # 1p/2p モード: 担当スロットのみ退席（他の席・ gameId は絶対に触らない）
+            for pid in sorted(self.bot_players):
+                try:
+                    self.client.leave_room(self.room_id, pid)
+                except Exception:
+                    pass
 
         for pid in sorted(self.bot_players):
             self._log(f"P{pid+1}席に着席: name='{self.bot_name}'")
