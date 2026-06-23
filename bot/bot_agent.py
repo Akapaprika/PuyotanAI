@@ -7,21 +7,24 @@ bot/bot_agent.py
   Bot は Firestore に直接アクセスすることでサイトと連携します。
 
   1. 着席: /rooms/{roomId}/users/{slot} に {uid, name} を書き込む
-     → サイト上で「着席中」として表示され、ゴーストも正しく表示される
+     → サイト上で「着席中」として表示される
 
   2. ゲーム開始 (both モードのみ):
-     両席が Bot で埋まったら自動で /games に新ゲームを作成し
-     /rooms/{roomId}.gameId を更新する
+     /games に新ゲームを作成し /rooms/{roomId}.gameId を更新する
 
-  3. 手を送信: /games/{gameId}/players/{slot}/actionMap に手を書き込む
+  3. 手を送信: /games/{gameId}/players/{slot}/actionMap に書き込む
      → サイトの Firestore リスナーが検知して reflectAction() が走り盤面が進む
 
-  4. 退席: Bot 停止時 (Ctrl+C) に /rooms/{roomId}/users/{slot} を削除する
+  4. 退席: Bot 停止時に /rooms/{roomId}/users/{slot} を削除する
 
 着席モード:
-  - 1P のみ (bot_players={0}): 1P席に着席。2P は人間がサイトで着席し開始。
-  - 2P のみ (bot_players={1}): 2P席に着席。1P は人間がサイトで着席し開始。
-  - 両方   (bot_players={0,1}): 両席に着席し自動でゲームを開始する（ソロ）。
+  - 1P (bot_players={0}): 1P席に着席。2P は人間がサイトで着席し開始。
+  - 2P (bot_players={1}): 2P席に着席。1P は人間がサイトで着席し開始。
+  - both (bot_players={0,1}): 両席に着席し自動でゲームを開始する。
+
+ソロモード (both) の探索について:
+  両プレイヤーの盤面は常に同一のため、探索は1回だけ実行し
+  その結果を P0・P1 に同時に送信する。
 """
 from __future__ import annotations
 
@@ -96,15 +99,13 @@ class PuyotanBot:
         # 送信済みフレームの追跡（プレイヤーIDごと）
         self._submitted: dict[int, set[int]] = {0: set(), 1: set()}
 
-        # ビームサーチの非同期実行管理（プレイヤーIDごと）
-        self._search_threads: dict[int, Optional[threading.Thread]] = {0: None, 1: None}
-        self._search_results: dict[int, Optional[tuple[int, float]]] = {0: None, 1: None}
+        # ビームサーチの非同期実行管理
+        # ソロモードでは pid=0 のみ使用し、結果をP0・P1両方に送信する
+        self._search_thread: Optional[threading.Thread] = None
+        self._search_result: Optional[tuple[int, float]] = None
         self._search_lock = threading.Lock()
 
-        # 頂点配列でのコントロール用
         self._should_stop = False
-
-        # 重複ログ防止
         self._last_logged_state: str = ""
 
     # ------------------------------------------------------------------
@@ -116,18 +117,15 @@ class PuyotanBot:
         self._log(f"Bot起動: room={self.room_id}, mode={self._mode_label()}")
         self._log(f"Bot UID: {self._bot_uid}")
 
-        # 着席
         self._join_seats()
 
-        # ルーム監視開始
         self._cancel_room = self.client.observe_room(
             self.room_id, self._on_room_update
         )
         self._log("Firestore ルーム監視開始...")
 
-        # ソロモードならゲームを自動で開始
         if self.is_solo:
-            time.sleep(0.8)
+            time.sleep(0.8)  # 着席がFirestoreに伝わるのを少し待つ
             self._start_solo_game()
 
         try:
@@ -152,11 +150,11 @@ class PuyotanBot:
 
     def _mode_label(self) -> str:
         if self.bot_players == {0}:
-            return "1P Bot (P2は人間)"
+            return "1P Bot（P2は人間）"
         elif self.bot_players == {1}:
-            return "2P Bot (P1は人間)"
+            return "2P Bot（P1は人間）"
         else:
-            return "Both / Solo (1P・2PともにBot)"
+            return "Both / Solo（1P・2PともにBot）"
 
     # ------------------------------------------------------------------
     # 着席・退席
@@ -164,12 +162,11 @@ class PuyotanBot:
 
     def _join_seats(self) -> None:
         """
-        Bot起動時に前回セッションの残留データをリセットし、Botが担当する席に着席する。
+        Bot起動時に前回セッションの残留データをリセットし着席する。
 
         リセットにより以下がクリアされる:
-          - /rooms/{roomId}/users/0  （1P席が古いBot UIDのままなら、人間が落下ボタンを押せない）
-          - /rooms/{roomId}/users/1  （2P席同様）
-          - /rooms/{roomId}.gameId   （古いgameIdが残るとゲーム画面が凖まる）
+          - /rooms/{roomId}/users/0・1（古いBot UIDが残ると人間が操作できない）
+          - /rooms/{roomId}.gameId  （古いgameIdが残るとゲーム画面が凍まる）
         """
         self._log("前回セッションのデータをリセット中...")
         try:
@@ -177,7 +174,6 @@ class PuyotanBot:
         except Exception as e:
             self._log(f"[WARN] リセット中にエラー: {e}")
 
-        # 着席
         for pid in sorted(self.bot_players):
             self._log(f"P{pid+1}席に着席: name='{self.bot_name}'")
             try:
@@ -202,22 +198,19 @@ class PuyotanBot:
 
     def _start_solo_game(self) -> None:
         """
-        ソロモード（両席がBot）のときにゲームを自動開始する。
-        サイトの opsStart() と完全に同等の処理を行う:
-          newGame()   → /games に新ゲームを作成
-          sendChat()  → ルームチャットに「ゲーム開始」を通知
+        ソロモードでゲームを自動開始する。
+        サイトの opsStart() と完全に同等:
+          newGame()  → /games に新ゲームを作成
+          sendChat() → ルームチャットに「ゲーム開始」を通知
         """
         seed = random.randint(0, 999999)
         seed_str = num_to_base64s(seed)
         self._log(f"ゲーム自動開始: seed='{seed_str}' ({seed})")
         try:
             game_id = self.client.new_game(self.room_id, seed_str)
-            # サイトの opsStart と同様にチャットにゲーム開始メッセージを送信
-            p0 = self.bot_name
-            p1 = self.bot_name
             self.client.send_chat(
                 self.room_id,
-                text=f"ゲーム開始 {p0} vs {p1}",
+                text=f"ゲーム開始 {self.bot_name} vs {self.bot_name}",
                 color="#0000ff",
                 uid=self._bot_uid,
                 name=self.bot_name,
@@ -250,14 +243,11 @@ class PuyotanBot:
             if new_game_id:
                 self._log(f"ゲーム検知: {new_game_id}")
             else:
-                # gameId が null になった
                 if old_game_id is not None:
-                    # アクティブなゲームが強制終了または自然終了された
-                    self._log("ゲーム終了（強制終了またはゲーム終了）。Bot を停止します。")
+                    self._log("ゲーム終了（強制終了またはゲームオーバー）。Bot を停止します。")
                     self._should_stop = True
                 return
 
-        # 別スレッドでゲームセットアップ
         threading.Thread(
             target=self._setup_game, args=(new_game_id,), daemon=True
         ).start()
@@ -297,7 +287,6 @@ class PuyotanBot:
                 f" playing={state.is_playing}"
             )
 
-        # プレイヤーアクション監視を開始
         for pid in [0, 1]:
             cancel = self.client.observe_game_player(
                 game_id, pid, self._make_player_handler(pid, game_id)
@@ -322,10 +311,7 @@ class PuyotanBot:
                 self._state.update_action_map(player_id, am)
                 new_frame = self._state.current_frame
                 if new_frame != old_frame:
-                    self._log(
-                        f"P{player_id+1} 更新:"
-                        f" frame {old_frame} -> {new_frame}"
-                    )
+                    self._log(f"P{player_id+1} 更新: frame {old_frame} -> {new_frame}")
         return handler
 
     # ------------------------------------------------------------------
@@ -333,15 +319,28 @@ class PuyotanBot:
     # ------------------------------------------------------------------
 
     def _tick(self) -> None:
-        """0.3秒ごとに呼ばれる。各Botプレイヤーの手を処理する。"""
-        # 探索結果の回収
+        """
+        0.3秒ごとに呼ばれる。探索結果の回収と新規探索の起動を行う。
+
+        【ソロモードの設計】
+          探索は1回のみ実行（pid=0として計算）。
+          結果が出たら P0・P1 に同時に送信する。
+          これにより P0→P1 の送信ラグがゼロになる。
+
+        【通常モード（1p/2p）の設計】
+          Bot担当のプレイヤーのみ探索・送信する。
+        """
+        # 探索結果の回収と送信
         with self._search_lock:
-            for pid in list(self.bot_players):
-                if self._search_results[pid] is not None:
-                    action_idx, score = self._search_results[pid]
-                    self._search_results[pid] = None
-                    self._search_threads[pid] = None
-                    action = p.get_rl_action(action_idx)
+            result = self._search_result
+            if result is not None:
+                self._search_result = None
+                self._search_thread = None
+                action = p.get_rl_action(result[0])
+                score = result[1]
+                # ソロ: P0・P1に同時送信 / 通常: 担当プレイヤーのみ
+                targets = [0, 1] if self.is_solo else sorted(self.bot_players)
+                for pid in targets:
                     self._submit_action(pid, action, score)
 
         with self._lock:
@@ -354,7 +353,6 @@ class PuyotanBot:
         # ゲーム終了検知
         if not state.is_playing:
             self._log("ゲーム終了。Bot を停止します。")
-            # サイトの P1 と同様にゲーム終了チャットを送信
             try:
                 self.client.send_chat(
                     self.room_id,
@@ -370,9 +368,7 @@ class PuyotanBot:
             return
 
         self._log_state(state)
-
-        for pid in self.bot_players:
-            self._try_start_search(state, pid)
+        self._try_start_search(state)
 
     def _log_state(self, state: GameState) -> None:
         """状態変化があった時だけログを出す。"""
@@ -385,64 +381,46 @@ class PuyotanBot:
         dir_names = ["上", "右", "下", "左"]
         parts = []
         for pid in [0, 1]:
-            needs = bool(mask & (1 << pid))
             done = frame in self._submitted[pid]
             if done:
                 a = state.action_maps[pid].get(frame)
-                if a:
-                    parts.append(
-                        f"P{pid+1}:送信済({a['x']}列{dir_names[a['dir']]})"
-                    )
-                else:
-                    parts.append(f"P{pid+1}:送信済")
-            elif needs:
+                label = f"P{pid+1}:送信済({a['x']}列{dir_names[a['dir']]})" if a else f"P{pid+1}:送信済"
+                parts.append(label)
+            elif bool(mask & (1 << pid)):
                 parts.append(f"P{pid+1}:思考中")
             else:
                 parts.append(f"P{pid+1}:待機")
         self._log(f"frame={frame} | {' | '.join(parts)}")
 
-    def _try_start_search(self, state: GameState, pid: int) -> None:
-        if not state.needs_action(pid):
+    def _try_start_search(self, state: GameState) -> None:
+        """探索が必要なら非同期でビームサーチを開始する。"""
+        # 探索の要否チェック（代表としてbotが担当する最初のプレイヤーで判定）
+        lead_pid = min(self.bot_players)
+        if not state.needs_action(lead_pid):
             return
-        frame = state.current_frame
-        if frame in self._submitted[pid]:
+        if state.current_frame in self._submitted[lead_pid]:
             return
 
         with self._search_lock:
-            if (self._search_threads[pid] is not None
-                    and self._search_threads[pid].is_alive()):
-                return
+            if self._search_thread is not None and self._search_thread.is_alive():
+                return  # 既に探索中
 
-        # ソロモード最適化: P0 の探索結果を P1 にも使い回す
-        # (両者のフィールドは常に同一のため同じ最善手になる)
-        if self.is_solo and pid == 1:
-            with self._search_lock:
-                if self._search_results[0] is not None:
-                    # P0 の結果がすでにある場合はそれを P1 にも使う
-                    self._search_results[1] = self._search_results[0]
-                    return
-                # P0 の探索スレッドが生きていれば P1 は待つ
-                if (self._search_threads[0] is not None
-                        and self._search_threads[0].is_alive()):
-                    return
-
-        player = state.get_player_state(pid)
+        player = state.get_player_state(lead_pid)
         tsumo = state.get_tsumo()
         is_solo = self.is_solo
 
-        def worker(p_id=pid, pl=player, t=tsumo):
+        def worker():
             result = p.beam_search_action(
-                pl, t, _CONFIG_PATH,
+                player, tsumo, _CONFIG_PATH,
                 self.beam_width, self.look_ahead,
                 is_solo, False,
             )
             with self._search_lock:
-                self._search_results[p_id] = result
+                self._search_result = result
 
         with self._search_lock:
-            th = threading.Thread(target=worker, daemon=True)
-            self._search_threads[pid] = th
-            th.start()
+            self._search_thread = threading.Thread(target=worker, daemon=True)
+            self._search_thread.start()
 
     def _submit_action(self, pid: int, action: p.Action, score: float) -> None:
         with self._lock:
