@@ -162,7 +162,7 @@ class PuyotanBot:
 
     def _join_seats(self) -> None:
         """
-        Bot起動時に前回セッションの残留データをリセットし着席する。
+        Bot起動時に前回セッションのデータをリセットし着席する。
 
         安全チェック:
           - アクティブなゲーム中 (gameId != null) は起動拒否
@@ -179,12 +179,33 @@ class PuyotanBot:
         if room_data:
             existing_game_id = room_data.get("gameId")
             if existing_game_id:
-                self._log(
-                    f"[警告] 部屋 '{self.room_id}' は現在対戦中です (gameId={existing_game_id})。"
-                    f"\n         対戦終了後に再起動してください。"
-                )
-                self._should_stop = True
-                return
+                # すでにゲームIDがある場合、本当に進行中か確認する
+                is_active = True
+                try:
+                    game_doc = self.client.fetch_game(existing_game_id)
+                    if game_doc:
+                        seed_str = game_doc.get("seed", "")
+                        maps = [
+                            self.client.fetch_game_player(existing_game_id, 0) or {},
+                            self.client.fetch_game_player(existing_game_id, 1) or {},
+                        ]
+                        state = GameState(seed_str, self.bot_players)
+                        for pid in [0, 1]:
+                            am = maps[pid].get("actionMap", {})
+                            if am:
+                                state.update_action_map(pid, am)
+                        if not state.is_playing:
+                            is_active = False
+                except Exception as e:
+                    self._log(f"[WARN] 既存ゲームの状態確認中にエラー: {e}")
+
+                if is_active:
+                    self._log(
+                        f"[警告] 部屋 '{self.room_id}' は現在対戦中です (gameId={existing_game_id})。"
+                        f"\n         対戦終了後に再起動してください。"
+                    )
+                    self._should_stop = True
+                    return
 
             users = room_data.get("users", {})
             for pid in self.bot_players:
@@ -207,13 +228,6 @@ class PuyotanBot:
                 self.client.abort_game(self.room_id)
             except Exception as e:
                 self._log(f"[WARN] リセット中にエラー: {e}")
-        else:
-            # 1p/2p モード: 担当スロットのみ退席（他の席・ gameId は絶対に触らない）
-            for pid in sorted(self.bot_players):
-                try:
-                    self.client.leave_room(self.room_id, pid)
-                except Exception:
-                    pass
 
         for pid in sorted(self.bot_players):
             self._log(f"P{pid+1}席に着席: name='{self.bot_name}'")
@@ -225,13 +239,24 @@ class PuyotanBot:
                 self._log(f"[WARN] P{pid+1} 着席失敗: {e}")
 
     def _leave_seats(self) -> None:
-        """Bot が担当する席から退席する。"""
+        """Bot が担当する席から退席する（自分が座っている場合のみ）。"""
+        try:
+            room_data = self.client.fetch_room(self.room_id)
+            users = room_data.get("users", {}) if room_data else {}
+        except Exception:
+            users = {}
+
         for pid in sorted(self.bot_players):
-            try:
-                self.client.leave_room(self.room_id, pid)
-                self._log(f"P{pid+1}席から退席しました")
-            except Exception as e:
-                self._log(f"[WARN] P{pid+1} 退席失敗: {e}")
+            user = users.get(str(pid), {})
+            current_uid = user.get("uid", "")
+            if current_uid == self._bot_uid:
+                try:
+                    self.client.leave_room(self.room_id, pid)
+                    self._log(f"P{pid+1}席から退席しました")
+                except Exception as e:
+                    self._log(f"[WARN] P{pid+1} 退席失敗: {e}")
+            else:
+                self._log(f"P{pid+1}席は自分が着席していないため、退席処理をスキップします (現UID={current_uid})")
 
     # ------------------------------------------------------------------
     # ゲーム開始（ソロモード）
