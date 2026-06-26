@@ -118,6 +118,8 @@ class PuyotanBot:
         self._log(f"Bot UID: {self._bot_uid}")
 
         self._join_seats()
+        if self._should_stop:
+            return
 
         self._cancel_room = self.client.observe_room(
             self.room_id, self._on_room_update
@@ -222,13 +224,6 @@ class PuyotanBot:
 
         # --- リセット・着席 ---
         self._log("前回セッションのデータをリセット中...")
-        if self.is_solo:
-            # both モード: 両席・ gameId を全クリア（Botの前回セッション残留を消去）
-            try:
-                self.client.abort_game(self.room_id)
-            except Exception as e:
-                self._log(f"[WARN] リセット中にエラー: {e}")
-
         for pid in sorted(self.bot_players):
             self._log(f"P{pid+1}席に着席: name='{self.bot_name}'")
             try:
