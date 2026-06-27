@@ -74,8 +74,7 @@ void Tsumo::setSeed(uint32_t seed) noexcept {
     generated_count_ = 0;
     ojama_seed_computed_ = false;
 
-    // Eagerly pre-generate the first 128 elements (0-127) to cover 99.9% of queries.
-    expandTo(127);
+    expandTo(63);
 }
 
 uint32_t Tsumo::getSeed() const noexcept {

@@ -1,0 +1,21 @@
+{
+    "_comment": "ぷよたんβ Bot 設定ファイル。コマンド引数が指定された場合はそちらが優先されます。",
+
+    "room": "e",
+    "_comment_room": "対戦部屋ID: a=上級A, b=上級B, c=初級A, d=初級B, e=身内A, f=身内B, g=身内C, h=身内D",
+
+    "player": "both",
+    "_comment_player": "着席席: '1p'=1P席のみ, '2p'=2P席のみ, 'both'=両方(ソロモード)",
+
+    "name": "藍パプリカ",
+    "_comment_name": "サイト上で表示するBot名",
+
+    "beam_width": -1,
+    "_comment_beam_width": "ビームサーチ幅 (-1 で beam_config.json のデフォルト値を使用)",
+
+    "look_ahead": -1,
+    "_comment_look_ahead": "先読み手数 (-1 で beam_config.json のデフォルト値を使用)",
+
+    "quiet": false,
+    "_comment_quiet": "ログ出力を抑制するか"
+}

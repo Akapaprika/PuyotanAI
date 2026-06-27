@@ -1,29 +1,29 @@
 {
   "solo": {
     "_comment_beam_width": "探索中に保持する最大盤面数（処理速度と探索精度のトレードオフ）",
-    "beam_width": 1000,
+    "beam_width": 15000,
     "_comment_look_ahead": "ツモの先読み手数量（ソロ部門用の深い先読み）",
-    "look_ahead": 10,
+    "look_ahead": 25,
     "_comment_dbs_max_similar": "同一高さプロファイル(packHeights)を持つ盤面の最大許容重複件数 (0でDBS無効, 1以上でDBS有効)",
-    "dbs_max_similar": 20,
+    "dbs_max_similar": 6,
     "eval_weights": {
       "_comment_potential_score_scale": "ポテンシャル連鎖スコアへの乗数。高いほど将来の連鎖を重視。",
       "potential_score_scale": 1.0,
       "_comment_connectivity_bonus": "同色隣接が2つ以上あるぷよ1個あたりのボーナス。",
       "connectivity_bonus": 0.0,
       "_comment_isolated_penalty": "同色隣接ゼロの孤立ぷよ1個あたりのペナルティ（負の値）。",
-      "isolated_penalty": -0.0,
+      "isolated_penalty": 0.0,
       "_comment_use_fast_potential": "true: flood-fill 近似（高速）、false: 完全チェーンシミュレーション（高精度）。",
       "use_fast_potential": false
     }
   },
   "vs": {
     "_comment_beam_width": "探索中に保持する最大盤面数（処理速度と探索精度のトレードオフ）",
-    "beam_width": 500,
+    "beam_width": 15000,
     "_comment_look_ahead": "ツモの先読み手数量（対戦時の攻撃猶予に合わせるため浅めが推奨）",
-    "look_ahead": 3,
+    "look_ahead": 25,
     "_comment_dbs_max_similar": "同一高さプロファイル(packHeights)を持つ盤面の最大許容重複件数 (0でDBS無効, 1以上でDBS有効)",
-    "dbs_max_similar": 0,
+    "dbs_max_similar": 6,
     "eval_weights": {
       "_comment_potential_score_scale": "ポテンシャル連鎖スコアへの乗数。高いほど将来の連鎖を重視。",
       "potential_score_scale": 1.0,
@@ -32,7 +32,7 @@
       "_comment_isolated_penalty": "同色隣接ゼロの孤立ぷよ1個あたりのペナルティ（負の値）。",
       "isolated_penalty": -0.0,
       "_comment_buried_penalty": "おじゃまの下に埋もれた色ぷよ1個あたりのペナルティ（負の値）。",
-      "buried_penalty": -1.0,
+      "buried_penalty": 0.0,
       "_comment_fire_bias": "発火判断のバイアス係数。fire_bias × 発火スコア > ビームスコア のとき即時発火を選択。\n                                    > 1.0: 発火を積極的に選ぶ / == 1.0: 等価比較 / < 1.0: 継続を優先",
       "fire_bias": 0.97,
       "_comment_use_fast_potential": "true: flood-fill 近似（高速）、false: 完全チェーンシミュレーション（高精度）。",
