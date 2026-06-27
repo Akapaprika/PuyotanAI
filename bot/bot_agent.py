@@ -43,7 +43,7 @@ if str(_DIST_PATH) not in sys.path:
 import puyotan_native as p
 
 from bot.firebase_client import FirebaseClient
-from bot.game_sync import GameState, cpp_action_to_js
+from bot.game_sync import GameState, cpp_action_to_js, js_action_to_cpp
 from bot.firebase_client import num_to_base64s
 
 _CONFIG_PATH = str(
@@ -455,18 +455,35 @@ class PuyotanBot:
 
     def _try_start_search(self, state: GameState) -> None:
         """探索が必要なら非同期でビームサーチを開始する。"""
-        # 探索の要否チェック（代表としてbotが担当する最初のプレイヤーで判定）
-        lead_pid = min(self.bot_players)
-        if not state.needs_action(lead_pid):
-            return
-        if state.current_frame in self._submitted[lead_pid]:
+        # ソロ（both）モード時の書き込みズレ（Syncズレ）修復
+        if self.is_solo:
+            frame = state.current_frame
+            a0 = state.action_maps[0].get(frame)
+            a1 = state.action_maps[1].get(frame)
+            if a0 is not None and a1 is None:
+                self._log(f"[Sync] P2の手をP1 ({a0['x']}列) からコピーして再送信します")
+                self._submit_action(1, js_action_to_cpp(a0["x"], a0["dir"]), 0.0)
+                return
+            elif a1 is not None and a0 is None:
+                self._log(f"[Sync] P1の手をP2 ({a1['x']}列) からコピーして再送信します")
+                self._submit_action(0, js_action_to_cpp(a1["x"], a1["dir"]), 0.0)
+                return
+
+        # 探索が必要なプレイヤーを探す（自分が担当し、かつ未送信のもの）
+        target_pid = None
+        for pid in sorted(self.bot_players):
+            if state.needs_action(pid) and (state.current_frame not in self._submitted[pid]):
+                target_pid = pid
+                break
+
+        if target_pid is None:
             return
 
         with self._search_lock:
             if self._search_thread is not None and self._search_thread.is_alive():
                 return  # 既に探索中
 
-        player = state.get_player_state(lead_pid)
+        player = state.get_player_state(target_pid)
         tsumo = state.get_tsumo()
         is_solo = self.is_solo
 
