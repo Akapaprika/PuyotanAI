@@ -185,7 +185,8 @@ PYBIND11_MODULE(puyotan_native, m) {
         [](const PuyotanPlayer& player, const Tsumo& tsumo,
            const std::string& config_path, int beam_width, int look_ahead,
            bool is_solo, bool is_stagnated,
-           const std::optional<search::BeamEvalWeights>& custom_weights) {
+           const std::optional<search::BeamEvalWeights>& custom_weights,
+           int dbs_max_similar) {
             pybind11::gil_scoped_release release;
 
             search::BeamConfig cfg;
@@ -206,6 +207,9 @@ PYBIND11_MODULE(puyotan_native, m) {
             if (look_ahead > 0) {
                 cfg.look_ahead = look_ahead;
             }
+            if (dbs_max_similar >= 0) {
+                cfg.dbs_max_similar = dbs_max_similar;
+            }
 
             // Apply stagnated override dynamically for VS mode
             if (is_stagnated && !is_solo) {
@@ -224,6 +228,7 @@ PYBIND11_MODULE(puyotan_native, m) {
         pybind11::arg("look_ahead") = -1, pybind11::arg("is_solo") = false,
         pybind11::arg("is_stagnated") = false,
         pybind11::arg("custom_weights") = std::nullopt,
+        pybind11::arg("dbs_max_similar") = -1,
         "Run beam search internally managing config loading. "
         "Returns tuple of (RL action index, expected score).");
 }

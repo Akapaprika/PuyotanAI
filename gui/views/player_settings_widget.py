@@ -62,38 +62,68 @@ class PlayerSettingsWidget(QWidget):
         row1.addStretch()
         layout.addLayout(row1)
 
-        # Row 3: Beam Search settings (Width, Depth)
+        # Row 3: Beam Search settings (Width, Depth, DBS)
         self._beam_settings_widget = QWidget()
-        beam_layout = QHBoxLayout(self._beam_settings_widget)
+        beam_layout = QVBoxLayout(self._beam_settings_widget)
         beam_layout.setContentsMargins(28, 0, 0, 0)
-        beam_layout.setSpacing(8)
+        beam_layout.setSpacing(4)
 
+        # Width row
+        w_row = QHBoxLayout()
+        w_row.setSpacing(4)
+        w_row.setContentsMargins(0, 0, 0, 0)
         w_lbl = QLabel("Width:")
         w_lbl.setStyleSheet("font-size: 11px; color: #94a3b8;")
-        beam_layout.addWidget(w_lbl)
-
+        w_lbl.setFixedWidth(40)
         self._width_spin = QSpinBox()
-        self._width_spin.setRange(50, 10000)
-        self._width_spin.setSingleStep(50)
-        self._width_spin.setValue(500)
+        self._width_spin.setRange(50, 1000000)
+        self._width_spin.setSingleStep(500)
+        self._width_spin.setValue(15000)
         self._width_spin.setFixedWidth(75)
         self._width_spin.setStyleSheet("font-size: 11px;")
         self._width_spin.valueChanged.connect(self._on_beam_param_changed)
-        beam_layout.addWidget(self._width_spin)
+        w_row.addWidget(w_lbl)
+        w_row.addWidget(self._width_spin)
+        w_row.addStretch()
+        beam_layout.addLayout(w_row)
 
+        # Depth row
+        d_row = QHBoxLayout()
+        d_row.setSpacing(4)
+        d_row.setContentsMargins(0, 0, 0, 0)
         d_lbl = QLabel("Depth:")
         d_lbl.setStyleSheet("font-size: 11px; color: #94a3b8;")
-        beam_layout.addWidget(d_lbl)
-
+        d_lbl.setFixedWidth(40)
         self._depth_spin = QSpinBox()
-        self._depth_spin.setRange(2, 100)
-        self._depth_spin.setValue(3)
-        self._depth_spin.setFixedWidth(55)
+        self._depth_spin.setRange(2, 50)
+        self._depth_spin.setValue(25)
+        self._depth_spin.setFixedWidth(75)
         self._depth_spin.setStyleSheet("font-size: 11px;")
         self._depth_spin.valueChanged.connect(self._on_beam_param_changed)
-        beam_layout.addWidget(self._depth_spin)
+        d_row.addWidget(d_lbl)
+        d_row.addWidget(self._depth_spin)
+        d_row.addStretch()
+        beam_layout.addLayout(d_row)
 
-        beam_layout.addStretch()
+        # DBS row
+        dbs_row = QHBoxLayout()
+        dbs_row.setSpacing(4)
+        dbs_row.setContentsMargins(0, 0, 0, 0)
+        dbs_lbl = QLabel("DBS:")
+        dbs_lbl.setStyleSheet("font-size: 11px; color: #94a3b8;")
+        dbs_lbl.setFixedWidth(40)
+        self._dbs_spin = QSpinBox()
+        self._dbs_spin.setRange(0, 100)
+        self._dbs_spin.setSingleStep(1)
+        self._dbs_spin.setValue(6)
+        self._dbs_spin.setFixedWidth(75)
+        self._dbs_spin.setStyleSheet("font-size: 11px;")
+        self._dbs_spin.valueChanged.connect(self._on_beam_param_changed)
+        dbs_row.addWidget(dbs_lbl)
+        dbs_row.addWidget(self._dbs_spin)
+        dbs_row.addStretch()
+        beam_layout.addLayout(dbs_row)
+
         self._beam_settings_widget.setVisible(False)
         layout.addWidget(self._beam_settings_widget)
 
@@ -108,8 +138,6 @@ class PlayerSettingsWidget(QWidget):
     def _on_beam_param_changed(self, val: int) -> None:
         self._emit_agent()
 
-
-
     def _emit_agent(self) -> None:
         agent, _ = self.get_agent_or_error()
         if agent is not None:
@@ -120,11 +148,12 @@ class PlayerSettingsWidget(QWidget):
         mode = self._combo.currentText()
         width = self._width_spin.value()
         depth = self._depth_spin.value()
+        dbs = self._dbs_spin.value()
 
         if mode == "Human":
             return HumanPlayerAgent(), None
         if mode == "Beam Search":
-            return BeamSearchAgent(beam_width=width, look_ahead=depth), None
+            return BeamSearchAgent(beam_width=width, look_ahead=depth, dbs_max_similar=dbs), None
         if mode == "Empty (Solo)":
             return EmptyPlayerAgent(), None
         return None, "Unknown mode."

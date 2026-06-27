@@ -104,9 +104,11 @@ class BeamSearchAgent(BasePlayerAgent):
 
     def __init__(self,
                  beam_width: int | None = None,
-                 look_ahead: int | None = None) -> None:
+                 look_ahead: int | None = None,
+                 dbs_max_similar: int | None = None) -> None:
         self._beam_width = beam_width
         self._look_ahead = look_ahead
+        self._dbs_max_similar = dbs_max_similar
         self._score_history = []
         self._is_solo = False
         
@@ -152,11 +154,13 @@ class BeamSearchAgent(BasePlayerAgent):
 
         width = self._beam_width if self._beam_width is not None else -1
         depth = self._look_ahead if self._look_ahead is not None else -1
+        dbs = self._dbs_max_similar if self._dbs_max_similar is not None else -1
 
         # Define thread worker (GIL is released inside C++ bindings.cpp)
         def worker():
             res = p.beam_search_action(
-                player, tsumo, _CONFIG_PATH, width, depth, self._is_solo, is_stagnated
+                player, tsumo, _CONFIG_PATH, width, depth, self._is_solo, is_stagnated,
+                dbs_max_similar=dbs
             )
             with self._lock:
                 self._result = res
