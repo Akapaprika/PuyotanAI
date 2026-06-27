@@ -161,7 +161,7 @@ PlaceResult simulatePlacement(const Board& src, PuyoPiece piece,
 // ---------------------------------------------------------------------------
 // beamSearch
 // ---------------------------------------------------------------------------
-template <bool UseFastPotential, bool HasOjama>
+template <bool HasOjama, bool HasGroupWeights>
 std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                                      const Tsumo& tsumo_const,
                                      const BeamConfig& cfg) noexcept {
@@ -216,7 +216,7 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                     continue;
 
                 float eval =
-                    BeamEvaluator::evaluate<true, UseFastPotential, HasOjama>(
+                    BeamEvaluator::evaluate<true, HasOjama, HasGroupWeights>(
                         pr.field, cfg.eval_weights);
                 float next_accum =
                     node.accum_score + static_cast<float>(pr.score);
@@ -307,21 +307,13 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
 std::pair<int, float> soloBeamSearch(const PuyotanPlayer& player,
                                      const Tsumo& tsumo_const,
                                      const BeamConfig& cfg) noexcept {
-    if (cfg.eval_weights.use_fast_potential) {
-        return beamSearchImpl<true, false>(player, tsumo_const, cfg);
-    } else {
-        return beamSearchImpl<false, false>(player, tsumo_const, cfg);
-    }
+    return beamSearchImpl<false, false>(player, tsumo_const, cfg);
 }
 
 std::pair<int, float> vsBeamSearch(const PuyotanPlayer& player,
                                    const Tsumo& tsumo_const,
                                    const BeamConfig& cfg) noexcept {
-    if (cfg.eval_weights.use_fast_potential) {
-        return beamSearchImpl<true, true>(player, tsumo_const, cfg);
-    } else {
-        return beamSearchImpl<false, true>(player, tsumo_const, cfg);
-    }
+    return beamSearchImpl<true, true>(player, tsumo_const, cfg);
 }
 
 } // namespace puyotan::search

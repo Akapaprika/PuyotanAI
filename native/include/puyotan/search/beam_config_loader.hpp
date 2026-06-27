@@ -102,9 +102,6 @@ class BeamConfigLoader {
         auto& ew = solo["eval_weights"];
         const auto& w = cfg.eval_weights;
         ew["potential_score_scale"]   = w.potential_score_scale;
-        ew["connectivity_bonus"]      = w.connectivity_bonus;
-        ew["isolated_penalty"]        = w.isolated_penalty;
-        ew["use_fast_potential"]      = w.use_fast_potential;
 
         std::ofstream ofs(path);
         ofs << j.dump(2);
@@ -137,7 +134,6 @@ class BeamConfigLoader {
         ew["isolated_penalty"]        = w.isolated_penalty;
         ew["buried_penalty"]          = w.buried_penalty;
         ew["fire_bias"]               = w.fire_bias;
-        ew["use_fast_potential"]      = w.use_fast_potential;
 
         std::ofstream ofs(path);
         ofs << j.dump(2);
@@ -161,7 +157,6 @@ class BeamConfigLoader {
             else if (key == "isolated_penalty"         && val.is_number()) w.isolated_penalty         = val.get<float>();
             else if (key == "buried_penalty"           && val.is_number()) w.buried_penalty           = val.get<float>();
             else if (key == "fire_bias"                && val.is_number()) w.fire_bias                = val.get<float>();
-            else if (key == "use_fast_potential"       && val.is_boolean()) w.use_fast_potential      = val.get<bool>();
         }
     }
 };

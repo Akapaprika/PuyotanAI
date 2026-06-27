@@ -246,8 +246,8 @@ void printBenchmarkResult(const BenchmarkResult& r, const BeamConfig& cfg) {
     printf("\n========================================\n");
     printf("  BEAM SEARCH SOLO-MODE BENCHMARK\n");
     printf("========================================\n");
-    printf("Config: beam_width=%d, look_ahead=%d, fast_potential=%d\n",
-           cfg.beam_width, cfg.look_ahead, cfg.eval_weights.use_fast_potential);
+    printf("Config: beam_width=%d, look_ahead=%d\n",
+           cfg.beam_width, cfg.look_ahead);
     printf("Duration:        %.3f seconds\n", r.elapsed_seconds);
     printf("Total Games:     %d\n", r.total_games);
     printf("Total Frames:    %llu\n", r.total_frames);
@@ -295,9 +295,9 @@ bool runRegressionTest(
     const BeamConfig& /*cfg*/) { // 引数の cfg を無視するか、以下で上書きします
     printf("\n=== REGRESSION TEST (Fixed Seeds) ===\n");
     const ExpectedBeamStats expected[] = {
-        {1, 0, 39.80f},       {42, 4, -1.20f},     {123, 4, -1.20f},
-        {999, 20, 98.80f},    {12345, 7, 39.80f},   {424242, 12, 38.60f},
-        {111111, 21, 39.80f}, {999999, 1, 179.80f}};
+        {1, 0, 40.00f},       {42, 0, 0.00f},      {123, 0, 0.00f},
+        {999, 2, 100.00f},    {12345, 2, 40.00f},   {424242, 8, 40.00f},
+        {111111, 5, 40.00f},  {999999, 9, 180.00f}};
 
     // 【修正箇所】テスト用の静的な設定（3手先読み、ビーム幅500）を強制します
     // これにより、ベンチマークを10手や40手で回しても、テスト自体は常に同じ3手の基準で正しくパスします
@@ -337,7 +337,6 @@ int main(int argc, char** argv) {
     bool run_regression = false;
     int beam_width = 500;
     int look_ahead = 3;
-    bool fast_potential = false;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -352,8 +351,7 @@ int main(int argc, char** argv) {
         } else if (arg == "--look-ahead" || arg == "-l") {
             if (i + 1 < argc)
                 look_ahead = std::stoi(argv[++i]);
-        } else if (arg == "--fast-potential" || arg == "-f") {
-            fast_potential = true;
+
         } else if (arg == "--help" || arg == "-h") {
             printf("Usage: beam_search_benchmark [options]\n");
             printf("Options:\n");
@@ -365,8 +363,6 @@ int main(int argc, char** argv) {
                 "  --beam-width, -w <int>       Beam width (default: 500)\n");
             printf("  --look-ahead, -l <int>       Look ahead depth (default: "
                    "3)\n");
-            printf("  --fast-potential, -f         Use fast potential "
-                   "evaluation\n");
             printf("  --help, -h                   Show this help\n");
             return 0;
         }
@@ -375,12 +371,10 @@ int main(int argc, char** argv) {
     BeamConfig cfg;
     cfg.beam_width = beam_width;
     cfg.look_ahead = look_ahead;
-    cfg.eval_weights.use_fast_potential = fast_potential;
-
     printf("Beam Search Benchmark (Solo-Mode format) Starting...\n");
     printf("Duration: %.1f seconds\n", duration);
-    printf("Config: width=%d, depth=%d, fast_potential=%d\n", beam_width,
-           look_ahead, fast_potential);
+    printf("Config: width=%d, depth=%d\n", beam_width,
+           look_ahead);
 
     if (run_regression) {
         bool ok = runRegressionTest(cfg);

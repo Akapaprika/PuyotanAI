@@ -178,8 +178,7 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("connectivity_bonus", &search::BeamEvalWeights::connectivity_bonus)
         .def_readwrite("isolated_penalty", &search::BeamEvalWeights::isolated_penalty)
         .def_readwrite("buried_penalty", &search::BeamEvalWeights::buried_penalty)
-        .def_readwrite("fire_bias", &search::BeamEvalWeights::fire_bias)
-        .def_readwrite("use_fast_potential", &search::BeamEvalWeights::use_fast_potential);
+        .def_readwrite("fire_bias", &search::BeamEvalWeights::fire_bias);
 
     m.def(
         "beam_search_action",
