@@ -10,6 +10,7 @@ makes a new selection so the ViewModel can swap out the agent.
 """
 from __future__ import annotations
 
+import puyotan_native as p
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QComboBox, QPushButton,
@@ -18,8 +19,21 @@ from PyQt6.QtWidgets import (
 
 from ..agents import (
     HumanPlayerAgent, EmptyPlayerAgent, BasePlayerAgent,
-    BeamSearchAgent
+    BeamSearchAgent, _CONFIG_PATH
 )
+
+
+def _get_default_config() -> dict[str, int]:
+    """Load default beam configuration from beam_config.json using the C++ bindings."""
+    defaults = {"width": 15000, "depth": 25, "dbs": 6}
+    try:
+        cfg = p.load_solo_config(_CONFIG_PATH)
+        defaults["width"] = cfg.beam_width
+        defaults["depth"] = cfg.look_ahead
+        defaults["dbs"] = cfg.dbs_max_similar
+    except Exception:
+        pass
+    return defaults
 
 
 
@@ -37,6 +51,8 @@ class PlayerSettingsWidget(QWidget):
     def __init__(self, player_id: int, allow_empty: bool = True, default_index: int = 0, parent=None):
         super().__init__(parent)
         self.player_id = player_id
+
+        defaults = _get_default_config()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -78,7 +94,7 @@ class PlayerSettingsWidget(QWidget):
         self._width_spin = QSpinBox()
         self._width_spin.setRange(50, 1000000)
         self._width_spin.setSingleStep(500)
-        self._width_spin.setValue(15000)
+        self._width_spin.setValue(defaults["width"])
         self._width_spin.setFixedWidth(75)
         self._width_spin.setStyleSheet("font-size: 11px;")
         self._width_spin.valueChanged.connect(self._on_beam_param_changed)
@@ -96,7 +112,7 @@ class PlayerSettingsWidget(QWidget):
         d_lbl.setFixedWidth(40)
         self._depth_spin = QSpinBox()
         self._depth_spin.setRange(2, 50)
-        self._depth_spin.setValue(25)
+        self._depth_spin.setValue(defaults["depth"])
         self._depth_spin.setFixedWidth(75)
         self._depth_spin.setStyleSheet("font-size: 11px;")
         self._depth_spin.valueChanged.connect(self._on_beam_param_changed)
@@ -115,7 +131,7 @@ class PlayerSettingsWidget(QWidget):
         self._dbs_spin = QSpinBox()
         self._dbs_spin.setRange(0, 100)
         self._dbs_spin.setSingleStep(1)
-        self._dbs_spin.setValue(6)
+        self._dbs_spin.setValue(defaults["dbs"])
         self._dbs_spin.setFixedWidth(75)
         self._dbs_spin.setStyleSheet("font-size: 11px;")
         self._dbs_spin.valueChanged.connect(self._on_beam_param_changed)

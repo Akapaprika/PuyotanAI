@@ -180,6 +180,20 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("buried_penalty", &search::VsBeamEvalWeights::buried_penalty)
         .def_readwrite("fire_bias", &search::VsBeamEvalWeights::fire_bias);
 
+    pybind11::class_<search::SoloBeamEvalWeights>(m, "SoloBeamEvalWeights")
+        .def(pybind11::init<>())
+        .def_readwrite("potential_score_scale", &search::SoloBeamEvalWeights::potential_score_scale);
+
+    pybind11::class_<search::SoloBeamConfig>(m, "SoloBeamConfig")
+        .def(pybind11::init<>())
+        .def_readwrite("beam_width", &search::SoloBeamConfig::beam_width)
+        .def_readwrite("look_ahead", &search::SoloBeamConfig::look_ahead)
+        .def_readwrite("dbs_max_similar", &search::SoloBeamConfig::dbs_max_similar)
+        .def_readwrite("eval_weights", &search::SoloBeamConfig::eval_weights);
+
+    m.def("load_solo_config", &search::BeamConfigLoader::loadSolo, pybind11::arg("path"),
+          "Load SoloBeamConfig from JSON");
+
     m.def(
         "beam_search_action",
         [](const PuyotanPlayer& player, const Tsumo& tsumo,
