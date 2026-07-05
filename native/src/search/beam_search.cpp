@@ -158,13 +158,10 @@ PlaceResult simulatePlacement(const Board& src, PuyoPiece piece,
 
 } // anonymous namespace
 
-// ---------------------------------------------------------------------------
-// beamSearch
-// ---------------------------------------------------------------------------
-template <bool HasOjama, bool HasGroupWeights>
+template <typename ConfigType, typename EvaluatorType, bool HasFireBias = false>
 std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                                      const Tsumo& tsumo_const,
-                                     const BeamConfig& cfg) noexcept {
+                                     const ConfigType& cfg) noexcept {
     const Tsumo& tsumo = tsumo_const;
     const int tsumo_base = player.active_next_pos;
 
@@ -215,9 +212,7 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                 if (pr.dead)
                     continue;
 
-                float eval =
-                    BeamEvaluator::evaluate<true, HasOjama, HasGroupWeights>(
-                        pr.field, cfg.eval_weights);
+                float eval = EvaluatorType::evaluate(pr.field, cfg.eval_weights);
                 float next_accum =
                     node.accum_score + static_cast<float>(pr.score);
                 float total_score =
@@ -282,17 +277,14 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
     }
 
     // -----------------------------------------------------------------------
-    // Fire-vs-beam decision:
-    // If the best immediate fire score (scaled by fire_bias) exceeds the beam
-    // search result, return the firing action instead.
-    // fire_bias > 1.0 : favour firing (chain is "saturated")
-    // fire_bias == 1.0: fire only when it strictly beats the beam continuation
-    // fire_bias < 1.0 : favour building (need clearly dominant fire to switch)
+    // Fire-vs-beam decision (VS mode only):
     // -----------------------------------------------------------------------
-    if (fire_best_action >= 0 && !tl_current_beam.empty()) {
-        const float beam_score = tl_current_beam[0].score;
-        if (fire_best_score * cfg.eval_weights.fire_bias > beam_score) {
-            return {fire_best_action, fire_best_score};
+    if constexpr (HasFireBias) {
+        if (fire_best_action >= 0 && !tl_current_beam.empty()) {
+            const float beam_score = tl_current_beam[0].score;
+            if (fire_best_score * cfg.eval_weights.fire_bias > beam_score) {
+                return {fire_best_action, fire_best_score};
+            }
         }
     }
 
@@ -306,14 +298,14 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
 
 std::pair<int, float> soloBeamSearch(const PuyotanPlayer& player,
                                      const Tsumo& tsumo_const,
-                                     const BeamConfig& cfg) noexcept {
-    return beamSearchImpl<false, false>(player, tsumo_const, cfg);
+                                     const SoloBeamConfig& cfg) noexcept {
+    return beamSearchImpl<SoloBeamConfig, SoloBeamEvaluator, false>(player, tsumo_const, cfg);
 }
 
 std::pair<int, float> vsBeamSearch(const PuyotanPlayer& player,
                                    const Tsumo& tsumo_const,
-                                   const BeamConfig& cfg) noexcept {
-    return beamSearchImpl<true, true>(player, tsumo_const, cfg);
+                                   const VsBeamConfig& cfg) noexcept {
+    return beamSearchImpl<VsBeamConfig, VsBeamEvaluator, true>(player, tsumo_const, cfg);
 }
 
 } // namespace puyotan::search

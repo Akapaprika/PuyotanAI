@@ -486,12 +486,14 @@ class PuyotanBot:
         player = state.get_player_state(target_pid)
         tsumo = state.get_tsumo()
         is_solo = self.is_solo
+        is_enemy = (not is_solo) and (target_pid == 1)
 
         def worker():
             result = p.beam_search_action(
                 player, tsumo, _CONFIG_PATH,
                 self.beam_width, self.look_ahead,
                 is_solo, False,
+                is_enemy=is_enemy
             )
             with self._search_lock:
                 self._search_result = result

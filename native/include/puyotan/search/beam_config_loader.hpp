@@ -44,8 +44,8 @@ class BeamConfigLoader {
     }
 
   public:
-    static BeamConfig loadSolo(const std::string& path) {
-        BeamConfig cfg{};
+    static SoloBeamConfig loadSolo(const std::string& path) {
+        SoloBeamConfig cfg{};
         nlohmann::json j = getJson(path);
         if (j.is_discarded() || j.empty()) return cfg;
         if (!j.contains("solo") || !j["solo"].is_object()) return cfg;
@@ -66,8 +66,8 @@ class BeamConfigLoader {
         return cfg;
     }
 
-    static BeamConfig loadVs(const std::string& path) {
-        BeamConfig cfg{};
+    static VsBeamConfig loadVs(const std::string& path) {
+        VsBeamConfig cfg{};
         nlohmann::json j = getJson(path);
         if (j.is_discarded() || j.empty()) return cfg;
         if (!j.contains("vs") || !j["vs"].is_object()) return cfg;
@@ -88,7 +88,29 @@ class BeamConfigLoader {
         return cfg;
     }
 
-    static void saveSolo(const std::string& path, const BeamConfig& cfg) {
+    static VsBeamConfig loadEnemy(const std::string& path) {
+        VsBeamConfig cfg{};
+        nlohmann::json j = getJson(path);
+        if (j.is_discarded() || j.empty()) return cfg;
+        if (!j.contains("enemy") || !j["enemy"].is_object()) return cfg;
+
+        const auto& section = j["enemy"];
+        if (section.contains("beam_width") && section["beam_width"].is_number_integer())
+            cfg.beam_width = section["beam_width"].get<int>();
+
+        if (section.contains("look_ahead") && section["look_ahead"].is_number_integer())
+            cfg.look_ahead = section["look_ahead"].get<int>();
+
+        if (section.contains("dbs_max_similar") && section["dbs_max_similar"].is_number_integer())
+            cfg.dbs_max_similar = section["dbs_max_similar"].get<int>();
+
+        if (section.contains("eval_weights") && section["eval_weights"].is_object())
+            applyPatch(cfg.eval_weights, section["eval_weights"]);
+
+        return cfg;
+    }
+
+    static void saveSolo(const std::string& path, const SoloBeamConfig& cfg) {
         nlohmann::json j = getJson(path);
         if (j.empty() || j.is_discarded()) {
             j = nlohmann::json::object();
@@ -116,7 +138,7 @@ class BeamConfigLoader {
         }
     }
 
-    static void saveVs(const std::string& path, const BeamConfig& cfg) {
+    static void saveVs(const std::string& path, const VsBeamConfig& cfg) {
         nlohmann::json j = getJson(path);
         if (j.empty() || j.is_discarded()) {
             j = nlohmann::json::object();
@@ -148,8 +170,47 @@ class BeamConfigLoader {
         }
     }
 
+    static void saveEnemy(const std::string& path, const VsBeamConfig& cfg) {
+        nlohmann::json j = getJson(path);
+        if (j.empty() || j.is_discarded()) {
+            j = nlohmann::json::object();
+        }
+
+        auto& enemy = j["enemy"];
+        enemy["beam_width"] = cfg.beam_width;
+        enemy["look_ahead"] = cfg.look_ahead;
+        enemy["dbs_max_similar"] = cfg.dbs_max_similar;
+
+        auto& ew = enemy["eval_weights"];
+        const auto& w = cfg.eval_weights;
+        ew["potential_score_scale"]   = w.potential_score_scale;
+        ew["connectivity_bonus"]      = w.connectivity_bonus;
+        ew["isolated_penalty"]        = w.isolated_penalty;
+        ew["buried_penalty"]          = w.buried_penalty;
+        ew["fire_bias"]               = w.fire_bias;
+
+        std::ofstream ofs(path);
+        ofs << j.dump(2);
+
+        try {
+            s_cached_json = j;
+            s_last_write_time = std::filesystem::last_write_time(path);
+            s_cached_path = path;
+            s_has_cache = true;
+        } catch (...) {
+            s_has_cache = false;
+        }
+    }
+
   private:
-    static void applyPatch(BeamEvalWeights& w, const nlohmann::json& patch) {
+    static void applyPatch(SoloBeamEvalWeights& w, const nlohmann::json& patch) {
+        for (auto& [key, val] : patch.items()) {
+            if (key.starts_with("_comment")) continue;
+            if (key == "potential_score_scale" && val.is_number()) w.potential_score_scale = val.get<float>();
+        }
+    }
+
+    static void applyPatch(VsBeamEvalWeights& w, const nlohmann::json& patch) {
         for (auto& [key, val] : patch.items()) {
             if (key.starts_with("_comment")) continue;
             if      (key == "potential_score_scale"   && val.is_number()) w.potential_score_scale   = val.get<float>();

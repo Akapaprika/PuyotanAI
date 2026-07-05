@@ -156,11 +156,13 @@ class BeamSearchAgent(BasePlayerAgent):
         depth = self._look_ahead if self._look_ahead is not None else -1
         dbs = self._dbs_max_similar if self._dbs_max_similar is not None else -1
 
+        is_enemy = (not self._is_solo) and (player_id == 1)
+
         # Define thread worker (GIL is released inside C++ bindings.cpp)
         def worker():
             res = p.beam_search_action(
                 player, tsumo, _CONFIG_PATH, width, depth, self._is_solo, is_stagnated,
-                dbs_max_similar=dbs
+                dbs_max_similar=dbs, is_enemy=is_enemy
             )
             with self._lock:
                 self._result = res

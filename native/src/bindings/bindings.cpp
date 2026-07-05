@@ -172,54 +172,72 @@ PYBIND11_MODULE(puyotan_native, m) {
     // =========================================================================
     // Beam Search
     // =========================================================================
-    pybind11::class_<search::BeamEvalWeights>(m, "BeamEvalWeights")
+    pybind11::class_<search::VsBeamEvalWeights>(m, "BeamEvalWeights")
         .def(pybind11::init<>())
-        .def_readwrite("potential_score_scale", &search::BeamEvalWeights::potential_score_scale)
-        .def_readwrite("connectivity_bonus", &search::BeamEvalWeights::connectivity_bonus)
-        .def_readwrite("isolated_penalty", &search::BeamEvalWeights::isolated_penalty)
-        .def_readwrite("buried_penalty", &search::BeamEvalWeights::buried_penalty)
-        .def_readwrite("fire_bias", &search::BeamEvalWeights::fire_bias);
+        .def_readwrite("potential_score_scale", &search::VsBeamEvalWeights::potential_score_scale)
+        .def_readwrite("connectivity_bonus", &search::VsBeamEvalWeights::connectivity_bonus)
+        .def_readwrite("isolated_penalty", &search::VsBeamEvalWeights::isolated_penalty)
+        .def_readwrite("buried_penalty", &search::VsBeamEvalWeights::buried_penalty)
+        .def_readwrite("fire_bias", &search::VsBeamEvalWeights::fire_bias);
 
     m.def(
         "beam_search_action",
         [](const PuyotanPlayer& player, const Tsumo& tsumo,
            const std::string& config_path, int beam_width, int look_ahead,
            bool is_solo, bool is_stagnated,
-           const std::optional<search::BeamEvalWeights>& custom_weights,
-           int dbs_max_similar) {
+           const std::optional<search::VsBeamEvalWeights>& custom_weights,
+           int dbs_max_similar, bool is_enemy) {
             pybind11::gil_scoped_release release;
 
-            search::BeamConfig cfg;
-            if (custom_weights.has_value()) {
-                cfg.eval_weights = custom_weights.value();
-            } else {
-                if (is_solo) {
-                    cfg = search::BeamConfigLoader::loadSolo(config_path);
-                } else {
-                    cfg = search::BeamConfigLoader::loadVs(config_path);
-                }
-            }
-
-            // Override parameters if specified
-            if (beam_width > 0) {
-                cfg.beam_width = beam_width;
-            }
-            if (look_ahead > 0) {
-                cfg.look_ahead = look_ahead;
-            }
-            if (dbs_max_similar >= 0) {
-                cfg.dbs_max_similar = dbs_max_similar;
-            }
-
-            // Apply stagnated override dynamically for VS mode
-            if (is_stagnated && !is_solo) {
-                cfg.eval_weights.fire_bias = 0.97f;
-                cfg.eval_weights.potential_score_scale = 0.0f;
-            }
-
             if (is_solo) {
+                search::SoloBeamConfig cfg;
+                if (custom_weights.has_value()) {
+                    cfg.eval_weights.potential_score_scale = custom_weights.value().potential_score_scale;
+                } else {
+                    cfg = search::BeamConfigLoader::loadSolo(config_path);
+                }
+
+                // Override parameters if specified
+                if (beam_width > 0) {
+                    cfg.beam_width = beam_width;
+                }
+                if (look_ahead > 0) {
+                    cfg.look_ahead = look_ahead;
+                }
+                if (dbs_max_similar >= 0) {
+                    cfg.dbs_max_similar = dbs_max_similar;
+                }
+
                 return search::soloBeamSearch(player, tsumo, cfg);
             } else {
+                search::VsBeamConfig cfg;
+                if (custom_weights.has_value()) {
+                    cfg.eval_weights = custom_weights.value();
+                } else {
+                    if (is_enemy) {
+                        cfg = search::BeamConfigLoader::loadEnemy(config_path);
+                    } else {
+                        cfg = search::BeamConfigLoader::loadVs(config_path);
+                    }
+                }
+
+                // Override parameters if specified
+                if (beam_width > 0) {
+                    cfg.beam_width = beam_width;
+                }
+                if (look_ahead > 0) {
+                    cfg.look_ahead = look_ahead;
+                }
+                if (dbs_max_similar >= 0) {
+                    cfg.dbs_max_similar = dbs_max_similar;
+                }
+
+                // Apply stagnated override dynamically for VS mode
+                if (is_stagnated) {
+                    cfg.eval_weights.fire_bias = 0.97f;
+                    cfg.eval_weights.potential_score_scale = 0.0f;
+                }
+
                 return search::vsBeamSearch(player, tsumo, cfg);
             }
         },
@@ -229,6 +247,7 @@ PYBIND11_MODULE(puyotan_native, m) {
         pybind11::arg("is_stagnated") = false,
         pybind11::arg("custom_weights") = std::nullopt,
         pybind11::arg("dbs_max_similar") = -1,
+        pybind11::arg("is_enemy") = false,
         "Run beam search internally managing config loading. "
         "Returns tuple of (RL action index, expected score).");
 }
