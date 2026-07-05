@@ -1,4 +1,3 @@
-#include <map>
 #include <optional>
 #include <puyotan/common/config.hpp>
 #include <puyotan/common/types.hpp>
@@ -12,7 +11,6 @@
 #include <puyotan/search/beam_evaluator.hpp>
 #include <puyotan/search/beam_search.hpp>
 #include <puyotan/search/match_simulator.hpp>
-#include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
