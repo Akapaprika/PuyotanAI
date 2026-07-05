@@ -105,10 +105,12 @@ class BeamSearchAgent(BasePlayerAgent):
     def __init__(self,
                  beam_width: int | None = None,
                  look_ahead: int | None = None,
-                 dbs_max_similar: int | None = None) -> None:
+                 dbs_max_similar: int | None = None,
+                 is_enemy: bool | None = None) -> None:
         self._beam_width = beam_width
         self._look_ahead = look_ahead
         self._dbs_max_similar = dbs_max_similar
+        self._is_enemy_override = is_enemy
         self._score_history = []
         self._is_solo = False
         
@@ -156,7 +158,10 @@ class BeamSearchAgent(BasePlayerAgent):
         depth = self._look_ahead if self._look_ahead is not None else -1
         dbs = self._dbs_max_similar if self._dbs_max_similar is not None else -1
 
-        is_enemy = (not self._is_solo) and (player_id == 1)
+        if self._is_enemy_override is not None:
+            is_enemy = self._is_enemy_override
+        else:
+            is_enemy = (not self._is_solo) and (player_id == 1)
 
         # Define thread worker (GIL is released inside C++ bindings.cpp)
         def worker():

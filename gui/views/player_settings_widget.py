@@ -32,7 +32,7 @@ class PlayerSettingsWidget(QWidget):
     #: Emitted with (player_id, new_agent) whenever the agent type or model changes.
     agent_changed = pyqtSignal(int, object)
 
-    _MODES = ["Human", "Beam Search", "Empty (Solo)"]
+    _MODES = ["Human", "Beam Search (Player)", "Beam Search (Enemy)", "Empty (Solo)"]
 
     def __init__(self, player_id: int, allow_empty: bool = True, default_index: int = 0, parent=None):
         super().__init__(parent)
@@ -51,7 +51,7 @@ class PlayerSettingsWidget(QWidget):
         row1.addWidget(lbl)
 
         self._combo = QComboBox()
-        modes = self._MODES if allow_empty else self._MODES[:2]
+        modes = self._MODES if allow_empty else self._MODES[:3]
         self._combo.addItems(modes)
         self._combo.setFixedWidth(130)
         if 0 <= default_index < len(modes):
@@ -130,7 +130,7 @@ class PlayerSettingsWidget(QWidget):
     # ------------------------------------------------------------------
     def _on_mode_changed(self, idx: int) -> None:
         current_mode = self._combo.currentText()
-        is_beam = current_mode == "Beam Search"
+        is_beam = "Beam Search" in current_mode
 
         self._beam_settings_widget.setVisible(is_beam)
         self._emit_agent()
@@ -152,8 +152,10 @@ class PlayerSettingsWidget(QWidget):
 
         if mode == "Human":
             return HumanPlayerAgent(), None
-        if mode == "Beam Search":
-            return BeamSearchAgent(beam_width=width, look_ahead=depth, dbs_max_similar=dbs), None
+        if mode == "Beam Search (Player)":
+            return BeamSearchAgent(beam_width=width, look_ahead=depth, dbs_max_similar=dbs, is_enemy=False), None
+        if mode == "Beam Search (Enemy)":
+            return BeamSearchAgent(beam_width=width, look_ahead=depth, dbs_max_similar=dbs, is_enemy=True), None
         if mode == "Empty (Solo)":
             return EmptyPlayerAgent(), None
         return None, "Unknown mode."
