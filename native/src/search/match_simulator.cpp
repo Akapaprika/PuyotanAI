@@ -14,6 +14,10 @@ MatchResult simulateVsMatch(
     PuyotanMatch match(seed);
     match.start();
 
+    // Local copies so we can update context each frame without mutating the const args.
+    VsBeamConfig p1_cfg_local = p1_cfg;
+    VsBeamConfig p2_cfg_local = p2_cfg;
+
     int max_chain_p1 = 0;
     int max_chain_p2 = 0;
 
@@ -21,11 +25,35 @@ MatchResult simulateVsMatch(
         int mask = match.getDecisionMask();
         if (mask != 0) {
             if (mask & 1) {
-                auto action_pair = vsBeamSearch(match.getPlayer(0), match.getTsumo(), p1_cfg);
+                const PuyotanPlayer& ep = match.getPlayer(1);
+                const PuyotanPlayer& mp = match.getPlayer(0);
+                VsEvalContext& ctx = p1_cfg_local.context;
+                ctx.enemy_field            = ep.field;
+                ctx.enemy_action_type      = ep.current_action.action.type;
+                ctx.enemy_chain_count      = ep.chain_count;
+                ctx.enemy_score            = ep.score;
+                ctx.enemy_used_score       = ep.used_score;
+                ctx.enemy_active_ojama     = ep.active_ojama;
+                ctx.enemy_non_active_ojama = ep.non_active_ojama;
+                ctx.my_active_ojama        = mp.active_ojama;
+                ctx.my_non_active_ojama    = mp.non_active_ojama;
+                auto action_pair = vsBeamSearch(mp, match.getTsumo(), p1_cfg_local);
                 match.setAction(0, getRLAction(action_pair.first));
             }
             if (mask & 2) {
-                auto action_pair = vsBeamSearch(match.getPlayer(1), match.getTsumo(), p2_cfg);
+                const PuyotanPlayer& ep = match.getPlayer(0);
+                const PuyotanPlayer& mp = match.getPlayer(1);
+                VsEvalContext& ctx = p2_cfg_local.context;
+                ctx.enemy_field            = ep.field;
+                ctx.enemy_action_type      = ep.current_action.action.type;
+                ctx.enemy_chain_count      = ep.chain_count;
+                ctx.enemy_score            = ep.score;
+                ctx.enemy_used_score       = ep.used_score;
+                ctx.enemy_active_ojama     = ep.active_ojama;
+                ctx.enemy_non_active_ojama = ep.non_active_ojama;
+                ctx.my_active_ojama        = mp.active_ojama;
+                ctx.my_non_active_ojama    = mp.non_active_ojama;
+                auto action_pair = vsBeamSearch(mp, match.getTsumo(), p2_cfg_local);
                 match.setAction(1, getRLAction(action_pair.first));
             }
         }
