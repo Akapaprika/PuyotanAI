@@ -167,25 +167,32 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
     const int tsumo_base = player.active_next_pos;
 
     // -----------------------------------------------------------------------
-    // Fire scan: try all actions with the current tsumo and find the best
-    // immediate chain.  This is compared against the beam result at the end
-    // to decide whether firing now is better than continuing to build.
+    // Pre-calculate effective fire bias for VS mode if attack search is enabled
     // -----------------------------------------------------------------------
-    int fire_best_action = -1;
-    float fire_best_score = 0.0f;
-    {
-        uint32_t packed_heights_root = packHeights(player.field);
-        PuyoPiece piece0 = tsumo.get(tsumo_base + 0);
-        const bool is_zoro0 = (piece0.axis == piece0.sub);
-        const auto& actions0 = is_zoro0 ? getZoroActions() : getPutActions();
-        for (const auto& entry : actions0) {
-            PlaceResult pr = simulatePlacement(player.field, piece0, entry, packed_heights_root);
-            if (pr.dead || pr.score == 0)
-                continue;
-            float s = static_cast<float>(pr.score);
-            if (s > fire_best_score) {
-                fire_best_score = s;
-                fire_best_action = entry.idx;
+    float effective_bias = 1.0f;
+    if constexpr (HasFireBias) {
+        effective_bias = cfg.eval_weights.fire_bias;
+
+        if (cfg.enable_attack_search) {
+            const auto& aw = cfg.eval_weights;
+            const int total_incoming = cfg.context.my_active_ojama + cfg.context.my_non_active_ojama;
+            if (total_incoming > 0) {
+                effective_bias *= aw.incoming_threat_bias;
+            }
+
+            auto my_attacks = collectAttackCandidates(player.field, tsumo, player.active_next_pos, std::min(cfg.look_ahead, 3));
+            if (!my_attacks.empty()) {
+                const auto& best_attack = my_attacks[0];
+                int attack_ojama = best_attack.score / config::Score::kTargetScore;
+
+                if (total_incoming > 0 &&
+                    attack_ojama >= static_cast<int>(total_incoming / aw.counter_ratio)) {
+                    effective_bias *= aw.counter_attack_bias;
+                } else if (cfg.context.enemy_action_type != ActionType::Chain &&
+                           cfg.context.enemy_action_type != ActionType::ChainFall &&
+                           attack_ojama >= aw.lethal_ojama_threshold) {
+                    effective_bias *= aw.lethal_attack_bias;
+                }
             }
         }
     }
@@ -214,26 +221,32 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                     continue;
 
                 float eval = 0.0f;
+                float total_score = 0.0f;
+                float next_accum = node.accum_score;
+
                 if constexpr (HasFireBias) {
                     eval = EvaluatorType::evaluate(pr.field, cfg.eval_weights, &cfg.context);
+                    // Branchless computation: blend scale and score_add to avoid CPU branch mispredictions
+                    const bool is_fire = (pr.score > 0);
+                    const float scale = is_fire ? 1.0f : cfg.eval_weights.potential_score_scale;
+                    const float score_add = static_cast<float>(pr.score) * effective_bias;
+                    next_accum = node.accum_score * scale + score_add;
+                    total_score = next_accum + eval;
                 } else {
                     eval = EvaluatorType::evaluate(pr.field, cfg.eval_weights);
+                    next_accum += static_cast<float>(pr.score);
+                    total_score = next_accum * cfg.eval_weights.potential_score_scale + eval;
                 }
-                float next_accum =
-                    node.accum_score + static_cast<float>(pr.score);
-                float total_score =
-                    next_accum * cfg.eval_weights.potential_score_scale + eval;
 
                 int first = (depth == 0) ? entry.idx : node.first_action;
-                tl_next_beam.emplace_back(pr.field, total_score, next_accum, first);
+                tl_next_beam.emplace_back(std::move(pr.field), total_score, next_accum, first);
             }
         }
 
         if (tl_next_beam.empty())
             break;
 
-        // Sort descending by score and trim to beam_width using lightweight
-        // index sort
+        // Sort descending by score and trim to beam_width using lightweight index sort
         int keep = std::min(static_cast<int>(tl_next_beam.size()), cfg.beam_width);
         tl_sort_buf.resize(tl_next_beam.size());
         for (std::size_t i = 0; i < tl_next_beam.size(); ++i) {
@@ -278,48 +291,6 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
             tl_current_beam.resize(keep);
             for (int i = 0; i < keep; ++i) {
                 tl_current_beam[i] = std::move(tl_next_beam[tl_sort_buf[i].idx]);
-            }
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // Fire-vs-beam decision (VS mode only):
-    // -----------------------------------------------------------------------
-    if constexpr (HasFireBias) {
-        float effective_bias = cfg.eval_weights.fire_bias;
-
-        // Context & Attack Candidates awareness for VS mode
-        if (cfg.enable_attack_search) {
-            const auto& aw = cfg.eval_weights;
-            const int total_incoming = cfg.context.my_active_ojama + cfg.context.my_non_active_ojama;
-            if (total_incoming > 0) {
-                // High threat: increase urgency to counter-fire or offset incoming ojama
-                effective_bias *= aw.incoming_threat_bias;
-            }
-
-            // Collect time-series attack candidates up to look_ahead depth (capped at 3 for speed and memory safety)
-            auto my_attacks = collectAttackCandidates(player.field, tsumo, player.active_next_pos, std::min(cfg.look_ahead, 3));
-            if (!my_attacks.empty()) {
-                const auto& best_attack = my_attacks[0];
-                // Convert score to ojama points (70 points per ojama)
-                int attack_ojama = best_attack.score / config::Score::kTargetScore;
-
-                // Check if attack can counter/offset incoming ojama or overwhelm undefended enemy
-                if (total_incoming > 0 &&
-                    attack_ojama >= static_cast<int>(total_incoming / aw.counter_ratio)) {
-                    effective_bias *= aw.counter_attack_bias;
-                } else if (cfg.context.enemy_action_type != ActionType::Chain &&
-                           cfg.context.enemy_action_type != ActionType::ChainFall &&
-                           attack_ojama >= aw.lethal_ojama_threshold) {
-                    effective_bias *= aw.lethal_attack_bias;
-                }
-            }
-        }
-
-        if (fire_best_action >= 0 && !tl_current_beam.empty()) {
-            const float beam_score = tl_current_beam[0].score;
-            if (fire_best_score * effective_bias > beam_score) {
-                return {fire_best_action, fire_best_score};
             }
         }
     }
