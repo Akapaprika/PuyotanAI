@@ -40,7 +40,11 @@
       "_comment_counter_ratio": "[攻撃サーチ] カウンター判定しきい値の分母。attack_ojama >= total_incoming / counter_ratio で発動。\n                                    デフォルト 2.0 = 「予告おじゃまの半分以上を相殺できるとき」。",
       "counter_ratio": 2.0,
       "_comment_timing_advantage_bias": "[攻撃サーチ] 相手より早く発火可能（猶予優位）な場合に fire_bias に乗算するバイアス係数。",
-      "timing_advantage_bias": 1.2
+      "timing_advantage_bias": 1.2,
+      "_comment_sub_chain_readiness_bonus": "[評価関数] 相手の副砲火力に対抗できる即発火副砲の保持に対する加算ボーナス。",
+      "sub_chain_readiness_bonus": 500.0,
+      "_comment_sub_chain_counter_ratio": "[評価関数] 相手の副砲の何割に対抗できれば全額ボーナスとするかの比率分母。",
+      "sub_chain_counter_ratio": 2.0
     }
   },
   "enemy": {
@@ -72,7 +76,11 @@
       "_comment_counter_ratio": "[攻撃サーチ] カウンター判定しきい値の分母。attack_ojama >= total_incoming / counter_ratio で発動。\n                                    デフォルト 2.0 = 「予告おじゃまの半分以上を相殺できるとき」。",
       "counter_ratio": 2.0,
       "_comment_timing_advantage_bias": "[攻撃サーチ] 相手より早く発火可能（猶予優位）な場合に fire_bias に乗算するバイアス係数。",
-      "timing_advantage_bias": 1.2
+      "timing_advantage_bias": 1.2,
+      "_comment_sub_chain_readiness_bonus": "[評価関数] 相手の副砲火力に対抗できる即発火副砲の保持に対する加算ボーナス。",
+      "sub_chain_readiness_bonus": 500.0,
+      "_comment_sub_chain_counter_ratio": "[評価関数] 相手の副砲の何割に対抗できれば全額ボーナスとするかの比率分母。",
+      "sub_chain_counter_ratio": 2.0
     }
   }
 }

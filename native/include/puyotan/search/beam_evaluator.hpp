@@ -56,6 +56,12 @@ struct VsBeamEvalWeights {
 
     /// Multiplier applied when player has timing advantage (can fire earlier than opponent).
     float timing_advantage_bias   = 1.2f;
+
+    /// Flat bonus applied when maintaining a ready sub-chain scaled to enemy's attack score.
+    float sub_chain_readiness_bonus = 500.0f;
+
+    /// Denominator for target sub-chain score needed relative to enemy best attack score.
+    float sub_chain_counter_ratio   = 2.0f;
 };
 
 /**
@@ -69,6 +75,7 @@ struct VsEvalContext {
     uint8_t    enemy_chain_count = 0;                   // resolved chain steps
     int        enemy_score       = 0;                   // cumulative score
     int        enemy_used_score  = 0;                   // score converted to ojama
+    int        enemy_best_attack_score = 0;             // enemy best immediate attack score
     uint16_t   enemy_active_ojama     = 0;              // ojama ready to fall
     uint16_t   enemy_non_active_ojama = 0;              // ojama still cancelable
     uint16_t   my_active_ojama        = 0;              // my ojama ready to fall
@@ -279,6 +286,20 @@ class VsBeamEvaluator {
             }
             r +=
                 static_cast<float>(max_pot_score) * w.potential_score_scale;
+
+            // --- Dynamic Sub-chain Readiness Bonus ---
+            // If opponent has potential attacks (or default minimum), award bonus proportional
+            // to how well our immediate 1-turn sub-chain score matches enemy's threat level.
+            if (w.sub_chain_readiness_bonus > 0.0f) {
+                const int target_score = (ctx != nullptr && ctx->enemy_best_attack_score > 0)
+                    ? static_cast<int>(ctx->enemy_best_attack_score / w.sub_chain_counter_ratio)
+                    : 1680; // Default minimum threshold (~2-chain double) if enemy threat unknown
+
+                if (target_score > 0) {
+                    const float ratio = std::min(1.0f, static_cast<float>(max_pot_score) / static_cast<float>(target_score));
+                    r += ratio * w.sub_chain_readiness_bonus;
+                }
+            }
         }
 
         return r;

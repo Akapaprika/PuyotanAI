@@ -183,6 +183,12 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
             auto my_attacks = collectAttackCandidates(player.field, tsumo, player.active_next_pos, std::min(cfg.look_ahead, 3));
             auto enemy_attacks = collectAttackCandidates(cfg.context.enemy_field, tsumo, cfg.context.enemy_active_next_pos, std::min(cfg.look_ahead, 3));
 
+            if (!enemy_attacks.empty()) {
+                const_cast<VsEvalContext&>(cfg.context).enemy_best_attack_score = enemy_attacks[0].score;
+            } else {
+                const_cast<VsEvalContext&>(cfg.context).enemy_best_attack_score = 0;
+            }
+
             if (!my_attacks.empty()) {
                 const auto& best_attack = my_attacks[0];
                 int attack_ojama = best_attack.score / config::Score::kTargetScore;

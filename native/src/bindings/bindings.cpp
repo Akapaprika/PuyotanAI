@@ -189,7 +189,9 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("lethal_attack_bias",     &search::VsBeamEvalWeights::lethal_attack_bias)
         .def_readwrite("lethal_ojama_threshold", &search::VsBeamEvalWeights::lethal_ojama_threshold)
         .def_readwrite("counter_ratio",          &search::VsBeamEvalWeights::counter_ratio)
-        .def_readwrite("timing_advantage_bias",   &search::VsBeamEvalWeights::timing_advantage_bias);
+        .def_readwrite("timing_advantage_bias",   &search::VsBeamEvalWeights::timing_advantage_bias)
+        .def_readwrite("sub_chain_readiness_bonus", &search::VsBeamEvalWeights::sub_chain_readiness_bonus)
+        .def_readwrite("sub_chain_counter_ratio",   &search::VsBeamEvalWeights::sub_chain_counter_ratio);
 
     pybind11::class_<search::SoloBeamEvalWeights>(m, "SoloBeamEvalWeights")
         .def(pybind11::init<>())
@@ -203,6 +205,7 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("enemy_chain_count",      &search::VsEvalContext::enemy_chain_count)
         .def_readwrite("enemy_score",            &search::VsEvalContext::enemy_score)
         .def_readwrite("enemy_used_score",       &search::VsEvalContext::enemy_used_score)
+        .def_readwrite("enemy_best_attack_score",&search::VsEvalContext::enemy_best_attack_score)
         .def_readwrite("enemy_active_ojama",     &search::VsEvalContext::enemy_active_ojama)
         .def_readwrite("enemy_non_active_ojama", &search::VsEvalContext::enemy_non_active_ojama)
         .def_readwrite("my_active_ojama",        &search::VsEvalContext::my_active_ojama)
