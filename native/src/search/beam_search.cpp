@@ -290,10 +290,11 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
 
         // Context & Attack Candidates awareness for VS mode
         if (cfg.enable_attack_search) {
+            const auto& aw = cfg.eval_weights;
             const int total_incoming = cfg.context.my_active_ojama + cfg.context.my_non_active_ojama;
             if (total_incoming > 0) {
                 // High threat: increase urgency to counter-fire or offset incoming ojama
-                effective_bias *= 1.5f;
+                effective_bias *= aw.incoming_threat_bias;
             }
 
             // Collect time-series attack candidates up to look_ahead depth (capped at 3 for speed and memory safety)
@@ -304,12 +305,13 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                 int attack_ojama = best_attack.score / config::Score::kTargetScore;
 
                 // Check if attack can counter/offset incoming ojama or overwhelm undefended enemy
-                if (total_incoming > 0 && attack_ojama >= total_incoming / 2) {
-                    effective_bias *= 1.4f;
-                } else if (cfg.context.enemy_action_type != ActionType::Chain && 
+                if (total_incoming > 0 &&
+                    attack_ojama >= static_cast<int>(total_incoming / aw.counter_ratio)) {
+                    effective_bias *= aw.counter_attack_bias;
+                } else if (cfg.context.enemy_action_type != ActionType::Chain &&
                            cfg.context.enemy_action_type != ActionType::ChainFall &&
-                           attack_ojama >= 30) { // Fast lethal attack against non-chaining enemy
-                    effective_bias *= 1.25f;
+                           attack_ojama >= aw.lethal_ojama_threshold) {
+                    effective_bias *= aw.lethal_attack_bias;
                 }
             }
         }

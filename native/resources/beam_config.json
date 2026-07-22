@@ -27,8 +27,18 @@
       "isolated_penalty": -0.0,
       "_comment_buried_penalty": "おじゃまの下に埋もれた色ぷよ1個あたりのペナルティ（負の値）。",
       "buried_penalty": 0.0,
-      "_comment_fire_bias": "発火判断のバイアス係数。fire_bias × 発火スコア > ビームスコア のとき即時発火を選択。\n                                    > 1.0: 発火を積極的に選ぶ / == 1.0: 等価比較 / < 1.0: 継続を優先",
-      "fire_bias": 0.97
+      "_comment_fire_bias": "発火判断の基礎バイアス係数。fire_bias × 発火スコア > ビームスコア のとき即時発火を選択。\n                                    > 1.0: 発火を積極的に選ぶ / == 1.0: 等価比較 / < 1.0: 継続を優先",
+      "fire_bias": 0.97,
+      "_comment_incoming_threat_bias": "[攻撃サーチ] 予告おじゃまが1個以上あるとき fire_bias に乗算する係数。緊急度を上げる。",
+      "incoming_threat_bias": 1.5,
+      "_comment_counter_attack_bias": "[攻撃サーチ] 予告おじゃまの (1/counter_ratio) 以上を相殺できる攻撃がある場合に追加乗算する係数。",
+      "counter_attack_bias": 1.4,
+      "_comment_lethal_attack_bias": "[攻撃サーチ] 予告おじゃまなしで、連鎖中でない相手に致死攻撃 (>= lethal_ojama_threshold おじゃま) を送れるとき乗算する係数。",
+      "lethal_attack_bias": 1.25,
+      "_comment_lethal_ojama_threshold": "[攻撃サーチ] lethal_attack_bias が発動する最低おじゃま数。下げるほど速攻志向。",
+      "lethal_ojama_threshold": 30,
+      "_comment_counter_ratio": "[攻撃サーチ] カウンター判定しきい値の分母。attack_ojama >= total_incoming / counter_ratio で発動。\n                                    デフォルト 2.0 = 「予告おじゃまの半分以上を相殺できるとき」。",
+      "counter_ratio": 2.0
     }
   },
   "enemy": {
@@ -47,8 +57,18 @@
       "isolated_penalty": -0.0,
       "_comment_buried_penalty": "おじゃまの下に埋もれた色ぷよ1個あたりのペナルティ（負の値）。",
       "buried_penalty": 0.0,
-      "_comment_fire_bias": "発火判断のバイアス係数。fire_bias × 発火スコア > ビームスコア のとき即時発火を選択。\n                                    > 1.0: 発火を積極的に選ぶ / == 1.0: 等価比較 / < 1.0: 継続を優先",
-      "fire_bias": 0.97
+      "_comment_fire_bias": "発火判断の基礎バイアス係数。fire_bias × 発火スコア > ビームスコア のとき即時発火を選択。\n                                    > 1.0: 発火を積極的に選ぶ / == 1.0: 等価比較 / < 1.0: 継続を優先",
+      "fire_bias": 0.97,
+      "_comment_incoming_threat_bias": "[攻撃サーチ] 予告おじゃまが1個以上あるとき fire_bias に乗算する係数。緊急度を上げる。",
+      "incoming_threat_bias": 1.5,
+      "_comment_counter_attack_bias": "[攻撃サーチ] 予告おじゃまの (1/counter_ratio) 以上を相殺できる攻撃がある場合に追加乗算する係数。",
+      "counter_attack_bias": 1.4,
+      "_comment_lethal_attack_bias": "[攻撃サーチ] 予告おじゃまなしで、連鎖中でない相手に致死攻撃 (>= lethal_ojama_threshold おじゃま) を送れるとき乗算する係数。",
+      "lethal_attack_bias": 1.25,
+      "_comment_lethal_ojama_threshold": "[攻撃サーチ] lethal_attack_bias が発動する最低おじゃま数。下げるほど速攻志向。",
+      "lethal_ojama_threshold": 30,
+      "_comment_counter_ratio": "[攻撃サーチ] カウンター判定しきい値の分母。attack_ojama >= total_incoming / counter_ratio で発動。\n                                    デフォルト 2.0 = 「予告おじゃまの半分以上を相殺できるとき」。",
+      "counter_ratio": 2.0
     }
   }
 }

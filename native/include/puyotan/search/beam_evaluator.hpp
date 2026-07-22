@@ -30,6 +30,29 @@ struct VsBeamEvalWeights {
     float fire_bias = 1.0f;
     float incoming_ojama_penalty = -2.0f;
     float attack_advantage_bonus = 5.0f;
+
+    // --- Attack Search Bias Multipliers ---
+    // Applied dynamically on top of fire_bias when enable_attack_search = true.
+
+    /// Multiplier applied to fire_bias when any incoming ojama (active or non-active) is present.
+    float incoming_threat_bias    = 1.5f;
+
+    /// Additional multiplier when a detected attack can offset at least (1/counter_ratio) of
+    /// incoming ojama (counter-fire scenario). Applied on top of incoming_threat_bias.
+    float counter_attack_bias     = 1.4f;
+
+    /// Multiplier applied when no incoming ojama is present but a lethal-level attack
+    /// (>= lethal_ojama_threshold ojama) can be launched against a non-chaining enemy.
+    float lethal_attack_bias      = 1.25f;
+
+    /// Minimum number of ojama in a single attack to be considered "lethal" for the
+    /// lethal_attack_bias path. Tune up for a more conservative AI, down for aggressive.
+    int   lethal_ojama_threshold  = 30;
+
+    /// Denominator for the counter-fire threshold check.
+    /// attack_ojama >= total_incoming / counter_ratio triggers counter_attack_bias.
+    /// Default 2.0 means "at least half the incoming ojama can be offset".
+    float counter_ratio           = 2.0f;
 };
 
 /**

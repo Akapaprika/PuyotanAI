@@ -183,7 +183,12 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("buried_penalty", &search::VsBeamEvalWeights::buried_penalty)
         .def_readwrite("fire_bias", &search::VsBeamEvalWeights::fire_bias)
         .def_readwrite("incoming_ojama_penalty", &search::VsBeamEvalWeights::incoming_ojama_penalty)
-        .def_readwrite("attack_advantage_bonus", &search::VsBeamEvalWeights::attack_advantage_bonus);
+        .def_readwrite("attack_advantage_bonus", &search::VsBeamEvalWeights::attack_advantage_bonus)
+        .def_readwrite("incoming_threat_bias",   &search::VsBeamEvalWeights::incoming_threat_bias)
+        .def_readwrite("counter_attack_bias",    &search::VsBeamEvalWeights::counter_attack_bias)
+        .def_readwrite("lethal_attack_bias",     &search::VsBeamEvalWeights::lethal_attack_bias)
+        .def_readwrite("lethal_ojama_threshold", &search::VsBeamEvalWeights::lethal_ojama_threshold)
+        .def_readwrite("counter_ratio",          &search::VsBeamEvalWeights::counter_ratio);
 
     pybind11::class_<search::SoloBeamEvalWeights>(m, "SoloBeamEvalWeights")
         .def(pybind11::init<>())

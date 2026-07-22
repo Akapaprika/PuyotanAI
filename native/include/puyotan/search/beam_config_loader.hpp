@@ -230,8 +230,13 @@ class BeamConfigLoader {
             else if (key == "isolated_penalty"         && val.is_number()) w.isolated_penalty         = val.get<float>();
             else if (key == "buried_penalty"           && val.is_number()) w.buried_penalty           = val.get<float>();
             else if (key == "fire_bias"                && val.is_number()) w.fire_bias                = val.get<float>();
-            else if (key == "incoming_ojama_penalty"  && val.is_number()) w.incoming_ojama_penalty  = val.get<float>();
-            else if (key == "attack_advantage_bonus"  && val.is_number()) w.attack_advantage_bonus  = val.get<float>();
+            else if (key == "incoming_ojama_penalty"   && val.is_number()) w.incoming_ojama_penalty   = val.get<float>();
+            else if (key == "attack_advantage_bonus"   && val.is_number()) w.attack_advantage_bonus   = val.get<float>();
+            else if (key == "incoming_threat_bias"     && val.is_number()) w.incoming_threat_bias     = val.get<float>();
+            else if (key == "counter_attack_bias"      && val.is_number()) w.counter_attack_bias      = val.get<float>();
+            else if (key == "lethal_attack_bias"       && val.is_number()) w.lethal_attack_bias       = val.get<float>();
+            else if (key == "lethal_ojama_threshold"   && val.is_number_integer()) w.lethal_ojama_threshold = val.get<int>();
+            else if (key == "counter_ratio"            && val.is_number()) w.counter_ratio            = val.get<float>();
         }
     }
 };
