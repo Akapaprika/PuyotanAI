@@ -62,6 +62,15 @@ struct VsBeamEvalWeights {
 
     /// Denominator for target sub-chain score needed relative to enemy best attack score.
     float sub_chain_counter_ratio   = 2.0f;
+
+    /// Urgency compression weight for potential_score_scale (0.0: off, 0.8: standard dynamic compression).
+    float urgency_weight            = 0.8f;
+
+    /// Lethal danger penalty scale when my board is threatened with immediate suffocation.
+    float lethal_danger_scale       = 1.0f;
+
+    /// Multiplier applied to net_score when firing an attack that breaks enemy max counter by >= 2 lines (12 ojama).
+    float effective_strike_multiplier = 1.5f;
 };
 
 /**
@@ -77,6 +86,8 @@ struct VsEvalContext {
     int        enemy_used_score  = 0;                   // score converted to ojama
     int        enemy_best_attack_score = 0;             // enemy best immediate attack score
     int        enemy_prepare_turns     = 99;            // enemy turns needed to fire best attack
+    int        enemy_best_within_4     = 0;             // enemy best attack score within 4 turns
+    int        my_best_within_4        = 0;             // my best attack score within 4 turns
     uint16_t   enemy_active_ojama     = 0;              // ojama ready to fall
     uint16_t   enemy_non_active_ojama = 0;              // ojama still cancelable
     uint16_t   my_active_ojama        = 0;              // my ojama ready to fall
@@ -237,15 +248,26 @@ class VsBeamEvaluator {
             }
         }
 
-        // --- Context Awareness (Incoming Ojama & Threat Level) ---
+        // --- Context Awareness & Block E: Lethal Danger Penalty ---
         if (ctx != nullptr) {
             const int total_incoming = ctx->my_active_ojama + ctx->my_non_active_ojama;
             if (total_incoming > 0) {
                 r += static_cast<float>(total_incoming) * w.incoming_ojama_penalty;
             }
+
+            // Block E: Lethal Danger Penalty (Suffocation Check)
+            // If enemy's immediate threat can send enough ojama to overflow my open board space
+            const int my_occupied = static_cast<int>(std::popcount(board.getOccupied().m128.m128i_u64[0]) +
+                                                     std::popcount(board.getOccupied().m128.m128i_u64[1]));
+            const int my_open_cells = 72 - my_occupied - total_incoming;
+            const int enemy_ojama_potential = ctx->enemy_best_attack_score / config::Score::kTargetScore;
+
+            if (enemy_ojama_potential >= my_open_cells && my_open_cells > 0) {
+                r -= 185500.0f * w.lethal_danger_scale;
+            }
         }
 
-        // --- Potential chain score ---
+        // --- Potential chain score with Block C (Urgency Scale) ---
         if constexpr (CalculatePotential) {
             int max_pot_score = 0;
             for (int x = 0; x < config::Board::kWidth; ++x) {
@@ -286,35 +308,16 @@ class VsBeamEvaluator {
                 }
             }
 
-            // --- Net VS Score with Timing Window ---
-            // Evaluate net attack advantage scaled by timing window compatibility.
-            // If enemy has an active threat, compare our immediate/potential score against enemy's threat level.
-            float net_score_bonus = static_cast<float>(max_pot_score);
-            if (ctx != nullptr && ctx->enemy_best_attack_score > 0) {
-                // Net score = My Potential - Enemy Potential (Scaled by relative readiness)
-                int effective_enemy_score = ctx->enemy_best_attack_score;
-                // If enemy needs more prepare turns than 1, discount enemy's immediate threat for current turn
-                if (ctx->enemy_prepare_turns > 1) {
-                    effective_enemy_score = static_cast<int>(effective_enemy_score * (1.0f / ctx->enemy_prepare_turns));
-                }
-                net_score_bonus = static_cast<float>(max_pot_score - effective_enemy_score);
+            // --- Block C: Dynamic Urgency Scale ---
+            // Compress potential_score_scale when enemy is close to firing,
+            // promoting immediate sub-chains and immediate counter-attacks to top of beam.
+            float effective_pot_scale = w.potential_score_scale;
+            if (ctx != nullptr && ctx->enemy_prepare_turns < 99) {
+                const float urgency = std::min(1.0f, 1.0f / static_cast<float>(std::max(1, ctx->enemy_prepare_turns)));
+                effective_pot_scale *= (1.0f - urgency * w.urgency_weight);
             }
 
-            r += net_score_bonus * w.potential_score_scale;
-
-            // --- Dynamic Sub-chain Readiness Bonus ---
-            // If opponent has potential attacks (or default minimum), award bonus proportional
-            // to how well our immediate 1-turn sub-chain score matches enemy's threat level.
-            if (w.sub_chain_readiness_bonus > 0.0f) {
-                const int target_score = (ctx != nullptr && ctx->enemy_best_attack_score > 0)
-                    ? static_cast<int>(ctx->enemy_best_attack_score / w.sub_chain_counter_ratio)
-                    : 1680; // Default minimum threshold (~2-chain double) if enemy threat unknown
-
-                if (target_score > 0) {
-                    const float ratio = std::min(1.0f, static_cast<float>(max_pot_score) / static_cast<float>(target_score));
-                    r += ratio * w.sub_chain_readiness_bonus;
-                }
-            }
+            r += static_cast<float>(max_pot_score) * effective_pot_scale;
         }
 
         return r;

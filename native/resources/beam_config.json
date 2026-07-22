@@ -44,7 +44,13 @@
       "_comment_sub_chain_readiness_bonus": "[評価関数] 相手の副砲火力に対抗できる即発火副砲の保持に対する加算ボーナス。",
       "sub_chain_readiness_bonus": 500.0,
       "_comment_sub_chain_counter_ratio": "[評価関数] 相手の副砲の何割に対抗できれば全額ボーナスとするかの比率分母。",
-      "sub_chain_counter_ratio": 2.0
+      "sub_chain_counter_ratio": 2.0,
+      "_comment_urgency_weight": "[評価関数] 相手の発火猶予に応じたポテンシャル圧縮の重み係数 (0.0: オフ, 0.8: 標準)。",
+      "urgency_weight": 0.8,
+      "_comment_lethal_danger_scale": "[評価関数] 自盤面が相手の攻撃で被窒息危険状態に陥った時のペナルティ倍率。",
+      "lethal_danger_scale": 1.0,
+      "_comment_effective_strike_multiplier": "[評価関数] 相手の最高対応を突破して2段以上(12個)のおじゃまが確定着弾する発火手への動的ボーナス乗数。",
+      "effective_strike_multiplier": 1.5
     }
   },
   "enemy": {
@@ -80,7 +86,13 @@
       "_comment_sub_chain_readiness_bonus": "[評価関数] 相手の副砲火力に対抗できる即発火副砲の保持に対する加算ボーナス。",
       "sub_chain_readiness_bonus": 500.0,
       "_comment_sub_chain_counter_ratio": "[評価関数] 相手の副砲の何割に対抗できれば全額ボーナスとするかの比率分母。",
-      "sub_chain_counter_ratio": 2.0
+      "sub_chain_counter_ratio": 2.0,
+      "_comment_urgency_weight": "[評価関数] 相手の発火猶予に応じたポテンシャル圧縮の重み係数 (0.0: オフ, 0.8: 標準)。",
+      "urgency_weight": 0.8,
+      "_comment_lethal_danger_scale": "[評価関数] 自盤面が相手の攻撃で被窒息危険状態に陥った時のペナルティ倍率。",
+      "lethal_danger_scale": 1.0,
+      "_comment_effective_strike_multiplier": "[評価関数] 相手の最高対応を突破して2段以上(12個)のおじゃまが確定着弾する発火手への動的ボーナス乗数。",
+      "effective_strike_multiplier": 1.5
     }
   }
 }

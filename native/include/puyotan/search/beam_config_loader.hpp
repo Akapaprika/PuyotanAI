@@ -240,6 +240,9 @@ class BeamConfigLoader {
             else if (key == "timing_advantage_bias"    && val.is_number()) w.timing_advantage_bias    = val.get<float>();
             else if (key == "sub_chain_readiness_bonus"&& val.is_number()) w.sub_chain_readiness_bonus= val.get<float>();
             else if (key == "sub_chain_counter_ratio"  && val.is_number()) w.sub_chain_counter_ratio  = val.get<float>();
+            else if (key == "urgency_weight"           && val.is_number()) w.urgency_weight           = val.get<float>();
+            else if (key == "lethal_danger_scale"      && val.is_number()) w.lethal_danger_scale      = val.get<float>();
+            else if (key == "effective_strike_multiplier" && val.is_number()) w.effective_strike_multiplier = val.get<float>();
         }
     }
 };

@@ -186,12 +186,29 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
             if (!enemy_attacks.empty()) {
                 const_cast<VsEvalContext&>(cfg.context).enemy_best_attack_score = enemy_attacks[0].score;
                 const_cast<VsEvalContext&>(cfg.context).enemy_prepare_turns = enemy_attacks[0].prepare_turns;
+
+                int enemy_w4 = 0;
+                for (const auto& atk : enemy_attacks) {
+                    if (atk.prepare_turns <= 4) {
+                        enemy_w4 = std::max(enemy_w4, atk.score);
+                    }
+                }
+                const_cast<VsEvalContext&>(cfg.context).enemy_best_within_4 = enemy_w4;
             } else {
                 const_cast<VsEvalContext&>(cfg.context).enemy_best_attack_score = 0;
                 const_cast<VsEvalContext&>(cfg.context).enemy_prepare_turns = 99;
+                const_cast<VsEvalContext&>(cfg.context).enemy_best_within_4 = 0;
             }
 
             if (!my_attacks.empty()) {
+                int my_w4 = 0;
+                for (const auto& atk : my_attacks) {
+                    if (atk.prepare_turns <= 4) {
+                        my_w4 = std::max(my_w4, atk.score);
+                    }
+                }
+                const_cast<VsEvalContext&>(cfg.context).my_best_within_4 = my_w4;
+
                 const auto& best_attack = my_attacks[0];
                 int attack_ojama = best_attack.score / config::Score::kTargetScore;
 
@@ -209,8 +226,6 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                 }
 
                 // 2. 【催促（ハラス）判定】
-                // 最初のおじゃまが相手に届くステップ数 (発火ツモ数 + 1ステップ) < 相手が発火可能になるツモ数
-                // または 相手より早く攻撃を発火できる場合
                 if (!enemy_attacks.empty()) {
                     const int my_first_ojama_step = best_attack.prepare_turns + 1;
                     const int enemy_start_step = enemy_attacks[0].prepare_turns;
@@ -219,9 +234,10 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                         effective_bias *= aw.timing_advantage_bias;
                     }
                 } else {
-                    // 相手に即時発火可能な攻撃がない場合（完全無防備・催促チャンス）
                     effective_bias *= aw.timing_advantage_bias;
                 }
+            } else {
+                const_cast<VsEvalContext&>(cfg.context).my_best_within_4 = 0;
             }
         }
     }
@@ -255,10 +271,24 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
 
                 if constexpr (HasFireBias) {
                     eval = EvaluatorType::evaluate(pr.field, cfg.eval_weights, &cfg.context);
-                    // Branchless computation: blend scale and score_add to avoid CPU branch mispredictions
                     const bool is_fire = (pr.score > 0);
                     const float scale = is_fire ? 1.0f : cfg.eval_weights.potential_score_scale;
-                    const float score_add = static_cast<float>(pr.score) * effective_bias;
+
+                    float score_add = static_cast<float>(pr.score) * effective_bias;
+
+                    // Block A & Refinement: Effective Strike Bonus (Net >= 2 lines / 12 ojama after enemy max counter)
+                    if (is_fire && cfg.enable_attack_search) {
+                        const int enemy_counter = std::max(cfg.context.enemy_best_within_4, cfg.context.enemy_best_attack_score);
+                        const int net_score = pr.score - enemy_counter;
+                        const int net_ojama_sent = net_score / config::Score::kTargetScore;
+
+                        // Check if attack penetrates enemy max counter by at least 2 lines (12 ojama = 840 score)
+                        if (net_ojama_sent >= 12) {
+                            // Scaled dynamic bonus based on net score surplus, avoiding fixed-value early-firing traps
+                            score_add += static_cast<float>(net_score) * cfg.eval_weights.effective_strike_multiplier;
+                        }
+                    }
+
                     next_accum = node.accum_score * scale + score_add;
                     total_score = next_accum + eval;
                 } else {
