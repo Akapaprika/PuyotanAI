@@ -38,7 +38,9 @@
       "_comment_lethal_ojama_threshold": "[攻撃サーチ] lethal_attack_bias が発動する最低おじゃま数。下げるほど速攻志向。",
       "lethal_ojama_threshold": 30,
       "_comment_counter_ratio": "[攻撃サーチ] カウンター判定しきい値の分母。attack_ojama >= total_incoming / counter_ratio で発動。\n                                    デフォルト 2.0 = 「予告おじゃまの半分以上を相殺できるとき」。",
-      "counter_ratio": 2.0
+      "counter_ratio": 2.0,
+      "_comment_timing_advantage_bias": "[攻撃サーチ] 相手より早く発火可能（猶予優位）な場合に fire_bias に乗算するバイアス係数。",
+      "timing_advantage_bias": 1.2
     }
   },
   "enemy": {
@@ -68,7 +70,9 @@
       "_comment_lethal_ojama_threshold": "[攻撃サーチ] lethal_attack_bias が発動する最低おじゃま数。下げるほど速攻志向。",
       "lethal_ojama_threshold": 30,
       "_comment_counter_ratio": "[攻撃サーチ] カウンター判定しきい値の分母。attack_ojama >= total_incoming / counter_ratio で発動。\n                                    デフォルト 2.0 = 「予告おじゃまの半分以上を相殺できるとき」。",
-      "counter_ratio": 2.0
+      "counter_ratio": 2.0,
+      "_comment_timing_advantage_bias": "[攻撃サーチ] 相手より早く発火可能（猶予優位）な場合に fire_bias に乗算するバイアス係数。",
+      "timing_advantage_bias": 1.2
     }
   }
 }

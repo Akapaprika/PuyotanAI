@@ -29,6 +29,7 @@ MatchResult simulateVsMatch(
                 const PuyotanPlayer& mp = match.getPlayer(0);
                 VsEvalContext& ctx = p1_cfg_local.context;
                 ctx.enemy_field            = ep.field;
+                ctx.enemy_active_next_pos  = ep.active_next_pos;
                 ctx.enemy_action_type      = ep.current_action.action.type;
                 ctx.enemy_chain_count      = ep.chain_count;
                 ctx.enemy_score            = ep.score;
@@ -45,6 +46,7 @@ MatchResult simulateVsMatch(
                 const PuyotanPlayer& mp = match.getPlayer(1);
                 VsEvalContext& ctx = p2_cfg_local.context;
                 ctx.enemy_field            = ep.field;
+                ctx.enemy_active_next_pos  = ep.active_next_pos;
                 ctx.enemy_action_type      = ep.current_action.action.type;
                 ctx.enemy_chain_count      = ep.chain_count;
                 ctx.enemy_score            = ep.score;

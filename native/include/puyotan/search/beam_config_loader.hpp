@@ -237,6 +237,7 @@ class BeamConfigLoader {
             else if (key == "lethal_attack_bias"       && val.is_number()) w.lethal_attack_bias       = val.get<float>();
             else if (key == "lethal_ojama_threshold"   && val.is_number_integer()) w.lethal_ojama_threshold = val.get<int>();
             else if (key == "counter_ratio"            && val.is_number()) w.counter_ratio            = val.get<float>();
+            else if (key == "timing_advantage_bias"    && val.is_number()) w.timing_advantage_bias    = val.get<float>();
         }
     }
 };

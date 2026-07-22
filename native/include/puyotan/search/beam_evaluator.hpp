@@ -53,6 +53,9 @@ struct VsBeamEvalWeights {
     /// attack_ojama >= total_incoming / counter_ratio triggers counter_attack_bias.
     /// Default 2.0 means "at least half the incoming ojama can be offset".
     float counter_ratio           = 2.0f;
+
+    /// Multiplier applied when player has timing advantage (can fire earlier than opponent).
+    float timing_advantage_bias   = 1.2f;
 };
 
 /**
@@ -61,6 +64,7 @@ struct VsBeamEvalWeights {
  */
 struct VsEvalContext {
     Board      enemy_field;                              // enemy board snapshot
+    int        enemy_active_next_pos = 0;               // enemy current tsumo index
     ActionType enemy_action_type = ActionType::None;    // current action state
     uint8_t    enemy_chain_count = 0;                   // resolved chain steps
     int        enemy_score       = 0;                   // cumulative score

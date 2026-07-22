@@ -181,17 +181,38 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
             }
 
             auto my_attacks = collectAttackCandidates(player.field, tsumo, player.active_next_pos, std::min(cfg.look_ahead, 3));
+            auto enemy_attacks = collectAttackCandidates(cfg.context.enemy_field, tsumo, cfg.context.enemy_active_next_pos, std::min(cfg.look_ahead, 3));
+
             if (!my_attacks.empty()) {
                 const auto& best_attack = my_attacks[0];
                 int attack_ojama = best_attack.score / config::Score::kTargetScore;
 
+                // 1. 【対応（カウンター相殺）判定】
+                // 相手からの予告おじゃまを相殺できる十分な攻撃がある場合
                 if (total_incoming > 0 &&
                     attack_ojama >= static_cast<int>(total_incoming / aw.counter_ratio)) {
                     effective_bias *= aw.counter_attack_bias;
-                } else if (cfg.context.enemy_action_type != ActionType::Chain &&
-                           cfg.context.enemy_action_type != ActionType::ChainFall &&
-                           attack_ojama >= aw.lethal_ojama_threshold) {
+                }
+                // 相手が無防備で致死攻撃を送れる場合
+                else if (cfg.context.enemy_action_type != ActionType::Chain &&
+                         cfg.context.enemy_action_type != ActionType::ChainFall &&
+                         attack_ojama >= aw.lethal_ojama_threshold) {
                     effective_bias *= aw.lethal_attack_bias;
+                }
+
+                // 2. 【催促（ハラス）判定】
+                // 最初のおじゃまが相手に届くステップ数 (発火ツモ数 + 1ステップ) < 相手が発火可能になるツモ数
+                // または 相手より早く攻撃を発火できる場合
+                if (!enemy_attacks.empty()) {
+                    const int my_first_ojama_step = best_attack.prepare_turns + 1;
+                    const int enemy_start_step = enemy_attacks[0].prepare_turns;
+
+                    if (enemy_start_step >= my_first_ojama_step || enemy_start_step > best_attack.prepare_turns) {
+                        effective_bias *= aw.timing_advantage_bias;
+                    }
+                } else {
+                    // 相手に即時発火可能な攻撃がない場合（完全無防備・催促チャンス）
+                    effective_bias *= aw.timing_advantage_bias;
                 }
             }
         }

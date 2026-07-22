@@ -258,6 +258,7 @@ class VsBeamSearchAgent(BasePlayerAgent):
 
         ctx = cfg.context
         ctx.enemy_field            = enemy.field
+        ctx.enemy_active_next_pos  = enemy.active_next_pos
         ctx.enemy_action_type      = enemy.current_action.action.type
         ctx.enemy_chain_count      = enemy.chain_count
         ctx.enemy_score            = enemy.score
