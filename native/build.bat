@@ -27,5 +27,9 @@ echo === Build (%MODE%) ===
 cmake --build "%BUILD_DIR%" --config %MODE% --parallel
 
 echo === Done (%MODE%) ===
+if exist "%~dp0dist\*.pyd" (
+    copy /Y "%~dp0dist\*.pyd" "%~dp0..\" >nul
+    copy /Y "%~dp0dist\*.pyd" "C:\Users\FMV\AppData\Local\Programs\Python\Python314\Lib\site-packages\" >nul
+)
 
 endlocal

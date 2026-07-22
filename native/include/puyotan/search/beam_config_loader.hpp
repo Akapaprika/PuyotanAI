@@ -82,6 +82,9 @@ class BeamConfigLoader {
         if (section.contains("dbs_max_similar") && section["dbs_max_similar"].is_number_integer())
             cfg.dbs_max_similar = section["dbs_max_similar"].get<int>();
 
+        if (section.contains("enable_attack_search") && section["enable_attack_search"].is_boolean())
+            cfg.enable_attack_search = section["enable_attack_search"].get<bool>();
+
         if (section.contains("eval_weights") && section["eval_weights"].is_object())
             applyPatch(cfg.eval_weights, section["eval_weights"]);
 
@@ -103,6 +106,9 @@ class BeamConfigLoader {
 
         if (section.contains("dbs_max_similar") && section["dbs_max_similar"].is_number_integer())
             cfg.dbs_max_similar = section["dbs_max_similar"].get<int>();
+
+        if (section.contains("enable_attack_search") && section["enable_attack_search"].is_boolean())
+            cfg.enable_attack_search = section["enable_attack_search"].get<bool>();
 
         if (section.contains("eval_weights") && section["eval_weights"].is_object())
             applyPatch(cfg.eval_weights, section["eval_weights"]);
@@ -148,6 +154,7 @@ class BeamConfigLoader {
         vs["beam_width"] = cfg.beam_width;
         vs["look_ahead"] = cfg.look_ahead;
         vs["dbs_max_similar"] = cfg.dbs_max_similar;
+        vs["enable_attack_search"] = cfg.enable_attack_search;
 
         auto& ew = vs["eval_weights"];
         const auto& w = cfg.eval_weights;
@@ -156,6 +163,8 @@ class BeamConfigLoader {
         ew["isolated_penalty"]        = w.isolated_penalty;
         ew["buried_penalty"]          = w.buried_penalty;
         ew["fire_bias"]               = w.fire_bias;
+        ew["incoming_ojama_penalty"]  = w.incoming_ojama_penalty;
+        ew["attack_advantage_bonus"]  = w.attack_advantage_bonus;
 
         std::ofstream ofs(path);
         ofs << j.dump(2);
@@ -180,6 +189,7 @@ class BeamConfigLoader {
         enemy["beam_width"] = cfg.beam_width;
         enemy["look_ahead"] = cfg.look_ahead;
         enemy["dbs_max_similar"] = cfg.dbs_max_similar;
+        enemy["enable_attack_search"] = cfg.enable_attack_search;
 
         auto& ew = enemy["eval_weights"];
         const auto& w = cfg.eval_weights;
@@ -188,6 +198,8 @@ class BeamConfigLoader {
         ew["isolated_penalty"]        = w.isolated_penalty;
         ew["buried_penalty"]          = w.buried_penalty;
         ew["fire_bias"]               = w.fire_bias;
+        ew["incoming_ojama_penalty"]  = w.incoming_ojama_penalty;
+        ew["attack_advantage_bonus"]  = w.attack_advantage_bonus;
 
         std::ofstream ofs(path);
         ofs << j.dump(2);
@@ -218,6 +230,8 @@ class BeamConfigLoader {
             else if (key == "isolated_penalty"         && val.is_number()) w.isolated_penalty         = val.get<float>();
             else if (key == "buried_penalty"           && val.is_number()) w.buried_penalty           = val.get<float>();
             else if (key == "fire_bias"                && val.is_number()) w.fire_bias                = val.get<float>();
+            else if (key == "incoming_ojama_penalty"  && val.is_number()) w.incoming_ojama_penalty  = val.get<float>();
+            else if (key == "attack_advantage_bonus"  && val.is_number()) w.attack_advantage_bonus  = val.get<float>();
         }
     }
 };

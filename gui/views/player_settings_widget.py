@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (
 
 from ..agents import (
     HumanPlayerAgent, EmptyPlayerAgent, BasePlayerAgent,
-    BeamSearchAgent, _CONFIG_PATH
+    BeamSearchAgent, VsBeamSearchAgent, _CONFIG_PATH
 )
 
 
@@ -46,7 +46,14 @@ class PlayerSettingsWidget(QWidget):
     #: Emitted with (player_id, new_agent) whenever the agent type or model changes.
     agent_changed = pyqtSignal(int, object)
 
-    _MODES = ["Human", "Beam Search (Player)", "Beam Search (Enemy)", "Empty (Solo)"]
+    _MODES = [
+        "Human",
+        "New AI (Attack ON)",
+        "Old AI (Attack OFF)",
+        "Beam Search (Player)",
+        "Beam Search (Enemy)",
+        "Empty (Solo)",
+    ]
 
     def __init__(self, player_id: int, allow_empty: bool = True, default_index: int = 0, parent=None):
         super().__init__(parent)
@@ -67,9 +74,9 @@ class PlayerSettingsWidget(QWidget):
         row1.addWidget(lbl)
 
         self._combo = QComboBox()
-        modes = self._MODES if allow_empty else self._MODES[:3]
+        modes = self._MODES if allow_empty else self._MODES[:5]
         self._combo.addItems(modes)
-        self._combo.setFixedWidth(130)
+        self._combo.setFixedWidth(160)
         if 0 <= default_index < len(modes):
             self._combo.setCurrentIndex(default_index)
         self._combo.currentIndexChanged.connect(self._on_mode_changed)
@@ -168,6 +175,10 @@ class PlayerSettingsWidget(QWidget):
 
         if mode == "Human":
             return HumanPlayerAgent(), None
+        if mode == "New AI (Attack ON)":
+            return VsBeamSearchAgent(enable_attack_search=True,  beam_width=width, look_ahead=depth, dbs_max_similar=dbs), None
+        if mode == "Old AI (Attack OFF)":
+            return VsBeamSearchAgent(enable_attack_search=False, beam_width=width, look_ahead=depth, dbs_max_similar=dbs), None
         if mode == "Beam Search (Player)":
             return BeamSearchAgent(beam_width=width, look_ahead=depth, dbs_max_similar=dbs, is_enemy=False), None
         if mode == "Beam Search (Enemy)":

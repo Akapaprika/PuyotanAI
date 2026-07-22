@@ -92,6 +92,7 @@ PYBIND11_MODULE(puyotan_native, m) {
 
     pybind11::class_<Tsumo>(m, "Tsumo")
         .def(pybind11::init<uint32_t>(), pybind11::arg("seed") = 0)
+        .def("clone", [](const Tsumo& t) { return Tsumo(t); })
         .def("get", &Tsumo::get)
         .def("setSeed", &Tsumo::setSeed)
         .def_property_readonly("seed", &Tsumo::getSeed);
@@ -114,10 +115,13 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("rotation", &Action::rotation);
 
     pybind11::class_<ActionState>(m, "ActionState")
+        .def(pybind11::init<>())
         .def_readwrite("action", &ActionState::action)
         .def_readwrite("remaining_frame", &ActionState::remaining_frame);
 
     pybind11::class_<PuyotanPlayer>(m, "PuyotanPlayer")
+        .def(pybind11::init<>())
+        .def("clone", [](const PuyotanPlayer& p) { return PuyotanPlayer(p); })
         .def_readwrite("field", &PuyotanPlayer::field)
         .def_readwrite("score", &PuyotanPlayer::score)
         .def_readwrite("used_score", &PuyotanPlayer::used_score)
@@ -177,7 +181,9 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("connectivity_bonus", &search::VsBeamEvalWeights::connectivity_bonus)
         .def_readwrite("isolated_penalty", &search::VsBeamEvalWeights::isolated_penalty)
         .def_readwrite("buried_penalty", &search::VsBeamEvalWeights::buried_penalty)
-        .def_readwrite("fire_bias", &search::VsBeamEvalWeights::fire_bias);
+        .def_readwrite("fire_bias", &search::VsBeamEvalWeights::fire_bias)
+        .def_readwrite("incoming_ojama_penalty", &search::VsBeamEvalWeights::incoming_ojama_penalty)
+        .def_readwrite("attack_advantage_bonus", &search::VsBeamEvalWeights::attack_advantage_bonus);
 
     pybind11::class_<search::SoloBeamEvalWeights>(m, "SoloBeamEvalWeights")
         .def(pybind11::init<>())
@@ -207,6 +213,7 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("beam_width", &search::VsBeamConfig::beam_width)
         .def_readwrite("look_ahead", &search::VsBeamConfig::look_ahead)
         .def_readwrite("dbs_max_similar", &search::VsBeamConfig::dbs_max_similar)
+        .def_readwrite("enable_attack_search", &search::VsBeamConfig::enable_attack_search)
         .def_readwrite("eval_weights", &search::VsBeamConfig::eval_weights)
         .def_readwrite("context", &search::VsBeamConfig::context);
 
@@ -327,5 +334,29 @@ PYBIND11_MODULE(puyotan_native, m) {
           pybind11::call_guard<pybind11::gil_scoped_release>(),
           "Simulate multiple VS matches in parallel using OpenMP. "
           "Returns list of MatchResult.");
+
+    // NOTE: player, tsumo, cfg are taken BY VALUE (not by reference).
+    // This ensures pybind11 copies all data into C++ stack variables BEFORE
+    // gil_scoped_release, eliminating the data race between the background
+    // search thread and the main thread advancing the match state.
+    m.def("vs_beam_search",
+          [](PuyotanPlayer player, Tsumo tsumo, search::VsBeamConfig cfg) {
+              pybind11::gil_scoped_release release;
+              return search::vsBeamSearch(player, tsumo, cfg);
+          },
+          pybind11::arg("player"), pybind11::arg("tsumo"), pybind11::arg("cfg"),
+          "Run VS beam search with a fully configured VsBeamConfig (including enable_attack_search). "
+          "Returns tuple of (RL action index, expected score).");
+
+    m.def("solo_beam_search",
+          [](PuyotanPlayer player, Tsumo tsumo, search::SoloBeamConfig cfg) {
+              pybind11::gil_scoped_release release;
+              return search::soloBeamSearch(player, tsumo, cfg);
+          },
+          pybind11::arg("player"), pybind11::arg("tsumo"), pybind11::arg("cfg"),
+          "Run Solo beam search with a fully configured SoloBeamConfig. "
+          "Returns tuple of (RL action index, expected score).");
+
+    m.def("test_version", []() { return 999; });
 }
 } // namespace puyotan

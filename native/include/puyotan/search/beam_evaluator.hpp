@@ -28,6 +28,24 @@ struct VsBeamEvalWeights {
     float isolated_penalty = -0.6f;
     float buried_penalty = -1.5f;
     float fire_bias = 1.0f;
+    float incoming_ojama_penalty = -2.0f;
+    float attack_advantage_bonus = 5.0f;
+};
+
+/**
+ * @struct VsEvalContext
+ * @brief Snapshot of the opponent's (and own) game state at the moment of an AI decision.
+ */
+struct VsEvalContext {
+    Board      enemy_field;                              // enemy board snapshot
+    ActionType enemy_action_type = ActionType::None;    // current action state
+    uint8_t    enemy_chain_count = 0;                   // resolved chain steps
+    int        enemy_score       = 0;                   // cumulative score
+    int        enemy_used_score  = 0;                   // score converted to ojama
+    uint16_t   enemy_active_ojama     = 0;              // ojama ready to fall
+    uint16_t   enemy_non_active_ojama = 0;              // ojama still cancelable
+    uint16_t   my_active_ojama        = 0;              // my ojama ready to fall
+    uint16_t   my_non_active_ojama    = 0;              // my ojama still cancelable
 };
 
 /**
@@ -111,7 +129,8 @@ class VsBeamEvaluator {
      */
     template <bool CalculatePotential = true>
     static float evaluate(const Board& board,
-                          const VsBeamEvalWeights& w) noexcept {
+                          const VsBeamEvalWeights& w,
+                          const VsEvalContext* ctx = nullptr) noexcept {
         float r = 0.0f;
 
         // --- Precompute all column heights once ---
@@ -180,6 +199,14 @@ class VsBeamEvaluator {
                 int buried =
                     static_cast<int>(std::popcount(b_lo) + std::popcount(b_hi));
                 r += static_cast<float>(buried) * w.buried_penalty;
+            }
+        }
+
+        // --- Context Awareness (Incoming Ojama & Threat Level) ---
+        if (ctx != nullptr) {
+            const int total_incoming = ctx->my_active_ojama + ctx->my_non_active_ojama;
+            if (total_incoming > 0) {
+                r += static_cast<float>(total_incoming) * w.incoming_ojama_penalty;
             }
         }
 

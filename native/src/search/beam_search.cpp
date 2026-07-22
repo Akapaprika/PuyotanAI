@@ -4,6 +4,7 @@
 #include <puyotan/core/chain.hpp>
 #include <puyotan/core/gravity.hpp>
 #include <puyotan/engine/tsumo.hpp>
+#include <puyotan/search/attack_finder.hpp>
 #include <puyotan/search/beam_search.hpp>
 #include <vector>
 #include <unordered_map>
@@ -212,7 +213,12 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                 if (pr.dead)
                     continue;
 
-                float eval = EvaluatorType::evaluate(pr.field, cfg.eval_weights);
+                float eval = 0.0f;
+                if constexpr (HasFireBias) {
+                    eval = EvaluatorType::evaluate(pr.field, cfg.eval_weights, &cfg.context);
+                } else {
+                    eval = EvaluatorType::evaluate(pr.field, cfg.eval_weights);
+                }
                 float next_accum =
                     node.accum_score + static_cast<float>(pr.score);
                 float total_score =
@@ -280,9 +286,37 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
     // Fire-vs-beam decision (VS mode only):
     // -----------------------------------------------------------------------
     if constexpr (HasFireBias) {
+        float effective_bias = cfg.eval_weights.fire_bias;
+
+        // Context & Attack Candidates awareness for VS mode
+        if (cfg.enable_attack_search) {
+            const int total_incoming = cfg.context.my_active_ojama + cfg.context.my_non_active_ojama;
+            if (total_incoming > 0) {
+                // High threat: increase urgency to counter-fire or offset incoming ojama
+                effective_bias *= 1.5f;
+            }
+
+            // Collect time-series attack candidates up to look_ahead depth (capped at 3 for speed and memory safety)
+            auto my_attacks = collectAttackCandidates(player.field, tsumo, player.active_next_pos, std::min(cfg.look_ahead, 3));
+            if (!my_attacks.empty()) {
+                const auto& best_attack = my_attacks[0];
+                // Convert score to ojama points (70 points per ojama)
+                int attack_ojama = best_attack.score / config::Score::kTargetScore;
+
+                // Check if attack can counter/offset incoming ojama or overwhelm undefended enemy
+                if (total_incoming > 0 && attack_ojama >= total_incoming / 2) {
+                    effective_bias *= 1.4f;
+                } else if (cfg.context.enemy_action_type != ActionType::Chain && 
+                           cfg.context.enemy_action_type != ActionType::ChainFall &&
+                           attack_ojama >= 30) { // Fast lethal attack against non-chaining enemy
+                    effective_bias *= 1.25f;
+                }
+            }
+        }
+
         if (fire_best_action >= 0 && !tl_current_beam.empty()) {
             const float beam_score = tl_current_beam[0].score;
-            if (fire_best_score * cfg.eval_weights.fire_bias > beam_score) {
+            if (fire_best_score * effective_bias > beam_score) {
                 return {fire_best_action, fire_best_score};
             }
         }
