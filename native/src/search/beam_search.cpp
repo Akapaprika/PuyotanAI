@@ -180,13 +180,15 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                 effective_bias *= aw.incoming_threat_bias;
             }
 
-            auto my_attacks = collectAttackCandidates(player.field, tsumo, player.active_next_pos, std::min(cfg.look_ahead, 3));
-            auto enemy_attacks = collectAttackCandidates(cfg.context.enemy_field, tsumo, cfg.context.enemy_active_next_pos, std::min(cfg.look_ahead, 3));
+            auto my_attacks = collectAttackCandidates(player.field, tsumo, player.active_next_pos, std::min(cfg.look_ahead, 6));
+            auto enemy_attacks = collectAttackCandidates(cfg.context.enemy_field, tsumo, cfg.context.enemy_active_next_pos, std::min(cfg.look_ahead, 6));
 
             if (!enemy_attacks.empty()) {
                 const_cast<VsEvalContext&>(cfg.context).enemy_best_attack_score = enemy_attacks[0].score;
+                const_cast<VsEvalContext&>(cfg.context).enemy_prepare_turns = enemy_attacks[0].prepare_turns;
             } else {
                 const_cast<VsEvalContext&>(cfg.context).enemy_best_attack_score = 0;
+                const_cast<VsEvalContext&>(cfg.context).enemy_prepare_turns = 99;
             }
 
             if (!my_attacks.empty()) {

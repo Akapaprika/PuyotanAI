@@ -24,7 +24,7 @@ struct SoloBeamEvalWeights {
  */
 struct VsBeamEvalWeights {
     float potential_score_scale = 1.0f;
-    float connectivity_bonus = 0.4f;
+    float connectivity_bonus = 0.0f;
     float isolated_penalty = -0.6f;
     float buried_penalty = -1.5f;
     float fire_bias = 1.0f;
@@ -76,6 +76,7 @@ struct VsEvalContext {
     int        enemy_score       = 0;                   // cumulative score
     int        enemy_used_score  = 0;                   // score converted to ojama
     int        enemy_best_attack_score = 0;             // enemy best immediate attack score
+    int        enemy_prepare_turns     = 99;            // enemy turns needed to fire best attack
     uint16_t   enemy_active_ojama     = 0;              // ojama ready to fall
     uint16_t   enemy_non_active_ojama = 0;              // ojama still cancelable
     uint16_t   my_active_ojama        = 0;              // my ojama ready to fall
@@ -284,8 +285,22 @@ class VsBeamEvaluator {
                                         : max_pot_score;
                 }
             }
-            r +=
-                static_cast<float>(max_pot_score) * w.potential_score_scale;
+
+            // --- Net VS Score with Timing Window ---
+            // Evaluate net attack advantage scaled by timing window compatibility.
+            // If enemy has an active threat, compare our immediate/potential score against enemy's threat level.
+            float net_score_bonus = static_cast<float>(max_pot_score);
+            if (ctx != nullptr && ctx->enemy_best_attack_score > 0) {
+                // Net score = My Potential - Enemy Potential (Scaled by relative readiness)
+                int effective_enemy_score = ctx->enemy_best_attack_score;
+                // If enemy needs more prepare turns than 1, discount enemy's immediate threat for current turn
+                if (ctx->enemy_prepare_turns > 1) {
+                    effective_enemy_score = static_cast<int>(effective_enemy_score * (1.0f / ctx->enemy_prepare_turns));
+                }
+                net_score_bonus = static_cast<float>(max_pot_score - effective_enemy_score);
+            }
+
+            r += net_score_bonus * w.potential_score_scale;
 
             // --- Dynamic Sub-chain Readiness Bonus ---
             // If opponent has potential attacks (or default minimum), award bonus proportional

@@ -206,6 +206,7 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("enemy_score",            &search::VsEvalContext::enemy_score)
         .def_readwrite("enemy_used_score",       &search::VsEvalContext::enemy_used_score)
         .def_readwrite("enemy_best_attack_score",&search::VsEvalContext::enemy_best_attack_score)
+        .def_readwrite("enemy_prepare_turns",    &search::VsEvalContext::enemy_prepare_turns)
         .def_readwrite("enemy_active_ojama",     &search::VsEvalContext::enemy_active_ojama)
         .def_readwrite("enemy_non_active_ojama", &search::VsEvalContext::enemy_non_active_ojama)
         .def_readwrite("my_active_ojama",        &search::VsEvalContext::my_active_ojama)

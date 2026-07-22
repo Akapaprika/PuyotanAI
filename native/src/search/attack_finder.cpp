@@ -82,8 +82,8 @@ std::vector<AttackCandidate> collectAttackCandidates(
     int max_depth
 ) noexcept {
     // Safety cap: Exhaustive search tree grows by ~22x per depth level.
-    // Cap max_depth to 3 (at most ~10k nodes) to guarantee fast execution and zero OOM risk.
-    max_depth = std::min(max_depth, 3);
+    // Cap max_depth to 4 (at most ~230k nodes) to guarantee instant execution and zero OOM risk.
+    max_depth = std::min(max_depth, 4);
 
     std::vector<AttackCandidate> candidates;
     candidates.reserve(64);
