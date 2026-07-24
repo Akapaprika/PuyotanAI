@@ -15,13 +15,11 @@ def run_no_connectivity_experiment(beam_width=3000, look_ahead=10, num_games=20)
     p1_cfg.enable_attack_search = True
     p1_cfg.beam_width = beam_width
     p1_cfg.look_ahead = look_ahead
-    p1_cfg.eval_weights.connectivity_bonus = 0.0
 
     p2_cfg = puyotan.load_vs_config(config_path)
     p2_cfg.enable_attack_search = False
     p2_cfg.beam_width = beam_width
     p2_cfg.look_ahead = look_ahead
-    p2_cfg.eval_weights.connectivity_bonus = 0.0
 
     seeds = [i + 1 for i in range(num_games)]
 

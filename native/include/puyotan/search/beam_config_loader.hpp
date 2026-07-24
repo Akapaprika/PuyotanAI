@@ -159,9 +159,6 @@ class BeamConfigLoader {
         auto& ew = vs["eval_weights"];
         const auto& w = cfg.eval_weights;
         ew["potential_score_scale"]   = w.potential_score_scale;
-        ew["connectivity_bonus"]      = w.connectivity_bonus;
-        ew["isolated_penalty"]        = w.isolated_penalty;
-        ew["buried_penalty"]          = w.buried_penalty;
         ew["fire_bias"]               = w.fire_bias;
         ew["incoming_ojama_penalty"]  = w.incoming_ojama_penalty;
         ew["attack_advantage_bonus"]  = w.attack_advantage_bonus;
@@ -194,9 +191,6 @@ class BeamConfigLoader {
         auto& ew = enemy["eval_weights"];
         const auto& w = cfg.eval_weights;
         ew["potential_score_scale"]   = w.potential_score_scale;
-        ew["connectivity_bonus"]      = w.connectivity_bonus;
-        ew["isolated_penalty"]        = w.isolated_penalty;
-        ew["buried_penalty"]          = w.buried_penalty;
         ew["fire_bias"]               = w.fire_bias;
         ew["incoming_ojama_penalty"]  = w.incoming_ojama_penalty;
         ew["attack_advantage_bonus"]  = w.attack_advantage_bonus;
@@ -226,20 +220,12 @@ class BeamConfigLoader {
         for (auto& [key, val] : patch.items()) {
             if (key.starts_with("_comment")) continue;
             if      (key == "potential_score_scale"   && val.is_number()) w.potential_score_scale   = val.get<float>();
-            else if (key == "connectivity_bonus"       && val.is_number()) w.connectivity_bonus       = val.get<float>();
-            else if (key == "isolated_penalty"         && val.is_number()) w.isolated_penalty         = val.get<float>();
-            else if (key == "buried_penalty"           && val.is_number()) w.buried_penalty           = val.get<float>();
             else if (key == "fire_bias"                && val.is_number()) w.fire_bias                = val.get<float>();
             else if (key == "incoming_ojama_penalty"   && val.is_number()) w.incoming_ojama_penalty   = val.get<float>();
             else if (key == "attack_advantage_bonus"   && val.is_number()) w.attack_advantage_bonus   = val.get<float>();
             else if (key == "incoming_threat_bias"     && val.is_number()) w.incoming_threat_bias     = val.get<float>();
             else if (key == "counter_attack_bias"      && val.is_number()) w.counter_attack_bias      = val.get<float>();
-            else if (key == "lethal_attack_bias"       && val.is_number()) w.lethal_attack_bias       = val.get<float>();
-            else if (key == "lethal_ojama_threshold"   && val.is_number_integer()) w.lethal_ojama_threshold = val.get<int>();
-            else if (key == "counter_ratio"            && val.is_number()) w.counter_ratio            = val.get<float>();
             else if (key == "timing_advantage_bias"    && val.is_number()) w.timing_advantage_bias    = val.get<float>();
-            else if (key == "sub_chain_readiness_bonus"&& val.is_number()) w.sub_chain_readiness_bonus= val.get<float>();
-            else if (key == "sub_chain_counter_ratio"  && val.is_number()) w.sub_chain_counter_ratio  = val.get<float>();
             else if (key == "urgency_weight"           && val.is_number()) w.urgency_weight           = val.get<float>();
             else if (key == "lethal_danger_scale"      && val.is_number()) w.lethal_danger_scale      = val.get<float>();
             else if (key == "effective_strike_multiplier" && val.is_number()) w.effective_strike_multiplier = val.get<float>();

@@ -178,20 +178,15 @@ PYBIND11_MODULE(puyotan_native, m) {
     pybind11::class_<search::VsBeamEvalWeights>(m, "BeamEvalWeights")
         .def(pybind11::init<>())
         .def_readwrite("potential_score_scale", &search::VsBeamEvalWeights::potential_score_scale)
-        .def_readwrite("connectivity_bonus", &search::VsBeamEvalWeights::connectivity_bonus)
-        .def_readwrite("isolated_penalty", &search::VsBeamEvalWeights::isolated_penalty)
-        .def_readwrite("buried_penalty", &search::VsBeamEvalWeights::buried_penalty)
         .def_readwrite("fire_bias", &search::VsBeamEvalWeights::fire_bias)
         .def_readwrite("incoming_ojama_penalty", &search::VsBeamEvalWeights::incoming_ojama_penalty)
         .def_readwrite("attack_advantage_bonus", &search::VsBeamEvalWeights::attack_advantage_bonus)
         .def_readwrite("incoming_threat_bias",   &search::VsBeamEvalWeights::incoming_threat_bias)
         .def_readwrite("counter_attack_bias",    &search::VsBeamEvalWeights::counter_attack_bias)
-        .def_readwrite("lethal_attack_bias",     &search::VsBeamEvalWeights::lethal_attack_bias)
-        .def_readwrite("lethal_ojama_threshold", &search::VsBeamEvalWeights::lethal_ojama_threshold)
-        .def_readwrite("counter_ratio",          &search::VsBeamEvalWeights::counter_ratio)
         .def_readwrite("timing_advantage_bias",   &search::VsBeamEvalWeights::timing_advantage_bias)
-        .def_readwrite("sub_chain_readiness_bonus", &search::VsBeamEvalWeights::sub_chain_readiness_bonus)
-        .def_readwrite("sub_chain_counter_ratio",   &search::VsBeamEvalWeights::sub_chain_counter_ratio);
+        .def_readwrite("urgency_weight",          &search::VsBeamEvalWeights::urgency_weight)
+        .def_readwrite("lethal_danger_scale",     &search::VsBeamEvalWeights::lethal_danger_scale)
+        .def_readwrite("effective_strike_multiplier", &search::VsBeamEvalWeights::effective_strike_multiplier);
 
     pybind11::class_<search::SoloBeamEvalWeights>(m, "SoloBeamEvalWeights")
         .def(pybind11::init<>())

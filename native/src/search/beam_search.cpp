@@ -185,14 +185,16 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
 
             if (!enemy_attacks.empty()) {
                 const_cast<VsEvalContext&>(cfg.context).enemy_best_attack_score = enemy_attacks[0].score;
-                const_cast<VsEvalContext&>(cfg.context).enemy_prepare_turns = enemy_attacks[0].prepare_turns;
 
+                int min_prep = 99;
                 int enemy_w4 = 0;
                 for (const auto& atk : enemy_attacks) {
+                    min_prep = std::min(min_prep, atk.prepare_turns);
                     if (atk.prepare_turns <= 4) {
                         enemy_w4 = std::max(enemy_w4, atk.score);
                     }
                 }
+                const_cast<VsEvalContext&>(cfg.context).enemy_prepare_turns = min_prep;
                 const_cast<VsEvalContext&>(cfg.context).enemy_best_within_4 = enemy_w4;
             } else {
                 const_cast<VsEvalContext&>(cfg.context).enemy_best_attack_score = 0;
@@ -212,29 +214,26 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                 const auto& best_attack = my_attacks[0];
                 int attack_ojama = best_attack.score / config::Score::kTargetScore;
 
-                // 1. 【対応（カウンター相殺）判定】
-                // 相手からの予告おじゃまを相殺できる十分な攻撃がある場合
-                if (total_incoming > 0 &&
-                    attack_ojama >= static_cast<int>(total_incoming / aw.counter_ratio)) {
-                    effective_bias *= aw.counter_attack_bias;
-                }
-                // 相手が無防備で致死攻撃を送れる場合
-                else if (cfg.context.enemy_action_type != ActionType::Chain &&
-                         cfg.context.enemy_action_type != ActionType::ChainFall &&
-                         attack_ojama >= aw.lethal_ojama_threshold) {
-                    effective_bias *= aw.lethal_attack_bias;
+                // 1. 【動的カウンターバイアス（シグモイド関数による100%相殺付近の手厚い評価）】
+                // ratio = attack_ojama / total_incoming
+                // シグモイド中心をratio=1.0に設定し、100%相殺到達でフルボーナス(counter_attack_bias)が飽和
+                // → 50%相殺では微小な補助、90%付近から急激に増加、100%以上で最大値固定
+                if (total_incoming > 0) {
+                    const float ratio = static_cast<float>(attack_ojama) / static_cast<float>(std::max(1, total_incoming));
+                    const float sig = 1.0f / (1.0f + std::exp(-10.0f * (ratio - 1.0f)));
+                    const float counter_scale = std::min(sig * 2.0f, 1.0f);
+                    effective_bias *= (1.0f + (aw.counter_attack_bias - 1.0f) * counter_scale);
                 }
 
-                // 2. 【催促（ハラス）判定】
-                if (!enemy_attacks.empty()) {
-                    const int my_first_ojama_step = best_attack.prepare_turns + 1;
-                    const int enemy_start_step = enemy_attacks[0].prepare_turns;
-
-                    if (enemy_start_step >= my_first_ojama_step || enemy_start_step > best_attack.prepare_turns) {
+                // 2. 【真の猶予優位（後出し相殺封殺）判定】
+                // こちらの着弾完了ターン (prepare_turns + chain_count) < 相手の発火開始ターン (enemy_prepare_turns)
+                // enemy_attacks が空の場合は enemy_prepare_turns = 99 にセット済みなので、
+                // 無条件で比較するだけで「相手無防備 → 常に猶予優位」を正しく表現できる。
+                {
+                    const int my_landing_turns = best_attack.prepare_turns + best_attack.chain_count;
+                    if (my_landing_turns < cfg.context.enemy_prepare_turns) {
                         effective_bias *= aw.timing_advantage_bias;
                     }
-                } else {
-                    effective_bias *= aw.timing_advantage_bias;
                 }
             } else {
                 const_cast<VsEvalContext&>(cfg.context).my_best_within_4 = 0;

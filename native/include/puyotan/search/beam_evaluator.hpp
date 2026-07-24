@@ -24,52 +24,18 @@ struct SoloBeamEvalWeights {
  */
 struct VsBeamEvalWeights {
     float potential_score_scale = 1.0f;
-    float connectivity_bonus = 0.0f;
-    float isolated_penalty = -0.6f;
-    float buried_penalty = -1.5f;
-    float fire_bias = 1.0f;
-    float incoming_ojama_penalty = -2.0f;
-    float attack_advantage_bonus = 5.0f;
+    float fire_bias               = 1.0f;
+    float incoming_ojama_penalty  = -2.0f;
+    float attack_advantage_bonus  = 5.0f;
 
-    // --- Attack Search Bias Multipliers ---
-    // Applied dynamically on top of fire_bias when enable_attack_search = true.
-
-    /// Multiplier applied to fire_bias when any incoming ojama (active or non-active) is present.
+    // --- Dynamic Attack Search Bias Multipliers ---
     float incoming_threat_bias    = 1.5f;
-
-    /// Additional multiplier when a detected attack can offset at least (1/counter_ratio) of
-    /// incoming ojama (counter-fire scenario). Applied on top of incoming_threat_bias.
     float counter_attack_bias     = 1.4f;
-
-    /// Multiplier applied when no incoming ojama is present but a lethal-level attack
-    /// (>= lethal_ojama_threshold ojama) can be launched against a non-chaining enemy.
-    float lethal_attack_bias      = 1.25f;
-
-    /// Minimum number of ojama in a single attack to be considered "lethal" for the
-    /// lethal_attack_bias path. Tune up for a more conservative AI, down for aggressive.
-    int   lethal_ojama_threshold  = 30;
-
-    /// Denominator for the counter-fire threshold check.
-    /// attack_ojama >= total_incoming / counter_ratio triggers counter_attack_bias.
-    /// Default 2.0 means "at least half the incoming ojama can be offset".
-    float counter_ratio           = 2.0f;
-
-    /// Multiplier applied when player has timing advantage (can fire earlier than opponent).
     float timing_advantage_bias   = 1.2f;
 
-    /// Flat bonus applied when maintaining a ready sub-chain scaled to enemy's attack score.
-    float sub_chain_readiness_bonus = 500.0f;
-
-    /// Denominator for target sub-chain score needed relative to enemy best attack score.
-    float sub_chain_counter_ratio   = 2.0f;
-
-    /// Urgency compression weight for potential_score_scale (0.0: off, 0.8: standard dynamic compression).
+    // --- Dynamic Evaluation Parameters ---
     float urgency_weight            = 0.8f;
-
-    /// Lethal danger penalty scale when my board is threatened with immediate suffocation.
     float lethal_danger_scale       = 1.0f;
-
-    /// Multiplier applied to net_score when firing an attack that breaks enemy max counter by >= 2 lines (12 ojama).
     float effective_strike_multiplier = 1.5f;
 };
 
@@ -94,72 +60,69 @@ struct VsEvalContext {
     uint16_t   my_non_active_ojama    = 0;              // my ojama still cancelable
 };
 
+// ---------------------------------------------------------------------------
+// Shared helper: compute the maximum potential chain score for a board.
+// Used by both SoloBeamEvaluator and VsBeamEvaluator to avoid code duplication.
+// ---------------------------------------------------------------------------
+[[nodiscard]] inline int computeMaxPotentialScore(
+    const Board& board, const int heights[config::Board::kWidth]) noexcept {
+    int max_pot_score = 0;
+    for (int x = 0; x < config::Board::kWidth; ++x) {
+        const int h = heights[x];
+        if (h >= config::Board::kChainableRows)
+            continue;
+
+        for (int c = 0; c < config::Rule::kColors; ++c) {
+            const BitBoard& bb = board.getBitboard(static_cast<Cell>(c));
+            const BitBoard neighbor =
+                bb.shiftUpRaw() | bb.shiftDownRaw() |
+                bb.shiftLeftRaw() | bb.shiftRightRaw();
+            if (!neighbor.get(x, h))
+                continue;
+
+            Board temp = board;
+            temp.dropNewPiece(x, h, static_cast<Cell>(c));
+
+            ErasureData ed;
+            Chain::scanGroups(temp, ed, 1u << c);
+            if (ed.num_erased == 0)
+                continue;
+
+            int pot_chain = 0, pot_score = 0;
+            while (ed.num_erased > 0) {
+                ++pot_chain;
+                pot_score += Scorer::calculateStepScore(ed, pot_chain);
+                Chain::applyErasure(temp, ed);
+                uint32_t fallen = Gravity::execute(temp);
+                Chain::scanGroups(temp, ed, fallen);
+            }
+            max_pot_score = (pot_score > max_pot_score) ? pot_score : max_pot_score;
+        }
+    }
+    return max_pot_score;
+}
+
 /**
  * @class SoloBeamEvaluator
  * @brief Stateless board scorer for use inside solo beam search.
  */
 class SoloBeamEvaluator {
   public:
-    /**
-     * @brief Evaluate a board state and return a heuristic score for Solo mode.
-     */
+    template <bool CalculatePotential = true>
     static float evaluate(const Board& board,
                           const SoloBeamEvalWeights& w) noexcept {
         float r = 0.0f;
-
-        // --- Precompute all column heights once ---
-        int heights[config::Board::kWidth];
-        {
-            const uint64_t lo = board.getOccupied().lo;
-            const uint64_t hi = board.getOccupied().hi;
-            heights[0] = static_cast<int>(_mm_popcnt_u64((lo >> 0) & 0xFFFFu));
-            heights[1] = static_cast<int>(_mm_popcnt_u64((lo >> 16) & 0xFFFFu));
-            heights[2] = static_cast<int>(_mm_popcnt_u64((lo >> 32) & 0xFFFFu));
-            heights[3] = static_cast<int>(_mm_popcnt_u64((lo >> 48) & 0xFFFFu));
-            heights[4] = static_cast<int>(_mm_popcnt_u64((hi >> 0) & 0xFFFFu));
-            heights[5] = static_cast<int>(_mm_popcnt_u64((hi >> 16) & 0xFFFFu));
+        if constexpr (CalculatePotential) {
+            const BitBoard& occ = board.getOccupied();
+            int heights[config::Board::kWidth];
+            heights[0] = static_cast<int>(_mm_popcnt_u64((occ.lo >> 0) & 0xFFFFu));
+            heights[1] = static_cast<int>(_mm_popcnt_u64((occ.lo >> 16) & 0xFFFFu));
+            heights[2] = static_cast<int>(_mm_popcnt_u64((occ.lo >> 32) & 0xFFFFu));
+            heights[3] = static_cast<int>(_mm_popcnt_u64((occ.lo >> 48) & 0xFFFFu));
+            heights[4] = static_cast<int>(_mm_popcnt_u64((occ.hi >> 0) & 0xFFFFu));
+            heights[5] = static_cast<int>(_mm_popcnt_u64((occ.hi >> 16) & 0xFFFFu));
+            r += static_cast<float>(computeMaxPotentialScore(board, heights)) * w.potential_score_scale;
         }
-
-        // --- Potential chain score ---
-        int max_pot_score = 0;
-        for (int x = 0; x < config::Board::kWidth; ++x) {
-            const int h = heights[x];
-            if (h >= config::Board::kChainableRows)
-                continue;
-
-            for (int c = 0; c < config::Rule::kColors; ++c) {
-                const BitBoard& bb =
-                    board.getBitboard(static_cast<Cell>(c));
-                const BitBoard neighbor =
-                    bb.shiftUpRaw() | bb.shiftDownRaw() |
-                    bb.shiftLeftRaw() | bb.shiftRightRaw();
-                if (!neighbor.get(x, h))
-                    continue;
-
-                Board temp = board;
-                temp.dropNewPiece(x, h, static_cast<Cell>(c));
-
-                ErasureData ed;
-                Chain::scanGroups(temp, ed, 1u << c);
-                if (ed.num_erased == 0)
-                    continue;
-
-                int pot_chain = 0, pot_score = 0;
-                while (ed.num_erased > 0) {
-                    ++pot_chain;
-                    pot_score +=
-                        Scorer::calculateStepScore(ed, pot_chain);
-                    Chain::applyErasure(temp, ed);
-                    uint32_t fallen = Gravity::execute(temp);
-                    Chain::scanGroups(temp, ed, fallen);
-                }
-                max_pot_score = (pot_score > max_pot_score)
-                                    ? pot_score
-                                    : max_pot_score;
-            }
-        }
-        r += static_cast<float>(max_pot_score) * w.potential_score_scale;
-
         return r;
     }
 };
@@ -179,7 +142,7 @@ class VsBeamEvaluator {
                           const VsEvalContext* ctx = nullptr) noexcept {
         float r = 0.0f;
 
-        // --- Precompute all column heights once ---
+        // --- Precompute column heights ---
         int heights[config::Board::kWidth];
         {
             const uint64_t lo = board.getOccupied().lo;
@@ -192,63 +155,9 @@ class VsBeamEvaluator {
             heights[5] = static_cast<int>(_mm_popcnt_u64((hi >> 16) & 0xFFFFu));
         }
 
-        // --- Board metrics (BitBoard-level, branchless) ---
-        {
-            int conn = 0, iso = 0;
-            for (int c = 0; c < config::Rule::kColors; ++c) {
-                const BitBoard& bb = board.getBitboard(static_cast<Cell>(c));
-                if (bb.empty())
-                    continue;
-
-                const BitBoard U = bb.shiftUpRaw();
-                const BitBoard D = bb.shiftDownRaw();
-                const BitBoard L = bb.shiftLeftRaw();
-                const BitBoard R = bb.shiftRightRaw();
-
-                const BitBoard UD = U | D;
-                const BitBoard LR = L | R;
-
-                // Puyos with >= 2 same-color neighbors
-                const BitBoard has2 =
-                    bb & ((U & D) | (L & R) | (UD & LR));
-                conn += has2.popcount();
-
-                // Isolated: no same-color neighbors
-                BitBoard iso_bb = bb;
-                iso_bb.andNot(UD | LR);
-                iso += iso_bb.popcount();
-            }
-
-            r += static_cast<float>(conn) * w.connectivity_bonus;
-            r += static_cast<float>(iso) * w.isolated_penalty;
-        }
-
-        // --- Buried puyo count (colored puyos beneath any ojama shadow) ---
-        {
-            const BitBoard& oj = board.getBitboard(Cell::Ojama);
-            if (!oj.empty()) {
-                // In-register SIMD downward shadow smearing (eliminates STLF stalls)
-                __m128i s_reg = oj.m128;
-                s_reg = _mm_or_si128(s_reg, _mm_srli_epi64(s_reg, 1));
-                s_reg = _mm_or_si128(s_reg, _mm_srli_epi64(s_reg, 2));
-                s_reg = _mm_or_si128(s_reg, _mm_srli_epi64(s_reg, 4));
-                s_reg = _mm_or_si128(s_reg, _mm_srli_epi64(s_reg, 8));
-
-                // Combine all colored boards using parallel register ANDNOT (Occupied & ~Ojama)
-                __m128i all_colored = _mm_andnot_si128(oj.m128, board.getOccupied().m128);
-
-                __m128i buried_reg = _mm_and_si128(all_colored, s_reg);
-
-                // Direct register extraction to avoid any memory-store penalties
-                uint64_t b_lo = _mm_cvtsi128_si64(buried_reg);
-                uint64_t b_hi = _mm_extract_epi64(buried_reg, 1);
-                int buried =
-                    static_cast<int>(std::popcount(b_lo) + std::popcount(b_hi));
-                r += static_cast<float>(buried) * w.buried_penalty;
-            }
-        }
-
         // --- Context Awareness & Block E: Lethal Danger Penalty ---
+        // heights[] is already computed above; sum them instead of calling getOccupied() again.
+        const int my_occupied = heights[0]+heights[1]+heights[2]+heights[3]+heights[4]+heights[5];
         if (ctx != nullptr) {
             const int total_incoming = ctx->my_active_ojama + ctx->my_non_active_ojama;
             if (total_incoming > 0) {
@@ -256,9 +165,6 @@ class VsBeamEvaluator {
             }
 
             // Block E: Lethal Danger Penalty (Suffocation Check)
-            // If enemy's immediate threat can send enough ojama to overflow my open board space
-            const int my_occupied = static_cast<int>(std::popcount(board.getOccupied().m128.m128i_u64[0]) +
-                                                     std::popcount(board.getOccupied().m128.m128i_u64[1]));
             const int my_open_cells = 72 - my_occupied - total_incoming;
             const int enemy_ojama_potential = ctx->enemy_best_attack_score / config::Score::kTargetScore;
 
@@ -269,48 +175,11 @@ class VsBeamEvaluator {
 
         // --- Potential chain score with Block C (Urgency Scale) ---
         if constexpr (CalculatePotential) {
-            int max_pot_score = 0;
-            for (int x = 0; x < config::Board::kWidth; ++x) {
-                const int h = heights[x]; // cached
-                if (h >= config::Board::kChainableRows)
-                    continue;
-
-                for (int c = 0; c < config::Rule::kColors; ++c) {
-                    const BitBoard& bb =
-                        board.getBitboard(static_cast<Cell>(c));
-                    // SIMD neighbor mask: 4 shifts replace 3 conditional bb.get() calls.
-                    const BitBoard neighbor =
-                        bb.shiftUpRaw() | bb.shiftDownRaw() |
-                        bb.shiftLeftRaw() | bb.shiftRightRaw();
-                    if (!neighbor.get(x, h))
-                        continue;
-
-                    Board temp = board;
-                    temp.dropNewPiece(x, h, static_cast<Cell>(c));
-
-                    ErasureData ed;
-                    Chain::scanGroups(temp, ed, 1u << c);
-                    if (ed.num_erased == 0)
-                        continue;
-
-                    int pot_chain = 0, pot_score = 0;
-                    while (ed.num_erased > 0) {
-                        ++pot_chain;
-                        pot_score +=
-                            Scorer::calculateStepScore(ed, pot_chain);
-                        Chain::applyErasure(temp, ed);
-                        uint32_t fallen = Gravity::execute(temp);
-                        Chain::scanGroups(temp, ed, fallen);
-                    }
-                    max_pot_score = (pot_score > max_pot_score)
-                                        ? pot_score
-                                        : max_pot_score;
-                }
-            }
+            const int max_pot_score = computeMaxPotentialScore(board, heights);
 
             // --- Block C: Dynamic Urgency Scale ---
             // Compress potential_score_scale when enemy is close to firing,
-            // promoting immediate sub-chains and immediate counter-attacks to top of beam.
+            // promoting immediate sub-chains and counter-attacks to top of beam.
             float effective_pot_scale = w.potential_score_scale;
             if (ctx != nullptr && ctx->enemy_prepare_turns < 99) {
                 const float urgency = std::min(1.0f, 1.0f / static_cast<float>(std::max(1, ctx->enemy_prepare_turns)));
