@@ -176,12 +176,22 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
         if (cfg.enable_attack_search) {
             const auto& aw = cfg.eval_weights;
             const int total_incoming = cfg.context.my_active_ojama + cfg.context.my_non_active_ojama;
-            if (total_incoming > 0) {
-                effective_bias *= aw.incoming_threat_bias;
+            // 相手側の攻撃探索：3ツモ固定で高速化
+            auto enemy_attacks = collectAttackCandidates(cfg.context.enemy_field, tsumo, cfg.context.enemy_active_next_pos, 3, 150);
+
+            // 自分側の攻撃探索：相手の連鎖状態・予告量に応じた動的なツモ範囲を設定
+            int my_depth = 3;
+            if (cfg.context.enemy_action_type == ActionType::Chain ||
+                cfg.context.enemy_action_type == ActionType::ChainFall) {
+                // 相手連鎖アニメ中：相手の連鎖ステップ数から猶予フレーム・ツモ数を動的計算（最大5ツモまで拡張）
+                const int grace_frames = static_cast<int>(cfg.context.enemy_chain_count) * 3;
+                my_depth = std::clamp((grace_frames + 1) / 2, 2, 5);
+            } else if (total_incoming > 0) {
+                // 予告おじゃま着弾直前：1〜2ツモの即時対応
+                my_depth = 2;
             }
 
-            auto my_attacks = collectAttackCandidates(player.field, tsumo, player.active_next_pos, std::min(cfg.look_ahead, 6));
-            auto enemy_attacks = collectAttackCandidates(cfg.context.enemy_field, tsumo, cfg.context.enemy_active_next_pos, std::min(cfg.look_ahead, 6));
+            auto my_attacks = collectAttackCandidates(player.field, tsumo, player.active_next_pos, my_depth, 250);
 
             if (!enemy_attacks.empty()) {
                 const_cast<VsEvalContext&>(cfg.context).enemy_best_attack_score = enemy_attacks[0].score;

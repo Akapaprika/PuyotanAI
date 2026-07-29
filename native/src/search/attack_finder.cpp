@@ -4,6 +4,7 @@
 #include <puyotan/engine/scorer.hpp>
 #include <algorithm>
 #include <queue>
+#include <unordered_map>
 
 namespace puyotan::search {
 
@@ -79,11 +80,11 @@ std::vector<AttackCandidate> collectAttackCandidates(
     const Board& field,
     const Tsumo& tsumo,
     int tsumo_base,
-    int max_depth
+    int max_depth,
+    int max_states_per_layer
 ) noexcept {
-    // Safety cap: Exhaustive search tree grows by ~22x per depth level.
-    // Cap max_depth to 4 (at most ~230k nodes) to guarantee instant execution and zero OOM risk.
-    max_depth = std::min(max_depth, 4);
+    // Safety cap: Exhaustive search tree capped at depth 6.
+    max_depth = std::min(max_depth, 6);
 
     std::vector<AttackCandidate> candidates;
     candidates.reserve(64);
@@ -156,9 +157,30 @@ std::vector<AttackCandidate> collectAttackCandidates(
                 }
             }
         }
-        current_layer = std::move(next_layer);
+
+        // --- Node limiting (beam-search style cap & height deduplication) ---
+        if (max_states_per_layer > 0 && static_cast<int>(next_layer.size()) > max_states_per_layer) {
+            std::unordered_map<uint32_t, int> seen_heights;
+            std::vector<SearchState> filtered;
+            filtered.reserve(max_states_per_layer);
+
+            for (auto& st : next_layer) {
+                uint32_t key = packHeights(st.field);
+                if (seen_heights[key] < 2) { // Allow up to 2 distinct variations per height profile
+                    seen_heights[key]++;
+                    filtered.push_back(std::move(st));
+                    if (static_cast<int>(filtered.size()) >= max_states_per_layer)
+                        break;
+                }
+            }
+            current_layer = std::move(filtered);
+        } else {
+            current_layer = std::move(next_layer);
+        }
+
         if (current_layer.empty()) break;
     }
+
 
     std::sort(candidates.begin(), candidates.end(), [](const AttackCandidate& a, const AttackCandidate& b) {
         if (a.score != b.score) return a.score > b.score;
