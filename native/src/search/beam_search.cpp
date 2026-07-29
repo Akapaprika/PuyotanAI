@@ -117,9 +117,8 @@ PlaceResult simulatePlacement(const Board& src, PuyoPiece piece,
     const int y_axis = h_axis + action.axis_dy;
     const int y_sub = h_sub + action.sub_dy;
 
-    // Early-out: bounds check before the expensive Board copy.
-    if (y_axis >= config::Board::kTotalRows ||
-        y_sub >= config::Board::kTotalRows) [[unlikely]] {
+    // Early-out: branchless bounds check using bitwise OR before the 96-byte Board copy.
+    if (static_cast<unsigned int>(y_axis | y_sub) >= static_cast<unsigned int>(config::Board::kTotalRows)) [[unlikely]] {
         return {Board{}, 0, 0, true};
     }
 

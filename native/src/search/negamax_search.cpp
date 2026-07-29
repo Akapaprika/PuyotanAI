@@ -126,6 +126,8 @@ static float negamaxRec(PuyotanMatch match, int my_id, int depth, float alpha, f
     }
 }
 
+#include <omp.h>
+
 NegamaxResult negamaxSearch(const PuyotanMatch& match, int my_id, const NegamaxConfig& cfg) noexcept {
     NegamaxResult res;
     if (match.getStatus() != MatchStatus::Playing) {
@@ -155,24 +157,45 @@ NegamaxResult negamaxSearch(const PuyotanMatch& match, int my_id, const NegamaxC
         return res;
     }
 
-    float alpha = -1e9f;
-    float beta = 1e9f;
+    const int num_candidates = static_cast<int>(candidates.size());
+    
+    // Allocate 64-byte aligned structure per thread to prevent False Sharing (CPU cache line interference)
+    struct alignas(64) ThreadResult {
+        std::vector<std::pair<int, float>> items;
+    };
+
+    // Up to 2 thread private buffers for AMD 3020e
+    std::vector<ThreadResult> thread_buffers(2);
+
+    #pragma omp parallel num_threads(2)
+    {
+        const int tid = omp_get_thread_num();
+        auto& local_buf = thread_buffers[tid].items;
+
+        #pragma omp for schedule(static)
+        for (int i = 0; i < num_candidates; ++i) {
+            const int act_idx = candidates[i].first;
+            PuyotanMatch next_match = match; // Pure stack value copy (Zero shared memory)
+            next_match.setAction(my_id, getRLAction(act_idx));
+            next_match.stepUntilDecision();
+
+            float eval_val = negamaxRec(next_match, my_id, cfg.depth - 1, -1e9f, 1e9f, cfg);
+            local_buf.emplace_back(act_idx, eval_val);
+        }
+    }
+
+    // Merge results seamlessly without any locks
     float best_eval = -1e9f;
     int best_action = candidates[0].first;
 
-    for (const auto& [act_idx, _] : candidates) {
-        PuyotanMatch next_match = match;
-        next_match.setAction(my_id, getRLAction(act_idx));
-        next_match.stepUntilDecision();
-
-        float eval_val = negamaxRec(next_match, my_id, cfg.depth - 1, alpha, beta, cfg);
-        res.candidate_evals.emplace_back(act_idx, eval_val);
-
-        if (eval_val > best_eval) {
-            best_eval = eval_val;
-            best_action = act_idx;
+    for (const auto& buf : thread_buffers) {
+        for (const auto& [act_idx, eval_val] : buf.items) {
+            res.candidate_evals.emplace_back(act_idx, eval_val);
+            if (eval_val > best_eval) {
+                best_eval = eval_val;
+                best_action = act_idx;
+            }
         }
-        alpha = std::max(alpha, eval_val);
     }
 
     res.best_action = best_action;
