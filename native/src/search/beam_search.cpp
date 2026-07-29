@@ -162,9 +162,23 @@ PlaceResult simulatePlacement(const Board& src, PuyoPiece piece,
 template <typename ConfigType, typename EvaluatorType, bool HasFireBias = false>
 std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                                      const Tsumo& tsumo_const,
-                                     const ConfigType& cfg) noexcept {
+                                     const ConfigType& cfg_param,
+                                     BeamSearchSession* session = nullptr) noexcept {
     const Tsumo& tsumo = tsumo_const;
     const int tsumo_base = player.active_next_pos;
+
+    ConfigType cfg = cfg_param;
+    if (session != nullptr) {
+        const int total_puyos = player.field.getOccupied().popcount();
+        if (session->isStagnated(total_puyos)) {
+            if constexpr (HasFireBias) {
+                cfg.eval_weights.fire_bias = 0.97f;
+                cfg.eval_weights.potential_score_scale = 0.0f;
+            } else {
+                cfg.eval_weights.potential_score_scale = 0.0f;
+            }
+        }
+    }
 
     // -----------------------------------------------------------------------
     // Pre-calculate effective fire bias for VS mode if attack search is enabled
@@ -364,8 +378,13 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
     }
 
     // Return the action and its expected score from the best surviving leaf
-    if (!tl_current_beam.empty() && tl_current_beam[0].first_action >= 0)
-        return {tl_current_beam[0].first_action, tl_current_beam[0].score};
+    if (!tl_current_beam.empty() && tl_current_beam[0].first_action >= 0) {
+        const float best_score = tl_current_beam[0].score;
+        if (session != nullptr) {
+            session->update(best_score);
+        }
+        return {tl_current_beam[0].first_action, best_score};
+    }
 
     // Fallback: return action 0 (Up, col 0) if search found nothing valid
     return {0, -10000.0f};
@@ -373,14 +392,16 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
 
 std::pair<int, float> soloBeamSearch(const PuyotanPlayer& player,
                                      const Tsumo& tsumo_const,
-                                     const SoloBeamConfig& cfg) noexcept {
-    return beamSearchImpl<SoloBeamConfig, SoloBeamEvaluator, false>(player, tsumo_const, cfg);
+                                     const SoloBeamConfig& cfg,
+                                     BeamSearchSession* session) noexcept {
+    return beamSearchImpl<SoloBeamConfig, SoloBeamEvaluator, false>(player, tsumo_const, cfg, session);
 }
 
 std::pair<int, float> vsBeamSearch(const PuyotanPlayer& player,
                                    const Tsumo& tsumo_const,
-                                   const VsBeamConfig& cfg) noexcept {
-    return beamSearchImpl<VsBeamConfig, VsBeamEvaluator, true>(player, tsumo_const, cfg);
+                                   const VsBeamConfig& cfg,
+                                   BeamSearchSession* session) noexcept {
+    return beamSearchImpl<VsBeamConfig, VsBeamEvaluator, true>(player, tsumo_const, cfg, session);
 }
 
 } // namespace puyotan::search

@@ -26,7 +26,6 @@ struct VsBeamEvalWeights {
     float potential_score_scale = 1.0f;
     float fire_bias               = 1.0f;
     float incoming_ojama_penalty  = -2.0f;
-    float attack_advantage_bonus  = 5.0f;
 
     // --- Dynamic Attack Search Bias Multipliers ---
     float incoming_threat_bias    = 1.5f;

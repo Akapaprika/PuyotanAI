@@ -17,6 +17,8 @@ MatchResult simulateVsMatch(
     // Local copies so we can update context each frame without mutating the const args.
     VsBeamConfig p1_cfg_local = p1_cfg;
     VsBeamConfig p2_cfg_local = p2_cfg;
+    BeamSearchSession p1_session;
+    BeamSearchSession p2_session;
 
     int max_chain_p1 = 0;
     int max_chain_p2 = 0;
@@ -38,7 +40,7 @@ MatchResult simulateVsMatch(
                 ctx.enemy_non_active_ojama = ep.non_active_ojama;
                 ctx.my_active_ojama        = mp.active_ojama;
                 ctx.my_non_active_ojama    = mp.non_active_ojama;
-                auto action_pair = vsBeamSearch(mp, match.getTsumo(), p1_cfg_local);
+                auto action_pair = vsBeamSearch(mp, match.getTsumo(), p1_cfg_local, &p1_session);
                 match.setAction(0, getRLAction(action_pair.first));
             }
             if (mask & 2) {
@@ -55,7 +57,7 @@ MatchResult simulateVsMatch(
                 ctx.enemy_non_active_ojama = ep.non_active_ojama;
                 ctx.my_active_ojama        = mp.active_ojama;
                 ctx.my_non_active_ojama    = mp.non_active_ojama;
-                auto action_pair = vsBeamSearch(mp, match.getTsumo(), p2_cfg_local);
+                auto action_pair = vsBeamSearch(mp, match.getTsumo(), p2_cfg_local, &p2_session);
                 match.setAction(1, getRLAction(action_pair.first));
             }
         }

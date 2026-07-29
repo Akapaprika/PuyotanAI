@@ -99,8 +99,8 @@ class BeamSearchAgent(BasePlayerAgent):
     retains the top `beam_width` boards at each depth, and returns the action
     leading to the highest-evaluated leaf.
 
-    All JSON parsing, static caching, and profile overrides (such as solo_mode,
-    vs_mode, deep_search, and stagnated) are managed entirely inside C++.
+    All JSON parsing, static caching, multi-turn stagnation tracking, and profile
+    overrides are managed inside C++ using BeamSearchSession.
     """
 
     def __init__(self,
@@ -112,7 +112,7 @@ class BeamSearchAgent(BasePlayerAgent):
         self._look_ahead = look_ahead
         self._dbs_max_similar = dbs_max_similar
         self._is_enemy_override = is_enemy
-        self._score_history = []
+        self._session = p.BeamSearchSession()
         self._is_solo = False
         
         # Thread management for async non-blocking search
@@ -127,15 +127,9 @@ class BeamSearchAgent(BasePlayerAgent):
         with self._lock:
             # If the background search finished and has a result, retrieve it and return
             if self._result is not None:
-                idx, expected_score = self._result
+                idx, _ = self._result
                 self._result = None
                 self._thread = None
-                
-                # Update score history (keep up to 10 moves)
-                self._score_history.append(expected_score)
-                if len(self._score_history) > 10:
-                    self._score_history.pop(0)
-                
                 return p.get_rl_action(idx)
             
             # If the search is still running, return None to wait (non-blocking)
@@ -144,16 +138,6 @@ class BeamSearchAgent(BasePlayerAgent):
 
         player = match.match.getPlayer(player_id)
         tsumo  = match.match.getTsumo()
-
-        # Count total puyos (including Ojama) on the board
-        total_puyos = player.field.getOccupied().popcount()
-
-        # Stagnation check (stagnated only when board is highly populated: >= 10 rows equivalent)
-        is_stagnated = False
-        if len(self._score_history) >= 4 and total_puyos >= 66:
-            growth = self._score_history[-1] - self._score_history[-4]
-            if growth <= 0.5:
-                is_stagnated = True
 
         width = self._beam_width if self._beam_width is not None else -1
         depth = self._look_ahead if self._look_ahead is not None else -1
@@ -171,8 +155,8 @@ class BeamSearchAgent(BasePlayerAgent):
         # Define thread worker (GIL is released inside C++ bindings.cpp)
         def worker():
             res = p.beam_search_action(
-                player_snap, tsumo_snap, _CONFIG_PATH, width, depth, self._is_solo, is_stagnated,
-                dbs_max_similar=dbs, is_enemy=is_enemy
+                player_snap, tsumo_snap, _CONFIG_PATH, width, depth, self._is_solo,
+                dbs_max_similar=dbs, is_enemy=is_enemy, session=self._session
             )
             with self._lock:
                 self._result = res
@@ -190,9 +174,7 @@ class VsBeamSearchAgent(BasePlayerAgent):
     """
     VS-mode beam search agent that explicitly controls the enable_attack_search flag.
 
-    Unlike BeamSearchAgent (which calls the monolithic beam_search_action binding),
-    this agent calls load_vs_config + vsBeamSearch directly so that the new
-    attack-candidate logic can be toggled on/off for comparison.
+    Calls load_vs_config + vs_beam_search with BeamSearchSession for session state tracking.
     """
 
     def __init__(self,
@@ -204,7 +186,7 @@ class VsBeamSearchAgent(BasePlayerAgent):
         self._beam_width = beam_width
         self._look_ahead = look_ahead
         self._dbs_max_similar = dbs_max_similar
-        self._score_history: list[float] = []
+        self._session = p.BeamSearchSession()
 
         self._thread: threading.Thread | None = None
         self._result: tuple[int, float] | None = None
@@ -213,12 +195,9 @@ class VsBeamSearchAgent(BasePlayerAgent):
     def get_action(self, match, player_id: int, pres) -> p.Action | None:
         with self._lock:
             if self._result is not None:
-                idx, expected_score = self._result
+                idx, _ = self._result
                 self._result = None
                 self._thread = None
-                self._score_history.append(expected_score)
-                if len(self._score_history) > 10:
-                    self._score_history.pop(0)
                 return p.get_rl_action(idx)
 
             if self._thread is not None and self._thread.is_alive():
@@ -229,32 +208,16 @@ class VsBeamSearchAgent(BasePlayerAgent):
         enemy_id   = 1 - player_id
         enemy      = match.match.getPlayer(enemy_id)
 
-        # Stagnation check
-        total_puyos = player.field.getOccupied().popcount()
-        is_stagnated = False
-        if len(self._score_history) >= 4 and total_puyos >= 66:
-            growth = self._score_history[-1] - self._score_history[-4]
-            if growth <= 0.5:
-                is_stagnated = True
-
         enable_attack = self._enable_attack_search
         bw  = self._beam_width    if self._beam_width    is not None else -1
         la  = self._look_ahead    if self._look_ahead    is not None else -1
         dbs = self._dbs_max_similar if self._dbs_max_similar is not None else -1
 
-        # Build cfg and populate VsEvalContext HERE (on the calling thread, while GIL is held),
-        # NOT inside the worker thread.  player/enemy are reference_internal objects; reading
-        # them from a background thread after the GIL has been released by vs_beam_search
-        # would cause a data race with the main thread advancing the match state.
         cfg = p.load_vs_config(_CONFIG_PATH)
         cfg.enable_attack_search = enable_attack
         if bw  > 0: cfg.beam_width      = bw
         if la  > 0: cfg.look_ahead      = la
         if dbs >= 0: cfg.dbs_max_similar = dbs
-
-        if is_stagnated:
-            cfg.eval_weights.fire_bias             = 0.97
-            cfg.eval_weights.potential_score_scale = 0.0
 
         ctx = cfg.context
         ctx.enemy_field            = enemy.field
@@ -274,7 +237,7 @@ class VsBeamSearchAgent(BasePlayerAgent):
         tsumo_snap  = tsumo.clone()
 
         def worker():
-            res = p.vs_beam_search(player_snap, tsumo_snap, cfg)
+            res = p.vs_beam_search(player_snap, tsumo_snap, cfg, self._session)
             with self._lock:
                 self._result = res
 

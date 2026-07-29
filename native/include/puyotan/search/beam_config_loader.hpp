@@ -3,6 +3,7 @@
 #include <fstream>
 #include <string>
 #include <filesystem>
+#include <mutex>
 #include <external/nlohmann/json.hpp>
 #include <puyotan/search/beam_search.hpp>
 
@@ -18,8 +19,10 @@ class BeamConfigLoader {
     static inline std::filesystem::file_time_type s_last_write_time;
     static inline std::string s_cached_path;
     static inline bool s_has_cache = false;
+    static inline std::mutex s_mutex;
 
     static nlohmann::json getJson(const std::string& path) {
+        std::lock_guard<std::mutex> lock(s_mutex);
         try {
             auto current_time = std::filesystem::last_write_time(path);
             if (s_has_cache && path == s_cached_path && current_time == s_last_write_time) {
@@ -161,7 +164,6 @@ class BeamConfigLoader {
         ew["potential_score_scale"]   = w.potential_score_scale;
         ew["fire_bias"]               = w.fire_bias;
         ew["incoming_ojama_penalty"]  = w.incoming_ojama_penalty;
-        ew["attack_advantage_bonus"]  = w.attack_advantage_bonus;
 
         std::ofstream ofs(path);
         ofs << j.dump(2);
@@ -193,7 +195,6 @@ class BeamConfigLoader {
         ew["potential_score_scale"]   = w.potential_score_scale;
         ew["fire_bias"]               = w.fire_bias;
         ew["incoming_ojama_penalty"]  = w.incoming_ojama_penalty;
-        ew["attack_advantage_bonus"]  = w.attack_advantage_bonus;
 
         std::ofstream ofs(path);
         ofs << j.dump(2);
@@ -222,7 +223,6 @@ class BeamConfigLoader {
             if      (key == "potential_score_scale"   && val.is_number()) w.potential_score_scale   = val.get<float>();
             else if (key == "fire_bias"                && val.is_number()) w.fire_bias                = val.get<float>();
             else if (key == "incoming_ojama_penalty"   && val.is_number()) w.incoming_ojama_penalty   = val.get<float>();
-            else if (key == "attack_advantage_bonus"   && val.is_number()) w.attack_advantage_bonus   = val.get<float>();
             else if (key == "incoming_threat_bias"     && val.is_number()) w.incoming_threat_bias     = val.get<float>();
             else if (key == "counter_attack_bias"      && val.is_number()) w.counter_attack_bias      = val.get<float>();
             else if (key == "timing_advantage_bias"    && val.is_number()) w.timing_advantage_bias    = val.get<float>();
