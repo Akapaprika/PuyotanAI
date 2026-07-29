@@ -13,6 +13,7 @@ the player as needing a decision (decision_mask bit is set).
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
+import threading
 
 import puyotan_native as p
 
@@ -244,3 +245,60 @@ class VsBeamSearchAgent(BasePlayerAgent):
         self._thread = threading.Thread(target=worker, daemon=True)
         self._thread.start()
         return None
+
+
+class NegamaxAgent(BasePlayerAgent):
+    """
+    Adversarial AI using Negamax (minimax) lookahead over deterministic PuyotanMatch states.
+    Prunes move candidates at each decision turn using VS beam search, and simulates
+    deterministic chain resolution / ojama mechanics via match.stepUntilDecision().
+    """
+
+    def __init__(self,
+                 depth: int = 4,
+                 candidate_n: int = 5,
+                 beam_width: int | None = None,
+                 look_ahead: int | None = None) -> None:
+        self._depth = depth
+        self._candidate_n = candidate_n
+        self._beam_width = beam_width
+        self._look_ahead = look_ahead
+
+        self._thread: threading.Thread | None = None
+        self._result: int | None = None
+        self._lock = threading.Lock()
+
+    def get_action(self, match, player_id: int, pres) -> p.Action | None:
+        with self._lock:
+            if self._result is not None:
+                idx = self._result
+                self._result = None
+                self._thread = None
+                return p.get_rl_action(idx)
+
+            if self._thread is not None and self._thread.is_alive():
+                return None
+
+        # Snapshot match on main thread
+        match_snap = match.match.clone()
+
+        cfg = p.NegamaxConfig()
+        cfg.depth = self._depth
+        cfg.candidate_n = self._candidate_n
+
+        vs_cfg = p.load_vs_config(_CONFIG_PATH)
+        if self._beam_width is not None and self._beam_width > 0:
+            vs_cfg.beam_width = self._beam_width
+        if self._look_ahead is not None and self._look_ahead > 0:
+            vs_cfg.look_ahead = self._look_ahead
+        cfg.vs_config = vs_cfg
+
+        def worker():
+            res = p.negamax_search(match_snap, player_id, cfg)
+            with self._lock:
+                self._result = res.best_action
+
+        self._thread = threading.Thread(target=worker, daemon=True)
+        self._thread.start()
+        return None
+

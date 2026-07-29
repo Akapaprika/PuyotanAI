@@ -82,4 +82,12 @@ std::pair<int, float> vsBeamSearch(const PuyotanPlayer& player,
                                    const VsBeamConfig&  cfg,
                                    BeamSearchSession*   session = nullptr) noexcept;
 
+/**
+ * @brief Runs a VS beam search and returns the top N unique candidate actions with their scores.
+ */
+std::vector<std::pair<int, float>> vsBeamSearchTopN(const PuyotanPlayer& player,
+                                                    const Tsumo&         tsumo,
+                                                    const VsBeamConfig&  cfg,
+                                                    int                  top_n = 5) noexcept;
+
 } // namespace puyotan::search

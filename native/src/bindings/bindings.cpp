@@ -11,6 +11,7 @@
 #include <puyotan/search/beam_evaluator.hpp>
 #include <puyotan/search/beam_search.hpp>
 #include <puyotan/search/match_simulator.hpp>
+#include <puyotan/search/negamax_search.hpp>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -335,6 +336,26 @@ PYBIND11_MODULE(puyotan_native, m) {
           pybind11::arg("player"), pybind11::arg("tsumo"), pybind11::arg("cfg"), pybind11::arg("session") = nullptr,
           "Run Solo beam search with a fully configured SoloBeamConfig. "
           "Returns tuple of (RL action index, expected score).");
+
+    pybind11::class_<search::NegamaxConfig>(m, "NegamaxConfig")
+        .def(pybind11::init<>())
+        .def_readwrite("depth", &search::NegamaxConfig::depth)
+        .def_readwrite("candidate_n", &search::NegamaxConfig::candidate_n)
+        .def_readwrite("vs_config", &search::NegamaxConfig::vs_config);
+
+    pybind11::class_<search::NegamaxResult>(m, "NegamaxResult")
+        .def(pybind11::init<>())
+        .def_readwrite("best_action", &search::NegamaxResult::best_action)
+        .def_readwrite("best_eval", &search::NegamaxResult::best_eval)
+        .def_readwrite("candidate_evals", &search::NegamaxResult::candidate_evals);
+
+    m.def("negamax_search",
+          [](const PuyotanMatch& match, int my_id, const search::NegamaxConfig& cfg) {
+              pybind11::gil_scoped_release release;
+              return search::negamaxSearch(match, my_id, cfg);
+          },
+          pybind11::arg("match"), pybind11::arg("my_id"), pybind11::arg("cfg"),
+          "Run Negamax adversarial search over PuyotanMatch states.");
 
     m.def("test_version", []() { return 999; });
 }

@@ -404,4 +404,31 @@ std::pair<int, float> vsBeamSearch(const PuyotanPlayer& player,
     return beamSearchImpl<VsBeamConfig, VsBeamEvaluator, true>(player, tsumo_const, cfg, session);
 }
 
+std::vector<std::pair<int, float>> vsBeamSearchTopN(const PuyotanPlayer& player,
+                                                    const Tsumo& tsumo_const,
+                                                    const VsBeamConfig& cfg,
+                                                    int top_n) noexcept {
+    // Run the beam search
+    beamSearchImpl<VsBeamConfig, VsBeamEvaluator, true>(player, tsumo_const, cfg, nullptr);
+
+    std::vector<std::pair<int, float>> results;
+    results.reserve(top_n);
+    std::unordered_map<int, bool> seen;
+
+    for (const auto& node : tl_current_beam) {
+        if (node.first_action >= 0 && !seen[node.first_action]) {
+            seen[node.first_action] = true;
+            results.emplace_back(node.first_action, node.score);
+            if (static_cast<int>(results.size()) >= top_n) {
+                break;
+            }
+        }
+    }
+
+    if (results.empty()) {
+        results.emplace_back(0, -10000.0f);
+    }
+    return results;
+}
+
 } // namespace puyotan::search

@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (
 
 from ..agents import (
     HumanPlayerAgent, EmptyPlayerAgent, BasePlayerAgent,
-    BeamSearchAgent, VsBeamSearchAgent, _CONFIG_PATH
+    BeamSearchAgent, VsBeamSearchAgent, NegamaxAgent, _CONFIG_PATH
 )
 
 
@@ -48,6 +48,7 @@ class PlayerSettingsWidget(QWidget):
 
     _MODES = [
         "Human",
+        "Negamax AI (Lookahead)",
         "New AI (Attack ON)",
         "Old AI (Attack OFF)",
         "Beam Search (Player)",
@@ -153,7 +154,7 @@ class PlayerSettingsWidget(QWidget):
     # ------------------------------------------------------------------
     def _on_mode_changed(self, idx: int) -> None:
         current_mode = self._combo.currentText()
-        is_beam = "Beam Search" in current_mode
+        is_beam = ("Beam Search" in current_mode) or ("AI" in current_mode)
 
         self._beam_settings_widget.setVisible(is_beam)
         self._emit_agent()
@@ -175,6 +176,8 @@ class PlayerSettingsWidget(QWidget):
 
         if mode == "Human":
             return HumanPlayerAgent(), None
+        if mode == "Negamax AI (Lookahead)":
+            return NegamaxAgent(depth=depth, candidate_n=22, beam_width=width, look_ahead=3), None
         if mode == "New AI (Attack ON)":
             return VsBeamSearchAgent(enable_attack_search=True,  beam_width=width, look_ahead=depth, dbs_max_similar=dbs), None
         if mode == "Old AI (Attack OFF)":
