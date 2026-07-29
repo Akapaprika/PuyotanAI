@@ -6,6 +6,7 @@
 #include <mutex>
 #include <external/nlohmann/json.hpp>
 #include <puyotan/search/beam_search.hpp>
+#include <puyotan/search/negamax_search.hpp>
 
 namespace puyotan::search {
 
@@ -115,6 +116,40 @@ class BeamConfigLoader {
 
         if (section.contains("eval_weights") && section["eval_weights"].is_object())
             applyPatch(cfg.eval_weights, section["eval_weights"]);
+
+        return cfg;
+    }
+
+    static NegamaxConfig loadNegamax(const std::string& path) {
+        NegamaxConfig cfg{};
+        cfg.vs_config = loadVs(path);
+        cfg.interior_vs_config = cfg.vs_config;
+
+        nlohmann::json j = getJson(path);
+        if (j.is_discarded() || j.empty()) return cfg;
+        if (!j.contains("negamax") || !j["negamax"].is_object()) return cfg;
+
+        const auto& section = j["negamax"];
+        if (section.contains("depth") && section["depth"].is_number_integer())
+            cfg.depth = section["depth"].get<int>();
+
+        if (section.contains("candidate_n") && section["candidate_n"].is_number_integer())
+            cfg.candidate_n = section["candidate_n"].get<int>();
+
+        if (section.contains("interior_candidate_n") && section["interior_candidate_n"].is_number_integer())
+            cfg.interior_candidate_n = section["interior_candidate_n"].get<int>();
+
+        if (section.contains("chain_cutoff_enabled") && section["chain_cutoff_enabled"].is_boolean())
+            cfg.chain_cutoff_enabled = section["chain_cutoff_enabled"].get<bool>();
+
+        if (section.contains("use_interior_beam_config") && section["use_interior_beam_config"].is_boolean())
+            cfg.use_interior_config = section["use_interior_beam_config"].get<bool>();
+
+        if (section.contains("interior_beam_width") && section["interior_beam_width"].is_number_integer())
+            cfg.interior_vs_config.beam_width = section["interior_beam_width"].get<int>();
+
+        if (section.contains("interior_look_ahead") && section["interior_look_ahead"].is_number_integer())
+            cfg.interior_vs_config.look_ahead = section["interior_look_ahead"].get<int>();
 
         return cfg;
     }

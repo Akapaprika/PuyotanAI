@@ -14,19 +14,14 @@ def run_match(seed: int, p1_negamax: bool, depth: int = 4, max_frames: int = 100
     
     cfg_path = str(Path(__file__).parent.parent / "native" / "resources" / "beam_config.json")
     vs_cfg = p.load_vs_config(cfg_path)
-    vs_cfg.beam_width = 3000
-    vs_cfg.look_ahead = 3
+    vs_cfg.enable_attack_search = True
 
     p1_session = p.BeamSearchSession()
     p2_session = p.BeamSearchSession()
 
-    nega_cfg = p.NegamaxConfig()
-    nega_cfg.depth = depth
-    nega_cfg.candidate_n = 22
-    nega_cfg.vs_config = vs_cfg
-
-    p1_nodes = 0
-    p2_nodes = 0
+    nega_cfg = p.load_negamax_config(cfg_path)
+    if depth is not None and depth > 0:
+        nega_cfg.depth = depth
 
     while match.status == p.MatchStatus.PLAYING and match.frame < max_frames:
         mask = match.getDecisionMask()
@@ -40,34 +35,38 @@ def run_match(seed: int, p1_negamax: bool, depth: int = 4, max_frames: int = 100
                     match.setAction(0, p.get_rl_action(action_idx))
 
             if mask & 2: # Player 1 turn
-                # Player 1 is always conventional VS Beam Search
+                # Player 1 is conventional VS Beam Search AI (Attack Search ON)
                 action_idx, _ = p.vs_beam_search(match.getPlayer(1), match.getTsumo(), vs_cfg, p2_session)
                 match.setAction(1, p.get_rl_action(action_idx))
 
         match.stepNextFrame()
 
-    return match.status, match.getPlayer(0).score, match.getPlayer(1).score, match.frame
+    turns_p1 = match.getPlayer(0).active_next_pos
+    turns_p2 = match.getPlayer(1).active_next_pos
+    return match.status, match.getPlayer(0).score, match.getPlayer(1).score, turns_p1, turns_p2
 
 def main():
     print("=========================================================")
-    print("      VS AI Benchmark: Negamax AI  vs  VsBeam AI        ")
+    print("      VS AI Benchmark (20 Games): Negamax AI vs VsBeam   ")
     print("=========================================================")
 
-    num_games = 10
+    num_games = 20
     seeds = [100 + i for i in range(num_games)]
 
-    print(f"Running {num_games} matches with Negamax depth=4...")
+    print(f"Running {num_games} matches with Negamax (depth=4, candidate_n=22/11)...")
     
     p1_wins = 0
     p2_wins = 0
     draws = 0
     total_time = 0.0
+    total_turns = 0
 
     for i, seed in enumerate(seeds):
         t0 = time.time()
-        st, s1, s2, frames = run_match(seed, p1_negamax=True, depth=4)
+        st, s1, s2, t1, t2 = run_match(seed, p1_negamax=True, depth=4)
         elapsed = time.time() - t0
         total_time += elapsed
+        total_turns += t1
 
         winner = "DRAW"
         if st == p.MatchStatus.WIN_P1:
@@ -79,7 +78,7 @@ def main():
         else:
             draws += 1
 
-        print(f"Game {i+1:2d} | Seed: {seed} | Winner: {winner:<13} | Score P1: {s1:6d} vs P2: {s2:6d} | Frames: {frames:5d} | Time: {elapsed:.2f}s")
+        print(f"Game {i+1:2d} | Seed: {seed} | Winner: {winner:<13} | Score P1: {s1:6d} vs P2: {s2:6d} | Turns: {t1:2d} (P1) / {t2:2d} (P2) | Time: {elapsed:.2f}s")
 
     print("\n---------------------------------------------------------")
     print(f"Total Matches: {num_games}")

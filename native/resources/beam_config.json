@@ -9,28 +9,8 @@
     }
   },
   "vs": {
-    "eval_weights": {
-      "_comment_potential_score_scale": "ポテンシャル連鎖スコアへの乗数。高いほど将来の連鎖を重視。",
-      "potential_score_scale": 1.0,
-      "_comment_fire_bias": "発火判断の基礎バイアス係数。fire_bias × 発火スコア > ビームスコア のとき即時発火を選択。\n                                    > 1.0: 発火を積極的に選ぶ / == 1.0: 等価比較 / < 1.0: 継続を優先",
-      "fire_bias": 0.97,
-      "_comment_incoming_threat_bias": "[攻撃サーチ] 予告おじゃまが1個以上あるとき fire_bias に乗算する係数。緊急度を上げる。",
-      "incoming_threat_bias": 1.5,
-      "_comment_counter_attack_bias": "[攻撃サーチ] シグモイド動的カウンターバイアスの最大乗数（100%相殺で到達）。",
-      "counter_attack_bias": 1.4,
-      "_comment_timing_advantage_bias": "[攻撃サーチ] 相手より早く発火可能（猶予優位）な場合に fire_bias に乗算するバイアス係数。",
-      "timing_advantage_bias": 1.2,
-      "_comment_urgency_weight": "[評価関数] 相手の発火猶予に応じたポテンシャル圧縮の重み係数 (0.0: オフ, 0.8: 標準)。",
-      "urgency_weight": 0.8,
-      "_comment_lethal_danger_scale": "[評価関数] 自盤面が相手の攻撃で被窒息危険状態に陥った時のペナルティ倍率。",
-      "lethal_danger_scale": 1.0,
-      "_comment_effective_strike_multiplier": "[評価関数] 相手の最高対応を突破して2段以上(12個)のおじゃまが確定着弾する発火手への動的ボーナス乗数。",
-      "effective_strike_multiplier": 1.5
-    }
-  },
-  "enemy": {
-    "beam_width": 15000,
-    "look_ahead": 25,
+    "beam_width": 3000,
+    "look_ahead": 3,
     "dbs_max_similar": 6,
     "eval_weights": {
       "_comment_potential_score_scale": "ポテンシャル連鎖スコアへの乗数。高いほど将来の連鎖を重視。",
@@ -47,7 +27,38 @@
       "urgency_weight": 0.8,
       "_comment_lethal_danger_scale": "[評価関数] 自盤面が相手の攻撃で被窒息危険状態に陥った時のペナルティ倍率。",
       "lethal_danger_scale": 1.0,
-      "_comment_effective_strike_multiplier": "[評価関数] 相手の最高対応を突破して2段以上(12個)のおじゃまが確定着弾する発火手への動的ボーナス乗数。",
+      "_comment_effective_strike_multiplier": "[評価関数] 相手の最高対応を突破して2段以上のおじゃまが確定着弾する発火手への動的ボーナス乗数。",
+      "effective_strike_multiplier": 1.5
+    }
+  },
+  "negamax": {
+    "_comment_depth": "ネガマックス対戦探索の読みの深さ（決断ターン数。例: 4 = 自分→相手→自分→相手）。",
+    "depth": 4,
+    "_comment_candidate_n": "ルートノード（1手目）で評価する候補手数。22で全選択肢（全22手）を完全カバー。",
+    "candidate_n": 22,
+    "_comment_interior_candidate_n": "子ノード（2手目以降）で評価する候補手数。11で上位50%に絞り込んで高速化（16分の1に局面短縮）。",
+    "interior_candidate_n": 11,
+    "_comment_chain_cutoff_enabled": "連鎖解決・おじゃま着弾後に探索深さを打ち切って高速化するか（true/false）。",
+    "chain_cutoff_enabled": true,
+    "_comment_use_interior_beam_config": "子ノード評価時に軽量ビームサーチ設定を使うか（true/false）。",
+    "use_interior_beam_config": true,
+    "_comment_interior_beam_width": "子ノード評価時のビーム幅。ルート（3000）から絞り込んでバランスを取る設定（例: 1500）。",
+    "interior_beam_width": 1500,
+    "_comment_interior_look_ahead": "子ノード評価時のビームサーチツモ数。",
+    "interior_look_ahead": 3
+  },
+  "enemy": {
+    "beam_width": 15000,
+    "look_ahead": 25,
+    "dbs_max_similar": 6,
+    "eval_weights": {
+      "potential_score_scale": 1.0,
+      "fire_bias": 0.97,
+      "incoming_threat_bias": 1.5,
+      "counter_attack_bias": 1.4,
+      "timing_advantage_bias": 1.2,
+      "urgency_weight": 0.8,
+      "lethal_danger_scale": 1.0,
       "effective_strike_multiplier": 1.5
     }
   }

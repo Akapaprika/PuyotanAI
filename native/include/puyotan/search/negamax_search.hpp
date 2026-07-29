@@ -12,11 +12,13 @@ namespace puyotan::search {
  * @brief Configuration parameters for Negamax (adversarial lookahead) search.
  */
 struct NegamaxConfig {
-    int depth = 4;           ///< Lookahead depth (number of PUT decisions, both players)
-    int candidate_n = 22;    ///< Number of candidate actions (22 = all possible placement options)
-    VsBeamConfig vs_config;          ///< Root node: high-quality VS beam search config
-    VsBeamConfig interior_vs_config; ///< Interior nodes: lightweight config (small beam, no attack search)
-    bool use_interior_config = false; ///< If false, vs_config is used at all depths
+    int depth = 4;                     ///< Lookahead depth (number of PUT decisions, both players)
+    int candidate_n = 22;              ///< Number of candidate actions at root (22 = all options)
+    int interior_candidate_n = 11;     ///< Number of candidate actions at interior nodes (top 11 = 50% pruning)
+    bool chain_cutoff_enabled = true;  ///< Truncate lookahead after a chain resolution to save search time
+    VsBeamConfig vs_config;            ///< Root node: high-quality VS beam search config
+    VsBeamConfig interior_vs_config;   ///< Interior nodes: lightweight config
+    bool use_interior_config = true;   ///< If true, interior_vs_config is used for child nodes
 };
 
 /**

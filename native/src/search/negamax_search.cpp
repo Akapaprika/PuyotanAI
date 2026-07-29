@@ -58,12 +58,17 @@ static float negamaxRec(PuyotanMatch match, int my_id, int depth, float alpha, f
     }
 
     int mask = match.getDecisionMask();
+    bool is_post_chain_cutoff = false;
+
     if (mask == 0) {
         int next_mask = match.stepUntilDecision();
         if (match.getStatus() != MatchStatus::Playing || next_mask == 0 || depth <= 0) {
             return evaluateMatchState(match, my_id, cfg.vs_config.eval_weights);
         }
         mask = next_mask;
+        if (cfg.chain_cutoff_enabled) {
+            is_post_chain_cutoff = true;
+        }
     }
 
     // Determine current turn player (0 or 1)
@@ -88,10 +93,13 @@ static float negamaxRec(PuyotanMatch match, int my_id, int depth, float alpha, f
     ctx.my_active_ojama        = curr_p.active_ojama;
     ctx.my_non_active_ojama    = curr_p.non_active_ojama;
 
-    auto candidates = vsBeamSearchTopN(curr_p, match.getTsumo(), player_cfg, cfg.candidate_n);
+    const int target_candidate_n = cfg.interior_candidate_n > 0 ? cfg.interior_candidate_n : cfg.candidate_n;
+    auto candidates = vsBeamSearchTopN(curr_p, match.getTsumo(), player_cfg, target_candidate_n);
     if (candidates.empty()) {
         return evaluateMatchState(match, my_id, cfg.vs_config.eval_weights);
     }
+
+    const int next_depth = is_post_chain_cutoff ? std::min(depth - 1, 1) : (depth - 1);
 
     if (is_my_turn) {
         float max_eval = -1e9f;
@@ -100,7 +108,7 @@ static float negamaxRec(PuyotanMatch match, int my_id, int depth, float alpha, f
             next_match.setAction(current_player, getRLAction(act_idx));
             next_match.stepUntilDecision();
 
-            float val = negamaxRec(next_match, my_id, depth - 1, alpha, beta, cfg);
+            float val = negamaxRec(next_match, my_id, next_depth, alpha, beta, cfg);
             max_eval = std::max(max_eval, val);
             alpha = std::max(alpha, val);
             if (beta <= alpha) {
@@ -115,7 +123,7 @@ static float negamaxRec(PuyotanMatch match, int my_id, int depth, float alpha, f
             next_match.setAction(current_player, getRLAction(act_idx));
             next_match.stepUntilDecision();
 
-            float val = negamaxRec(next_match, my_id, depth - 1, alpha, beta, cfg);
+            float val = negamaxRec(next_match, my_id, next_depth, alpha, beta, cfg);
             min_eval = std::min(min_eval, val);
             beta = std::min(beta, val);
             if (beta <= alpha) {

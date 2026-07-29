@@ -282,16 +282,15 @@ class NegamaxAgent(BasePlayerAgent):
         # Snapshot match on main thread
         match_snap = match.match.clone()
 
-        cfg = p.NegamaxConfig()
-        cfg.depth = self._depth
-        cfg.candidate_n = self._candidate_n
-
-        vs_cfg = p.load_vs_config(_CONFIG_PATH)
+        cfg = p.load_negamax_config(_CONFIG_PATH)
+        if self._depth is not None and self._depth > 0:
+            cfg.depth = self._depth
+        if self._candidate_n is not None and self._candidate_n > 0:
+            cfg.candidate_n = self._candidate_n
         if self._beam_width is not None and self._beam_width > 0:
-            vs_cfg.beam_width = self._beam_width
+            cfg.vs_config.beam_width = self._beam_width
         if self._look_ahead is not None and self._look_ahead > 0:
-            vs_cfg.look_ahead = self._look_ahead
-        cfg.vs_config = vs_cfg
+            cfg.vs_config.look_ahead = self._look_ahead
 
         def worker():
             res = p.negamax_search(match_snap, player_id, cfg)

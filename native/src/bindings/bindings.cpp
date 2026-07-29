@@ -247,6 +247,9 @@ PYBIND11_MODULE(puyotan_native, m) {
     m.def("load_enemy_config", &search::BeamConfigLoader::loadEnemy, pybind11::arg("path"),
           "Load VsBeamConfig (enemy) from JSON");
 
+    m.def("load_negamax_config", &search::BeamConfigLoader::loadNegamax, pybind11::arg("path"),
+          "Load NegamaxConfig from JSON");
+
     m.def(
         "beam_search_action",
         [](const PuyotanPlayer& player, const Tsumo& tsumo,
@@ -337,11 +340,19 @@ PYBIND11_MODULE(puyotan_native, m) {
           "Run Solo beam search with a fully configured SoloBeamConfig. "
           "Returns tuple of (RL action index, expected score).");
 
+    m.def("load_negamax_config", &search::BeamConfigLoader::loadNegamax,
+          pybind11::arg("config_path"),
+          "Load NegamaxConfig from a JSON config file.");
+
     pybind11::class_<search::NegamaxConfig>(m, "NegamaxConfig")
         .def(pybind11::init<>())
         .def_readwrite("depth", &search::NegamaxConfig::depth)
         .def_readwrite("candidate_n", &search::NegamaxConfig::candidate_n)
-        .def_readwrite("vs_config", &search::NegamaxConfig::vs_config);
+        .def_readwrite("interior_candidate_n", &search::NegamaxConfig::interior_candidate_n)
+        .def_readwrite("chain_cutoff_enabled", &search::NegamaxConfig::chain_cutoff_enabled)
+        .def_readwrite("use_interior_config", &search::NegamaxConfig::use_interior_config)
+        .def_readwrite("vs_config", &search::NegamaxConfig::vs_config)
+        .def_readwrite("interior_vs_config", &search::NegamaxConfig::interior_vs_config);
 
     pybind11::class_<search::NegamaxResult>(m, "NegamaxResult")
         .def(pybind11::init<>())
