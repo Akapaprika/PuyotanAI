@@ -151,6 +151,9 @@ class BeamConfigLoader {
         if (section.contains("interior_look_ahead") && section["interior_look_ahead"].is_number_integer())
             cfg.interior_vs_config.look_ahead = section["interior_look_ahead"].get<int>();
 
+        if (section.contains("interior_dbs_max_similar") && section["interior_dbs_max_similar"].is_number_integer())
+            cfg.interior_vs_config.dbs_max_similar = section["interior_dbs_max_similar"].get<int>();
+
         return cfg;
     }
 

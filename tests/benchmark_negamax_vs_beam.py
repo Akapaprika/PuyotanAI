@@ -8,7 +8,7 @@ if str(_DIST_PATH) not in sys.path:
 
 import puyotan_native as p
 
-def run_match(seed: int, p1_negamax: bool, depth: int = 4, max_frames: int = 10000):
+def run_match(seed: int, p1_negamax: bool, depth: int = None, max_frames: int = 10000):
     match = p.PuyotanMatch(seed)
     match.start()
     
@@ -53,7 +53,7 @@ def main():
     num_games = 20
     seeds = [100 + i for i in range(num_games)]
 
-    print(f"Running {num_games} matches with Negamax (depth=4, candidate_n=22/11)...")
+    print(f"Running {num_games} matches with Negamax AI vs VsBeam...")
     
     p1_wins = 0
     p2_wins = 0
@@ -63,7 +63,7 @@ def main():
 
     for i, seed in enumerate(seeds):
         t0 = time.time()
-        st, s1, s2, t1, t2 = run_match(seed, p1_negamax=True, depth=4)
+        st, s1, s2, t1, t2 = run_match(seed, p1_negamax=True, depth=None)
         elapsed = time.time() - t0
         total_time += elapsed
         total_turns += t1
