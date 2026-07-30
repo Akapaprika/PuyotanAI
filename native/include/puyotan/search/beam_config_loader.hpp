@@ -160,8 +160,8 @@ class BeamConfigLoader {
 
     static AbsConfig loadAbs(const std::string& path) {
         AbsConfig cfg{};
-        // Inherit default VS eval weights
-        cfg.eval_weights = loadVs(path).eval_weights;
+        // Inherit default solo eval weights
+        cfg.eval_weights = loadSolo(path).eval_weights;
 
         nlohmann::json j = getJson(path);
         if (j.is_discarded() || j.empty()) return cfg;

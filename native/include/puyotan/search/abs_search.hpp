@@ -37,13 +37,14 @@ enum class AbsCategory : uint8_t {
 /**
  * @struct AbsConfig
  * @brief Parameters controlling Adversarial Beam Search.
+ * Uses pure SoloBeamEvalWeights without any ad-hoc VS heuristic weights.
  */
 struct AbsConfig {
-    int depth = 10;
+    int depth = 6;
     bool chain_cutoff_enabled = true;
     CategoryBudgets my_budgets;
     CategoryBudgets opp_budgets;
-    VsBeamEvalWeights eval_weights;
+    SoloBeamEvalWeights eval_weights;
 };
 
 /**
@@ -57,10 +58,10 @@ struct AbsResult {
 };
 
 /**
- * @brief Runs an Adversarial Beam Search starting from the given PuyotanMatch.
+ * @brief Runs an Adversarial Beam Search starting from the given PuyotanMatch using pure SoloBeamEvaluator.
  * @param match Initial match state.
  * @param my_id Player ID for whom we are searching (0 or 1).
- * @param cfg Config containing depth, budgets, and weights.
+ * @param cfg Config containing depth, budgets, and solo evaluation weights.
  * @return AbsResult containing the best RL action index and evaluation scores.
  */
 AbsResult absSearch(const PuyotanMatch& match, int my_id, const AbsConfig& cfg) noexcept;
