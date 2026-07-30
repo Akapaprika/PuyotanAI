@@ -7,6 +7,7 @@
 #include <external/nlohmann/json.hpp>
 #include <puyotan/search/beam_search.hpp>
 #include <puyotan/search/negamax_search.hpp>
+#include <puyotan/search/abs_search.hpp>
 
 namespace puyotan::search {
 
@@ -153,6 +154,45 @@ class BeamConfigLoader {
 
         if (section.contains("interior_dbs_max_similar") && section["interior_dbs_max_similar"].is_number_integer())
             cfg.interior_vs_config.dbs_max_similar = section["interior_dbs_max_similar"].get<int>();
+
+        return cfg;
+    }
+
+    static AbsConfig loadAbs(const std::string& path) {
+        AbsConfig cfg{};
+        // Inherit default VS eval weights
+        cfg.eval_weights = loadVs(path).eval_weights;
+
+        nlohmann::json j = getJson(path);
+        if (j.is_discarded() || j.empty()) return cfg;
+        if (!j.contains("abs") || !j["abs"].is_object()) return cfg;
+
+        const auto& section = j["abs"];
+        if (section.contains("depth") && section["depth"].is_number_integer())
+            cfg.depth = section["depth"].get<int>();
+
+        if (section.contains("chain_cutoff_enabled") && section["chain_cutoff_enabled"].is_boolean())
+            cfg.chain_cutoff_enabled = section["chain_cutoff_enabled"].get<bool>();
+
+        if (section.contains("my_category_budgets") && section["my_category_budgets"].is_object()) {
+            const auto& mb = section["my_category_budgets"];
+            if (mb.contains("build")  && mb["build"].is_number_integer())  cfg.my_budgets.build  = mb["build"].get<int>();
+            if (mb.contains("crush")  && mb["crush"].is_number_integer())  cfg.my_budgets.crush  = mb["crush"].get<int>();
+            if (mb.contains("strike") && mb["strike"].is_number_integer()) cfg.my_budgets.strike = mb["strike"].get<int>();
+            if (mb.contains("evade")  && mb["evade"].is_number_integer())  cfg.my_budgets.evade  = mb["evade"].get<int>();
+        }
+
+        if (section.contains("opp_category_budgets") && section["opp_category_budgets"].is_object()) {
+            const auto& ob = section["opp_category_budgets"];
+            if (ob.contains("build")  && ob["build"].is_number_integer())  cfg.opp_budgets.build  = ob["build"].get<int>();
+            if (ob.contains("crush")  && ob["crush"].is_number_integer())  cfg.opp_budgets.crush  = ob["crush"].get<int>();
+            if (ob.contains("strike") && ob["strike"].is_number_integer()) cfg.opp_budgets.strike = ob["strike"].get<int>();
+            if (ob.contains("evade")  && ob["evade"].is_number_integer())  cfg.opp_budgets.evade  = ob["evade"].get<int>();
+        }
+
+        if (section.contains("eval_weights") && section["eval_weights"].is_object()) {
+            applyPatch(cfg.eval_weights, section["eval_weights"]);
+        }
 
         return cfg;
     }

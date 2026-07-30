@@ -64,5 +64,23 @@
       "lethal_danger_scale": 1.0,
       "effective_strike_multiplier": 1.5
     }
+  },
+  "abs": {
+    "_comment_depth": "Adversarial Beam Searchの探索深さ（例: 6 = 自分3手・相手3手の交互読み）。",
+    "depth": 6,
+    "_comment_chain_cutoff_enabled": "連鎖解決後の探索打ち切り有効化（true/false）。",
+    "chain_cutoff_enabled": true,
+    "my_category_budgets": {
+      "build": 3000,
+      "crush": 1500,
+      "strike": 1000,
+      "evade": 500
+    },
+    "opp_category_budgets": {
+      "build": 2000,
+      "crush": 1000,
+      "strike": 500,
+      "evade": 300
+    }
   }
 }
