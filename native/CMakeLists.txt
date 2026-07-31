@@ -107,4 +107,12 @@ if (MSVC)
             COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${LT}> ${CMAKE_SOURCE_DIR}/dist/
         )
     endforeach()
+else()
+    foreach(T IN LISTS ALL_TARGETS)
+        set_property(TARGET ${T} PROPERTY INTERPROCEDURAL_OPTIMIZATION $<$<CONFIG:Release>:TRUE>)
+        target_precompile_headers(${T} PRIVATE include/puyotan/pch.hpp)
+        target_compile_options(${T} PRIVATE
+            $<$<CONFIG:Release>: -O3 -flto -march=native -ffast-math -funroll-loops -DNDEBUG >
+        )
+    endforeach()
 endif()
