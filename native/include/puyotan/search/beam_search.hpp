@@ -1,5 +1,6 @@
 #pragma once
 
+#include <vector>
 #include <utility>
 #include <puyotan/engine/match.hpp>
 #include <puyotan/search/beam_evaluator.hpp>
@@ -7,41 +8,86 @@
 namespace puyotan::search {
 
 /**
- * @struct BeamConfig
- * @brief Parameters controlling beam search behaviour.
+ * @struct BeamSearchSession
+ * @brief Tracks multi-turn search state (such as expected score history for stagnation detection).
  */
-struct BeamConfig {
-    /// Number of top candidate boards retained at each depth level.
-    int beam_width = 500;
-    /// Number of tsumo pieces to look ahead (depth of the search tree).
-    /// Uses the shared Tsumo sequence starting from the player's active_next_pos.
-    int look_ahead = 3;
-    /// Diverse Beam Search (DBS) parameters.
-    int dbs_max_similar = 0;
-    /// Evaluation weights applied at every leaf node and intermediate node.
-    BeamEvalWeights eval_weights;
+struct BeamSearchSession {
+    std::vector<float> score_history;
+    int max_history_size = 10;
+    int min_history_to_check = 4;
+    int total_puyos_threshold = 66;
+    float growth_threshold = 0.5f;
+
+    void update(float expected_score) {
+        score_history.push_back(expected_score);
+        if (static_cast<int>(score_history.size()) > max_history_size) {
+            score_history.erase(score_history.begin());
+        }
+    }
+
+    [[nodiscard]] bool isStagnated(int total_puyos) const noexcept {
+        if (total_puyos >= total_puyos_threshold &&
+            static_cast<int>(score_history.size()) >= min_history_to_check) {
+            const float growth = score_history.back() - score_history[score_history.size() - min_history_to_check];
+            return growth <= growth_threshold;
+        }
+        return false;
+    }
+
+    void reset() noexcept {
+        score_history.clear();
+    }
 };
 
 /**
- * @brief Runs a beam search from the given player state and returns the best RL action index and its expected score.
+ * @struct SoloBeamConfig
+ * @brief Parameters controlling solo beam search behaviour.
+ */
+struct SoloBeamConfig {
+    int beam_width = 500;
+    int look_ahead = 3;
+    int dbs_max_similar = 0;
+    SoloBeamEvalWeights eval_weights;
+};
+
+/**
+ * @struct VsBeamConfig
+ * @brief Parameters controlling VS beam search behaviour.
  *
- * The search expands all 22 RL actions at each depth level, simulates the
- * resulting board state (drop + chain resolution + gravity), evaluates it,
- * and retains the top `cfg.beam_width` candidates to continue exploring.
- *
- * At depth 0 the action that leads to the highest-scored subtree is returned.
- *
- * @param player  Current player state (field + tsumo position).
- * @param tsumo   Shared tsumo generator for the match.
- * @param cfg     Beam search configuration (width, depth, weights).
- * @return        std::pair of RL action index and its expected score.
+ * Populate context from the live match state before every call to
+ * vsBeamSearch().
+ */
+struct VsBeamConfig {
+    int beam_width = 500;
+    int look_ahead = 3;
+    int dbs_max_similar = 0;
+    bool enable_attack_search = true;
+    VsBeamEvalWeights eval_weights;
+    VsEvalContext     context;                          // set before each call
+};
+
+/**
+ * @brief Runs a beam search from the given player state and returns the best RL action index and its expected score for Solo mode.
  */
 std::pair<int, float> soloBeamSearch(const PuyotanPlayer& player,
                                      const Tsumo&         tsumo,
-                                     const BeamConfig&    cfg) noexcept;
+                                     const SoloBeamConfig& cfg,
+                                     BeamSearchSession*   session = nullptr) noexcept;
 
+/**
+ * @brief Runs a beam search from the given player state and returns the best RL action index and its expected score for VS mode.
+ */
 std::pair<int, float> vsBeamSearch(const PuyotanPlayer& player,
                                    const Tsumo&         tsumo,
-                                   const BeamConfig&    cfg) noexcept;
+                                   const VsBeamConfig&  cfg,
+                                   BeamSearchSession*   session = nullptr) noexcept;
+
+/**
+ * @brief Runs a VS beam search and returns the top N unique candidate actions with their scores.
+ */
+std::vector<std::pair<int, float>> vsBeamSearchTopN(const PuyotanPlayer& player,
+                                                    const Tsumo&         tsumo,
+                                                    const VsBeamConfig&  cfg,
+                                                    int                  top_n = 5) noexcept;
 
 } // namespace puyotan::search

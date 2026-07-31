@@ -1,42 +1,86 @@
 {
   "solo": {
-    "_comment_beam_width": "探索中に保持する最大盤面数（処理速度と探索精度のトレードオフ）",
     "beam_width": 15000,
-    "_comment_look_ahead": "ツモの先読み手数量（ソロ部門用の深い先読み）",
     "look_ahead": 25,
-    "_comment_dbs_max_similar": "同一高さプロファイル(packHeights)を持つ盤面の最大許容重複件数 (0でDBS無効, 1以上でDBS有効)",
     "dbs_max_similar": 6,
     "eval_weights": {
       "_comment_potential_score_scale": "ポテンシャル連鎖スコアへの乗数。高いほど将来の連鎖を重視。",
-      "potential_score_scale": 1.0,
-      "_comment_connectivity_bonus": "同色隣接が2つ以上あるぷよ1個あたりのボーナス。",
-      "connectivity_bonus": 0.0,
-      "_comment_isolated_penalty": "同色隣接ゼロの孤立ぷよ1個あたりのペナルティ（負の値）。",
-      "isolated_penalty": 0.0,
-      "_comment_use_fast_potential": "true: flood-fill 近似（高速）、false: 完全チェーンシミュレーション（高精度）。",
-      "use_fast_potential": false
+      "potential_score_scale": 1.0
     }
   },
   "vs": {
-    "_comment_beam_width": "探索中に保持する最大盤面数（処理速度と探索精度のトレードオフ）",
+    "beam_width": 3000,
+    "look_ahead": 3,
+    "dbs_max_similar": 6,
+    "enable_attack_search": false,
+    "eval_weights": {
+      "_comment_potential_score_scale": "ポテンシャル連鎖スコアへの乗数（純粋な一人ぷよぷよの最大連鎖ポテンシャルのみで評価）。",
+      "potential_score_scale": 1.0,
+      "_comment_fire_bias": "対人バイアス無効化（純ソロ評価）。",
+      "fire_bias": 1.0,
+      "_comment_incoming_threat_bias": "対人バイアス無効化。",
+      "incoming_threat_bias": 1.0,
+      "_comment_counter_attack_bias": "対人バイアス無効化。",
+      "counter_attack_bias": 1.0,
+      "_comment_timing_advantage_bias": "対人バイアス無効化。",
+      "timing_advantage_bias": 1.0,
+      "_comment_urgency_weight": "対人バイアス無効化。",
+      "urgency_weight": 0.0,
+      "_comment_lethal_danger_scale": "対人ペナルティ無効化。",
+      "lethal_danger_scale": 1.0,
+      "_comment_effective_strike_multiplier": "対人ボーナス無効化。",
+      "effective_strike_multiplier": 1.0
+    }
+  },
+  "negamax": {
+    "_comment_depth": "ネガマックス対戦探索の読みの深さ（決断ターン数。例: 4 = 自分→相手→自分→相手）。",
+    "depth": 4,
+    "_comment_candidate_n": "ルートノード（1手目）で評価する候補手数（上位6手に絞り込み）。",
+    "candidate_n": 22,
+    "_comment_interior_candidate_n": "子ノード（2手目以降）で評価する候補手数（上位6手に絞り込んで高速化）。",
+    "interior_candidate_n": 22,
+    "_comment_chain_cutoff_enabled": "連鎖解決・おじゃま着弾後に探索深さを打ち切って高速化するか（true/false）。",
+    "chain_cutoff_enabled": true,
+    "_comment_use_interior_beam_config": "子ノード評価時に軽量ビームサーチ設定を使うか（true/false）。",
+    "use_interior_beam_config": true,
+    "_comment_interior_beam_width": "子ノード評価時のビーム幅。ルート（3000）から絞り込んでバランスを取る設定（例: 1500）。",
+    "interior_beam_width": 1500,
+    "_comment_interior_look_ahead": "子ノード評価時のビームサーチツモ数。",
+    "interior_look_ahead": 3,
+    "_comment_interior_dbs_max_similar": "子ノード評価時のDBS多様性フィルタリングの上限数（6で端列・別ルートの多様性を保持）。",
+    "interior_dbs_max_similar": 6
+  },
+  "enemy": {
     "beam_width": 15000,
-    "_comment_look_ahead": "ツモの先読み手数量（対戦時の攻撃猶予に合わせるため浅めが推奨）",
     "look_ahead": 25,
-    "_comment_dbs_max_similar": "同一高さプロファイル(packHeights)を持つ盤面の最大許容重複件数 (0でDBS無効, 1以上でDBS有効)",
     "dbs_max_similar": 6,
     "eval_weights": {
-      "_comment_potential_score_scale": "ポテンシャル連鎖スコアへの乗数。高いほど将来の連鎖を重視。",
       "potential_score_scale": 1.0,
-      "_comment_connectivity_bonus": "同色隣接が2つ以上あるぷよ1個あたりのボーナス。",
-      "connectivity_bonus": 0.0,
-      "_comment_isolated_penalty": "同色隣接ゼロの孤立ぷよ1個あたりのペナルティ（負の値）。",
-      "isolated_penalty": -0.0,
-      "_comment_buried_penalty": "おじゃまの下に埋もれた色ぷよ1個あたりのペナルティ（負の値）。",
-      "buried_penalty": 0.0,
-      "_comment_fire_bias": "発火判断のバイアス係数。fire_bias × 発火スコア > ビームスコア のとき即時発火を選択。\n                                    > 1.0: 発火を積極的に選ぶ / == 1.0: 等価比較 / < 1.0: 継続を優先",
       "fire_bias": 0.97,
-      "_comment_use_fast_potential": "true: flood-fill 近似（高速）、false: 完全チェーンシミュレーション（高精度）。",
-      "use_fast_potential": false
+      "incoming_threat_bias": 1.5,
+      "counter_attack_bias": 1.4,
+      "timing_advantage_bias": 1.2,
+      "urgency_weight": 0.8,
+      "lethal_danger_scale": 1.0,
+      "effective_strike_multiplier": 1.5
+    }
+  },
+  "abs": {
+    "_comment_depth": "Adversarial Beam Searchの探索深さ。budget削減で高速化し、depthを伸ばして精度を維持。",
+    "depth": 10,
+    "_comment_chain_cutoff_enabled": "連鎖解決後の探索打ち切り有効化（true/false）。",
+    "chain_cutoff_enabled": true,
+    "my_category_budgets": {
+      "build": 300,
+      "crush": 150,
+      "strike": 80,
+      "evade": 50
+    },
+    "opp_category_budgets": {
+      "build": 200,
+      "crush": 100,
+      "strike": 50,
+      "evade": 30
     }
   }
 }

@@ -1,4 +1,3 @@
-#include <map>
 #include <optional>
 #include <puyotan/common/config.hpp>
 #include <puyotan/common/types.hpp>
@@ -11,7 +10,9 @@
 #include <puyotan/search/beam_config_loader.hpp>
 #include <puyotan/search/beam_evaluator.hpp>
 #include <puyotan/search/beam_search.hpp>
-#include <pybind11/numpy.h>
+#include <puyotan/search/match_simulator.hpp>
+#include <puyotan/search/negamax_search.hpp>
+#include <puyotan/search/abs_search.hpp>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -93,6 +94,7 @@ PYBIND11_MODULE(puyotan_native, m) {
 
     pybind11::class_<Tsumo>(m, "Tsumo")
         .def(pybind11::init<uint32_t>(), pybind11::arg("seed") = 0)
+        .def("clone", [](const Tsumo& t) { return Tsumo(t); })
         .def("get", &Tsumo::get)
         .def("setSeed", &Tsumo::setSeed)
         .def_property_readonly("seed", &Tsumo::getSeed);
@@ -115,10 +117,13 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("rotation", &Action::rotation);
 
     pybind11::class_<ActionState>(m, "ActionState")
+        .def(pybind11::init<>())
         .def_readwrite("action", &ActionState::action)
         .def_readwrite("remaining_frame", &ActionState::remaining_frame);
 
     pybind11::class_<PuyotanPlayer>(m, "PuyotanPlayer")
+        .def(pybind11::init<>())
+        .def("clone", [](const PuyotanPlayer& p) { return PuyotanPlayer(p); })
         .def_readwrite("field", &PuyotanPlayer::field)
         .def_readwrite("score", &PuyotanPlayer::score)
         .def_readwrite("used_score", &PuyotanPlayer::used_score)
@@ -172,60 +177,235 @@ PYBIND11_MODULE(puyotan_native, m) {
     // =========================================================================
     // Beam Search
     // =========================================================================
-    pybind11::class_<search::BeamEvalWeights>(m, "BeamEvalWeights")
+    // =========================================================================
+    // Beam Search
+    // =========================================================================
+    pybind11::class_<search::BeamSearchSession>(m, "BeamSearchSession")
         .def(pybind11::init<>())
-        .def_readwrite("potential_score_scale", &search::BeamEvalWeights::potential_score_scale)
-        .def_readwrite("connectivity_bonus", &search::BeamEvalWeights::connectivity_bonus)
-        .def_readwrite("isolated_penalty", &search::BeamEvalWeights::isolated_penalty)
-        .def_readwrite("buried_penalty", &search::BeamEvalWeights::buried_penalty)
-        .def_readwrite("fire_bias", &search::BeamEvalWeights::fire_bias)
-        .def_readwrite("use_fast_potential", &search::BeamEvalWeights::use_fast_potential);
+        .def_readwrite("score_history", &search::BeamSearchSession::score_history)
+        .def_readwrite("max_history_size", &search::BeamSearchSession::max_history_size)
+        .def_readwrite("min_history_to_check", &search::BeamSearchSession::min_history_to_check)
+        .def_readwrite("total_puyos_threshold", &search::BeamSearchSession::total_puyos_threshold)
+        .def_readwrite("growth_threshold", &search::BeamSearchSession::growth_threshold)
+        .def("is_stagnated", &search::BeamSearchSession::isStagnated)
+        .def("reset", &search::BeamSearchSession::reset);
+
+    pybind11::class_<search::VsBeamEvalWeights>(m, "BeamEvalWeights")
+        .def(pybind11::init<>())
+        .def_readwrite("potential_score_scale", &search::VsBeamEvalWeights::potential_score_scale)
+        .def_readwrite("fire_bias", &search::VsBeamEvalWeights::fire_bias)
+        .def_readwrite("incoming_ojama_penalty", &search::VsBeamEvalWeights::incoming_ojama_penalty)
+        .def_readwrite("incoming_threat_bias",   &search::VsBeamEvalWeights::incoming_threat_bias)
+        .def_readwrite("counter_attack_bias",    &search::VsBeamEvalWeights::counter_attack_bias)
+        .def_readwrite("timing_advantage_bias",   &search::VsBeamEvalWeights::timing_advantage_bias)
+        .def_readwrite("urgency_weight",          &search::VsBeamEvalWeights::urgency_weight)
+        .def_readwrite("lethal_danger_scale",     &search::VsBeamEvalWeights::lethal_danger_scale)
+        .def_readwrite("effective_strike_multiplier", &search::VsBeamEvalWeights::effective_strike_multiplier);
+
+    pybind11::class_<search::SoloBeamEvalWeights>(m, "SoloBeamEvalWeights")
+        .def(pybind11::init<>())
+        .def_readwrite("potential_score_scale", &search::SoloBeamEvalWeights::potential_score_scale);
+
+    pybind11::class_<search::VsEvalContext>(m, "VsEvalContext")
+        .def(pybind11::init<>())
+        .def_readwrite("enemy_field",            &search::VsEvalContext::enemy_field)
+        .def_readwrite("enemy_active_next_pos",  &search::VsEvalContext::enemy_active_next_pos)
+        .def_readwrite("enemy_action_type",      &search::VsEvalContext::enemy_action_type)
+        .def_readwrite("enemy_chain_count",      &search::VsEvalContext::enemy_chain_count)
+        .def_readwrite("enemy_score",            &search::VsEvalContext::enemy_score)
+        .def_readwrite("enemy_used_score",       &search::VsEvalContext::enemy_used_score)
+        .def_readwrite("enemy_best_attack_score",&search::VsEvalContext::enemy_best_attack_score)
+        .def_readwrite("enemy_prepare_turns",    &search::VsEvalContext::enemy_prepare_turns)
+        .def_readwrite("enemy_best_within_4",    &search::VsEvalContext::enemy_best_within_4)
+        .def_readwrite("my_best_within_4",       &search::VsEvalContext::my_best_within_4)
+        .def_readwrite("enemy_active_ojama",     &search::VsEvalContext::enemy_active_ojama)
+        .def_readwrite("enemy_non_active_ojama", &search::VsEvalContext::enemy_non_active_ojama)
+        .def_readwrite("my_active_ojama",        &search::VsEvalContext::my_active_ojama)
+        .def_readwrite("my_non_active_ojama",    &search::VsEvalContext::my_non_active_ojama);
+
+    pybind11::class_<search::SoloBeamConfig>(m, "SoloBeamConfig")
+        .def(pybind11::init<>())
+        .def_readwrite("beam_width", &search::SoloBeamConfig::beam_width)
+        .def_readwrite("look_ahead", &search::SoloBeamConfig::look_ahead)
+        .def_readwrite("dbs_max_similar", &search::SoloBeamConfig::dbs_max_similar)
+        .def_readwrite("eval_weights", &search::SoloBeamConfig::eval_weights);
+
+    pybind11::class_<search::VsBeamConfig>(m, "VsBeamConfig")
+        .def(pybind11::init<>())
+        .def_readwrite("beam_width", &search::VsBeamConfig::beam_width)
+        .def_readwrite("look_ahead", &search::VsBeamConfig::look_ahead)
+        .def_readwrite("dbs_max_similar", &search::VsBeamConfig::dbs_max_similar)
+        .def_readwrite("enable_attack_search", &search::VsBeamConfig::enable_attack_search)
+        .def_readwrite("eval_weights", &search::VsBeamConfig::eval_weights)
+        .def_readwrite("context", &search::VsBeamConfig::context);
+
+    m.def("load_solo_config", &search::BeamConfigLoader::loadSolo, pybind11::arg("path"),
+          "Load SoloBeamConfig from JSON");
+
+    m.def("load_vs_config", &search::BeamConfigLoader::loadVs, pybind11::arg("path"),
+          "Load VsBeamConfig from JSON");
+
+    m.def("load_enemy_config", &search::BeamConfigLoader::loadEnemy, pybind11::arg("path"),
+          "Load VsBeamConfig (enemy) from JSON");
+
+    m.def("load_negamax_config", &search::BeamConfigLoader::loadNegamax, pybind11::arg("path"),
+          "Load NegamaxConfig from JSON");
 
     m.def(
         "beam_search_action",
         [](const PuyotanPlayer& player, const Tsumo& tsumo,
            const std::string& config_path, int beam_width, int look_ahead,
-           bool is_solo, bool is_stagnated,
-           const std::optional<search::BeamEvalWeights>& custom_weights) {
+           bool is_solo,
+           const std::optional<search::VsBeamEvalWeights>& custom_weights,
+           int dbs_max_similar, bool is_enemy,
+           search::BeamSearchSession* session) {
             pybind11::gil_scoped_release release;
 
-            search::BeamConfig cfg;
-            if (custom_weights.has_value()) {
-                cfg.eval_weights = custom_weights.value();
-            } else {
-                if (is_solo) {
-                    cfg = search::BeamConfigLoader::loadSolo(config_path);
-                } else {
-                    cfg = search::BeamConfigLoader::loadVs(config_path);
-                }
-            }
-
-            // Override parameters if specified
-            if (beam_width > 0) {
-                cfg.beam_width = beam_width;
-            }
-            if (look_ahead > 0) {
-                cfg.look_ahead = look_ahead;
-            }
-
-            // Apply stagnated override dynamically for VS mode
-            if (is_stagnated && !is_solo) {
-                cfg.eval_weights.fire_bias = 0.97f;
-                cfg.eval_weights.potential_score_scale = 0.0f;
-            }
-
             if (is_solo) {
-                return search::soloBeamSearch(player, tsumo, cfg);
+                search::SoloBeamConfig cfg;
+                if (custom_weights.has_value()) {
+                    cfg.eval_weights.potential_score_scale = custom_weights.value().potential_score_scale;
+                } else {
+                    cfg = search::BeamConfigLoader::loadSolo(config_path);
+                }
+
+                if (beam_width > 0) cfg.beam_width = beam_width;
+                if (look_ahead > 0) cfg.look_ahead = look_ahead;
+                if (dbs_max_similar >= 0) cfg.dbs_max_similar = dbs_max_similar;
+
+                return search::soloBeamSearch(player, tsumo, cfg, session);
             } else {
-                return search::vsBeamSearch(player, tsumo, cfg);
+                search::VsBeamConfig cfg;
+                if (custom_weights.has_value()) {
+                    cfg.eval_weights = custom_weights.value();
+                } else {
+                    if (is_enemy) {
+                        cfg = search::BeamConfigLoader::loadEnemy(config_path);
+                    } else {
+                        cfg = search::BeamConfigLoader::loadVs(config_path);
+                    }
+                }
+
+                if (beam_width > 0) cfg.beam_width = beam_width;
+                if (look_ahead > 0) cfg.look_ahead = look_ahead;
+                if (dbs_max_similar >= 0) cfg.dbs_max_similar = dbs_max_similar;
+
+                return search::vsBeamSearch(player, tsumo, cfg, session);
             }
         },
         pybind11::arg("player"), pybind11::arg("tsumo"),
         pybind11::arg("config_path"), pybind11::arg("beam_width") = -1,
         pybind11::arg("look_ahead") = -1, pybind11::arg("is_solo") = false,
-        pybind11::arg("is_stagnated") = false,
         pybind11::arg("custom_weights") = std::nullopt,
-        "Run beam search internally managing config loading. "
+        pybind11::arg("dbs_max_similar") = -1,
+        pybind11::arg("is_enemy") = false,
+        pybind11::arg("session") = nullptr,
+        "Run beam search internally managing config loading and multi-turn session. "
         "Returns tuple of (RL action index, expected score).");
+
+    pybind11::class_<search::MatchResult>(m, "MatchResult")
+        .def(pybind11::init<>())
+        .def_readwrite("status", &search::MatchResult::status)
+        .def_readwrite("score_p1", &search::MatchResult::score_p1)
+        .def_readwrite("score_p2", &search::MatchResult::score_p2)
+        .def_readwrite("max_chain_p1", &search::MatchResult::max_chain_p1)
+        .def_readwrite("max_chain_p2", &search::MatchResult::max_chain_p2)
+        .def_readwrite("total_frames", &search::MatchResult::total_frames);
+
+    m.def("simulate_vs_match", &search::simulateVsMatch,
+          pybind11::arg("p1_cfg"), pybind11::arg("p2_cfg"), pybind11::arg("seed"), pybind11::arg("max_frames") = 15000,
+          "Simulate a single VS match entirely in C++ with beam search AI. "
+          "Returns MatchResult.");
+
+    m.def("simulate_vs_matches_parallel", &search::simulateVsMatchesParallel,
+          pybind11::arg("p1_cfg"), pybind11::arg("p2_cfg"), pybind11::arg("seeds"), pybind11::arg("max_frames") = 15000,
+          pybind11::call_guard<pybind11::gil_scoped_release>(),
+          "Simulate multiple VS matches in parallel using OpenMP. "
+          "Returns list of MatchResult.");
+
+    m.def("vs_beam_search",
+          [](PuyotanPlayer player, Tsumo tsumo, search::VsBeamConfig cfg, search::BeamSearchSession* session) {
+              pybind11::gil_scoped_release release;
+              return search::vsBeamSearch(player, tsumo, cfg, session);
+          },
+          pybind11::arg("player"), pybind11::arg("tsumo"), pybind11::arg("cfg"), pybind11::arg("session") = nullptr,
+          "Run VS beam search with a fully configured VsBeamConfig. "
+          "Returns tuple of (RL action index, expected score).");
+
+    m.def("solo_beam_search",
+          [](PuyotanPlayer player, Tsumo tsumo, search::SoloBeamConfig cfg, search::BeamSearchSession* session) {
+              pybind11::gil_scoped_release release;
+              return search::soloBeamSearch(player, tsumo, cfg, session);
+          },
+          pybind11::arg("player"), pybind11::arg("tsumo"), pybind11::arg("cfg"), pybind11::arg("session") = nullptr,
+          "Run Solo beam search with a fully configured SoloBeamConfig. "
+          "Returns tuple of (RL action index, expected score).");
+
+    m.def("load_negamax_config", &search::BeamConfigLoader::loadNegamax,
+          pybind11::arg("config_path"),
+          "Load NegamaxConfig from a JSON config file.");
+
+    pybind11::class_<search::NegamaxConfig>(m, "NegamaxConfig")
+        .def(pybind11::init<>())
+        .def_readwrite("depth", &search::NegamaxConfig::depth)
+        .def_readwrite("candidate_n", &search::NegamaxConfig::candidate_n)
+        .def_readwrite("interior_candidate_n", &search::NegamaxConfig::interior_candidate_n)
+        .def_readwrite("chain_cutoff_enabled", &search::NegamaxConfig::chain_cutoff_enabled)
+        .def_readwrite("use_interior_config", &search::NegamaxConfig::use_interior_config)
+        .def_readwrite("vs_config", &search::NegamaxConfig::vs_config)
+        .def_readwrite("interior_vs_config", &search::NegamaxConfig::interior_vs_config);
+
+    pybind11::class_<search::NegamaxResult>(m, "NegamaxResult")
+        .def(pybind11::init<>())
+        .def_readwrite("best_action", &search::NegamaxResult::best_action)
+        .def_readwrite("best_eval", &search::NegamaxResult::best_eval)
+        .def_readwrite("candidate_evals", &search::NegamaxResult::candidate_evals);
+
+    m.def("negamax_search",
+          [](const PuyotanMatch& match, int my_id, const search::NegamaxConfig& cfg) {
+              pybind11::gil_scoped_release release;
+              return search::negamaxSearch(match, my_id, cfg);
+          },
+          pybind11::arg("match"), pybind11::arg("my_id"), pybind11::arg("cfg"),
+          "Run Negamax adversarial search over PuyotanMatch states.");
+
+    // =========================================================================
+    // Adversarial Beam Search (ABS)
+    // =========================================================================
+    pybind11::class_<search::CategoryBudgets>(m, "CategoryBudgets")
+        .def(pybind11::init<>())
+        .def_readwrite("build", &search::CategoryBudgets::build)
+        .def_readwrite("crush", &search::CategoryBudgets::crush)
+        .def_readwrite("strike", &search::CategoryBudgets::strike)
+        .def_readwrite("evade", &search::CategoryBudgets::evade)
+        .def("total", &search::CategoryBudgets::total);
+
+    pybind11::class_<search::AbsConfig>(m, "AbsConfig")
+        .def(pybind11::init<>())
+        .def_readwrite("depth", &search::AbsConfig::depth)
+        .def_readwrite("chain_cutoff_enabled", &search::AbsConfig::chain_cutoff_enabled)
+        .def_readwrite("my_budgets", &search::AbsConfig::my_budgets)
+        .def_readwrite("opp_budgets", &search::AbsConfig::opp_budgets)
+        .def_readwrite("eval_weights", &search::AbsConfig::eval_weights);
+
+    pybind11::class_<search::AbsResult>(m, "AbsResult")
+        .def(pybind11::init<>())
+        .def_readwrite("best_action", &search::AbsResult::best_action)
+        .def_readwrite("best_eval", &search::AbsResult::best_eval)
+        .def_readwrite("candidate_evals", &search::AbsResult::candidate_evals);
+
+    m.def("load_abs_config", &search::BeamConfigLoader::loadAbs,
+          pybind11::arg("config_path"),
+          "Load AbsConfig from JSON config file.");
+
+    m.def("abs_search",
+          [](const PuyotanMatch& match, int my_id, const search::AbsConfig& cfg) {
+              pybind11::gil_scoped_release release;
+              return search::absSearch(match, my_id, cfg);
+          },
+          pybind11::arg("match"), pybind11::arg("my_id"), pybind11::arg("cfg"),
+          "Run Adversarial Beam Search (ABS) over PuyotanMatch states.");
+
+    m.def("test_version", []() { return 999; });
 }
 } // namespace puyotan

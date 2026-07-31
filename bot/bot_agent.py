@@ -99,6 +99,9 @@ class PuyotanBot:
         # 送信済みフレームの追跡（プレイヤーIDごと）
         self._submitted: dict[int, set[int]] = {0: set(), 1: set()}
 
+        # 探索セッション管理（停滞判定などの履歴管理用）
+        self._sessions = {0: p.BeamSearchSession(), 1: p.BeamSearchSession()}
+
         # ビームサーチの非同期実行管理
         # ソロモードでは pid=0 のみ使用し、結果をP0・P1両方に送信する
         self._search_thread: Optional[threading.Thread] = None
@@ -486,12 +489,17 @@ class PuyotanBot:
         player = state.get_player_state(target_pid)
         tsumo = state.get_tsumo()
         is_solo = self.is_solo
+        is_enemy = (not is_solo) and (target_pid == 1)
+
+        session = self._sessions[target_pid]
 
         def worker():
             result = p.beam_search_action(
                 player, tsumo, _CONFIG_PATH,
                 self.beam_width, self.look_ahead,
-                is_solo, False,
+                is_solo,
+                is_enemy=is_enemy,
+                session=session
             )
             with self._search_lock:
                 self._search_result = result

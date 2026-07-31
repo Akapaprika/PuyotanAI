@@ -1,4 +1,5 @@
 import sys
+import time
 from pathlib import Path
 
 # Add project paths
@@ -31,18 +32,23 @@ for frame in range(1000):
     p1_state = model.match.getPlayer(0)
     act_type = p1_state.current_action.action.type
     
-    # If the score changed, print it
     old_score = vm.prev_scores[0]
     vm.update()
     
+    # Sleep to allow async search thread to run and finish
+    time.sleep(0.005)
+    
+    new_act = p1_state.current_action.action
+    if new_act.type != p.ActionType.NONE and act_type == p.ActionType.NONE:
+        print(f"Frame {frame:3d} | P1 Decided: {new_act.type.name} at x={new_act.x}, rot={new_act.rotation.name}")
+        
     new_score = model.match.getPlayer(0).score
     if new_score != old_score:
-        print(f"Frame {frame:3d} | Action: {act_type.name:10s} | Score: {old_score:5d} -> {new_score:5d} (+{new_score - old_score:5d}) | CurrentChainScore: {vm.current_chain_scores[0]} | LastChainScore: {vm.last_chain_scores[0]} | ChainCount: {p1_state.chain_count}")
+        print(f"Frame {frame:3d} | Action: {act_type.name:10s} | Score: {old_score:5d} -> {new_score:5d} (+{new_score - old_score:5d}) | ChainCount: {p1_state.chain_count}")
         
     if vm.last_chains[0] > 0 and not has_chained:
         print(f"*** CHAIN FINISHED! Count: {vm.last_chains[0]}, Score: {vm.last_chain_scores[0]}")
         has_chained = True
-        # Let's run a bit more to see if it resets or does anything else
         
-    if frame > 200 and has_chained:
+    if frame > 800 and has_chained:
         break
