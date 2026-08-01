@@ -2,18 +2,10 @@
 
 namespace puyotan {
 namespace {
-// kGhostMask: masks out the ghost row (y >= 12) so those puyos don't
-// participate in connectivity or erasure.
-// Placed at file scope to avoid MSVC's per-call thread-safe static
-// initialization (hidden mutex) that would fire on every scanGroups() call.
-static const __m128i kGhostMask =
-    _mm_set_epi64x(static_cast<int64_t>(config::Board::kChainableHiMask),
-                   static_cast<int64_t>(config::Board::kChainableLoMask));
-} // anonymous namespace
-
 static const alignas(16) uint64_t kBoundaryMaskData[2] = {
     config::Board::kLoMask, config::Board::kHiMask
 };
+} // anonymous namespace
 
 // -----------------------------------------------------------------------
 // PUBLIC API
