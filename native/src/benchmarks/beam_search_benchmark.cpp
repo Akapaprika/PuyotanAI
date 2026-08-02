@@ -274,8 +274,7 @@ bool runRegressionTest(const SoloBeamConfig& /*cfg*/) {
     bool all_ok = true;
     for (const auto& exp : expected) {
         PuyotanPlayer player = createTestPlayer(exp.seed);
-        TsumoSequence tsumo_seq;
-        TsumoSequence::generate(tsumo_seq, exp.seed, 64);
+        TsumoSequence tsumo_seq(exp.seed);
 
         SearchStats stats = runSingleSearch(player, tsumo_seq, test_cfg);
         Action a = getRLAction(stats.action);
