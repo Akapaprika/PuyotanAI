@@ -94,7 +94,7 @@ static float negamaxRec(PuyotanMatch match, int my_id, int depth, float alpha, f
     ctx.my_non_active_ojama    = curr_p.non_active_ojama;
 
     const int target_candidate_n = cfg.interior_candidate_n > 0 ? cfg.interior_candidate_n : cfg.candidate_n;
-    auto candidates = vsBeamSearchTopN(curr_p, match.getTsumo(), player_cfg, target_candidate_n);
+    auto candidates = vsBeamSearchTopN(curr_p, *match.getTsumoSequence(), player_cfg, target_candidate_n);
     if (candidates.empty()) {
         return evaluateMatchState(match, my_id, cfg.vs_config.eval_weights);
     }
@@ -159,7 +159,7 @@ NegamaxResult negamaxSearch(const PuyotanMatch& match, int my_id, const NegamaxC
     ctx.my_active_ojama        = my_p.active_ojama;
     ctx.my_non_active_ojama    = my_p.non_active_ojama;
 
-    auto candidates = vsBeamSearchTopN(my_p, match.getTsumo(), player_cfg, cfg.candidate_n);
+    auto candidates = vsBeamSearchTopN(my_p, *match.getTsumoSequence(), player_cfg, cfg.candidate_n);
     if (candidates.empty()) {
         res.best_eval = evaluateMatchState(match, my_id, cfg.vs_config.eval_weights);
         return res;

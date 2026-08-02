@@ -92,12 +92,11 @@ PYBIND11_MODULE(puyotan_native, m) {
     pybind11::class_<Scorer>(m, "Scorer")
         .def_static("calculateStepScore", &Scorer::calculateStepScore);
 
-    pybind11::class_<Tsumo>(m, "Tsumo")
-        .def(pybind11::init<uint32_t>(), pybind11::arg("seed") = 0)
-        .def("clone", [](const Tsumo& t) { return Tsumo(t); })
-        .def("get", &Tsumo::get)
-        .def("setSeed", &Tsumo::setSeed)
-        .def_property_readonly("seed", &Tsumo::getSeed);
+    // 軽量化された TsumoSequence のバインディング
+    pybind11::class_<TsumoSequence>(m, "TsumoSequence")
+        .def(pybind11::init<uint32_t>(), pybind11::arg("seed") = 1)
+        .def("get", &TsumoSequence::get, pybind11::arg("index"))
+        .def("getOjamaSeed", &TsumoSequence::getOjamaSeed);
 
     pybind11::enum_<ActionType>(m, "ActionType")
         .value("NONE", ActionType::None)
@@ -142,7 +141,7 @@ PYBIND11_MODULE(puyotan_native, m) {
         .export_values();
 
     pybind11::class_<PuyotanMatch>(m, "PuyotanMatch")
-        .def(pybind11::init<uint32_t>(), pybind11::arg("seed") = 0)
+        .def(pybind11::init<uint32_t>(), pybind11::arg("seed") = 1)
         .def("clone", [](const PuyotanMatch& m) { return PuyotanMatch(m); })
         .def_static("runBatch", &PuyotanMatch::runBatch,
                     pybind11::arg("num_games"), pybind11::arg("seed") = 1,
@@ -155,7 +154,8 @@ PYBIND11_MODULE(puyotan_native, m) {
              pybind11::call_guard<pybind11::gil_scoped_release>())
         .def("getPlayer", &PuyotanMatch::getPlayer,
              pybind11::return_value_policy::reference_internal)
-        .def("getTsumo", &PuyotanMatch::getTsumo,
+        // getTsumo から getTsumoSequence へ変更
+        .def("getTsumoSequence", &PuyotanMatch::getTsumoSequence,
              pybind11::return_value_policy::reference_internal)
         .def("getPiece", &PuyotanMatch::getPiece)
         .def_property_readonly("frame", &PuyotanMatch::getFrame)
@@ -165,18 +165,11 @@ PYBIND11_MODULE(puyotan_native, m) {
     // =========================================================================
     // Environment
     // =========================================================================
-
-    // -- RL Action Table --
-    // kNumRLActions and get_rl_action() are the SINGLE SOURCE OF TRUTH for
-    // the action index <-> (col, rotation) mapping used by training AND GUI.
     m.attr("kNumRLActions") = kNumRLActions;
     m.def("get_rl_action", &getRLAction, pybind11::arg("idx"),
           "Convert a flat RL action index to an Action (col, rotation). "
           "Returns Pass action for out-of-range indices.");
 
-    // =========================================================================
-    // Beam Search
-    // =========================================================================
     // =========================================================================
     // Beam Search
     // =========================================================================
@@ -253,7 +246,7 @@ PYBIND11_MODULE(puyotan_native, m) {
 
     m.def(
         "beam_search_action",
-        [](const PuyotanPlayer& player, const Tsumo& tsumo,
+        [](const PuyotanPlayer& player, const TsumoSequence& tsumo_seq, // ← TsumoSequence に変更
            const std::string& config_path, int beam_width, int look_ahead,
            bool is_solo,
            const std::optional<search::VsBeamEvalWeights>& custom_weights,
@@ -273,7 +266,7 @@ PYBIND11_MODULE(puyotan_native, m) {
                 if (look_ahead > 0) cfg.look_ahead = look_ahead;
                 if (dbs_max_similar >= 0) cfg.dbs_max_similar = dbs_max_similar;
 
-                return search::soloBeamSearch(player, tsumo, cfg, session);
+                return search::soloBeamSearch(player, tsumo_seq, cfg, session);
             } else {
                 search::VsBeamConfig cfg;
                 if (custom_weights.has_value()) {
@@ -290,10 +283,10 @@ PYBIND11_MODULE(puyotan_native, m) {
                 if (look_ahead > 0) cfg.look_ahead = look_ahead;
                 if (dbs_max_similar >= 0) cfg.dbs_max_similar = dbs_max_similar;
 
-                return search::vsBeamSearch(player, tsumo, cfg, session);
+                return search::vsBeamSearch(player, tsumo_seq, cfg, session);
             }
         },
-        pybind11::arg("player"), pybind11::arg("tsumo"),
+        pybind11::arg("player"), pybind11::arg("tsumo_seq"),
         pybind11::arg("config_path"), pybind11::arg("beam_width") = -1,
         pybind11::arg("look_ahead") = -1, pybind11::arg("is_solo") = false,
         pybind11::arg("custom_weights") = std::nullopt,
@@ -324,20 +317,20 @@ PYBIND11_MODULE(puyotan_native, m) {
           "Returns list of MatchResult.");
 
     m.def("vs_beam_search",
-          [](PuyotanPlayer player, Tsumo tsumo, search::VsBeamConfig cfg, search::BeamSearchSession* session) {
+          [](const PuyotanPlayer& player, const TsumoSequence& tsumo_seq, search::VsBeamConfig cfg, search::BeamSearchSession* session) {
               pybind11::gil_scoped_release release;
-              return search::vsBeamSearch(player, tsumo, cfg, session);
+              return search::vsBeamSearch(player, tsumo_seq, cfg, session);
           },
-          pybind11::arg("player"), pybind11::arg("tsumo"), pybind11::arg("cfg"), pybind11::arg("session") = nullptr,
+          pybind11::arg("player"), pybind11::arg("tsumo_seq"), pybind11::arg("cfg"), pybind11::arg("session") = nullptr,
           "Run VS beam search with a fully configured VsBeamConfig. "
           "Returns tuple of (RL action index, expected score).");
 
     m.def("solo_beam_search",
-          [](PuyotanPlayer player, Tsumo tsumo, search::SoloBeamConfig cfg, search::BeamSearchSession* session) {
+          [](const PuyotanPlayer& player, const TsumoSequence& tsumo_seq, search::SoloBeamConfig cfg, search::BeamSearchSession* session) {
               pybind11::gil_scoped_release release;
-              return search::soloBeamSearch(player, tsumo, cfg, session);
+              return search::soloBeamSearch(player, tsumo_seq, cfg, session);
           },
-          pybind11::arg("player"), pybind11::arg("tsumo"), pybind11::arg("cfg"), pybind11::arg("session") = nullptr,
+          pybind11::arg("player"), pybind11::arg("tsumo_seq"), pybind11::arg("cfg"), pybind11::arg("session") = nullptr,
           "Run Solo beam search with a fully configured SoloBeamConfig. "
           "Returns tuple of (RL action index, expected score).");
 

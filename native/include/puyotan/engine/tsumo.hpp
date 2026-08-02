@@ -1,37 +1,30 @@
 #pragma once
 
 #include <array>
+#include <cassert>
 #include <cstdint>
+#include <mutex>
 #include <puyotan/common/config.hpp>
 #include <puyotan/common/types.hpp>
 
 namespace puyotan {
-/**
- * @class Tsumo
- * @brief Ring-buffered puyo piece generator with lazy chunk generation.
- *
- * Generates a deterministic sequence of puyo pairs based on a 32-bit seed.
- * Pool entries are generated on demand in chunks of kTsumoChunkSize to avoid
- * the cost of pre-computing all 1000 entries upfront.
- *
- * getSeed() (= ojama RNG seed) is computed via a precomputed GF(2)^32 jump
- * matrix, replacing the 2000-step sequential XORSHIFT with O(32) XOR ops.
- */
-class Tsumo {
-  public:
-    explicit Tsumo(uint32_t seed = 1u) noexcept;
 
-    /**
-     * @brief Retrieves a PuyoPiece at the specified absolute sequence index.
-     * @param index Sequence index (starts at 0, wraps at kTsumoPoolSize).
-     * @return The axis and sub puyo colors.
-     * @note O(1) normally. The [[unlikely]] branch fires at most once per
-     *       kTsumoChunkSize calls, generating the next chunk in bulk.
-     */
-    inline PuyoPiece get(int32_t index) const noexcept {
+// 64手ごとの Lazy Chunk 生成を行う共有ツモプール (約4KB)
+class TsumoSequence {
+  public:
+    explicit TsumoSequence(uint32_t seed = 1u) noexcept;
+
+    // 不用意な4KBコピーを防ぐためコピーは削除（参照・ポインタ共有を強制）
+    TsumoSequence(const TsumoSequence&) = delete;
+    TsumoSequence& operator=(const TsumoSequence&) = delete;
+
+    void setSeed(uint32_t seed) noexcept;
+
+    // インデックス指定でツモを取得（64手以内なら0オーバーヘッドで直参照）
+    [[nodiscard]] inline PuyoPiece get(int32_t index) const noexcept {
         uint32_t idx = static_cast<uint32_t>(index);
         if (idx >= config::Rule::kTsumoPoolSize) [[unlikely]] {
-            idx -= config::Rule::kTsumoPoolSize;
+            idx %= config::Rule::kTsumoPoolSize;
         }
         if (idx >= generated_count_) [[unlikely]] {
             expandTo(idx);
@@ -39,24 +32,36 @@ class Tsumo {
         return pool_[idx];
     }
 
-    void setSeed(uint32_t seed) noexcept;
-
-    /// Returns the XORSHIFT state after all kTsumoPoolSize pairs have been
-    /// consumed. Used by PuyotanMatch to seed the ojama RNG.
-    /// Computed via jump matrix in setSeed() — O(32) ops, not O(2000).
-    uint32_t getSeed() const noexcept;
+    // 遅延評価・事前計算されたおじゃまシードを取得
+    uint32_t getOjamaSeed() const noexcept;
 
   private:
-    /// Generates pool entries up to the chunk boundary that covers target_idx.
-    /// Called lazily from get() via [[unlikely]] branch.
+
     void expandTo(uint32_t target_idx) const noexcept;
 
-    uint32_t initial_seed_;                    ///< 初期シードを保持
-    mutable uint32_t ojama_seed_ = 0;          ///< 遅延計算・キャッシュ用
-    mutable bool ojama_seed_computed_ = false; ///< 計算済みフラグ
+    uint32_t initial_seed_ = 1u;
+    mutable uint32_t rng_state_ = 1u;
+    mutable uint32_t generated_count_ = 0;
+    mutable uint32_t ojama_seed_ = 0;
+    mutable bool ojama_seed_computed_ = false;
 
-    mutable uint32_t rng_state_; ///< Running state for lazy pool generation
-    mutable uint32_t generated_count_; ///< Number of valid entries in pool_
-    mutable std::array<PuyoPiece, config::Rule::kTsumoPoolSize> pool_;
+    mutable std::mutex expand_mutex_; // マルチスレッド安全な追加生成用
+    mutable std::array<PuyoPiece, config::Rule::kTsumoPoolSize> pool_{};
 };
+
+// 探索ノード用超軽量カーソル (16バイト)
+struct TsumoCursor {
+    const TsumoSequence* sequence = nullptr;
+    uint16_t position = 0;
+
+    [[nodiscard]] __forceinline PuyoPiece get(int offset = 0) const noexcept {
+        assert(sequence != nullptr);
+        return sequence->get(position + offset);
+    }
+
+    __forceinline void advance(int count = 1) noexcept {
+        position = static_cast<uint16_t>(position + count);
+    }
+};
+
 } // namespace puyotan

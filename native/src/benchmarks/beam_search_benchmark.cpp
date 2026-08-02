@@ -1,19 +1,6 @@
 /**
  * @file beam_search_benchmark.cpp
  * @brief Beam Search Performance Benchmark (Solo Mode Simulation)
- *
- * Measures:
- * - Searches per second: How many beam search operations can be completed in 1
- * second
- * - Nodes per second: Total beam nodes evaluated per second
- * - FPS (Frames per second): Overall match simulation speed
- * - Placements per second: Dynamic decision-making throughput (Moves per
- * second)
- * - Latency: Time per search (p50, p95, p99) under realistic solo workloads
- * - Action distribution: Which actions are selected in actual play
- * - Score statistics: Expected scores from search
- *
- * Solo mode is simulated by mirroring the exact same actions on both 1P and 2P.
  */
 #include <algorithm>
 #include <array>
@@ -28,7 +15,6 @@
 #include <random>
 #include <string>
 #include <vector>
-
 
 using namespace puyotan;
 using namespace puyotan::search;
@@ -59,10 +45,8 @@ struct BenchmarkResult {
     double elapsed_seconds = 0.0;
 };
 
-/// Estimates nodes processed in a beam search (approximate)
 int estimateNodesProcessed(const SoloBeamConfig& cfg) {
-    const int actions_per_depth =
-        18; // ~18 put actions (excluding duplicates and pass)
+    const int actions_per_depth = 18;
     int nodes = 0;
     int current_width = 1;
     for (int d = 0; d < cfg.look_ahead; ++d) {
@@ -73,8 +57,6 @@ int estimateNodesProcessed(const SoloBeamConfig& cfg) {
     return nodes;
 }
 
-/// Creates a realistic player state for regression testing (10 preliminary
-/// moves)
 PuyotanPlayer createTestPlayer(uint32_t seed) {
     PuyotanPlayer player;
     PuyotanMatch match(seed);
@@ -100,13 +82,12 @@ PuyotanPlayer createTestPlayer(uint32_t seed) {
     return player;
 }
 
-/// Runs a single beam search and returns statistics
-SearchStats runSingleSearch(const PuyotanPlayer& player, const Tsumo& tsumo,
+SearchStats runSingleSearch(const PuyotanPlayer& player, const TsumoSequence& tsumo_seq,
                             const SoloBeamConfig& cfg) {
     SearchStats stats;
     auto start = std::chrono::high_resolution_clock::now();
 
-    auto result = soloBeamSearch(player, tsumo, cfg);
+    auto result = soloBeamSearch(player, tsumo_seq, cfg);
 
     auto end = std::chrono::high_resolution_clock::now();
     stats.latency_ms =
@@ -118,7 +99,6 @@ SearchStats runSingleSearch(const PuyotanPlayer& player, const Tsumo& tsumo,
     return stats;
 }
 
-/// Runs benchmark in simulated solo format
 BenchmarkResult runBenchmark(double duration_seconds, const SoloBeamConfig& cfg,
                              uint32_t base_seed = 12345) {
     BenchmarkResult result;
@@ -131,9 +111,7 @@ BenchmarkResult runBenchmark(double duration_seconds, const SoloBeamConfig& cfg,
     auto start_time = std::chrono::high_resolution_clock::now();
     uint32_t seed = base_seed;
 
-    // Safety limits to prevent out-of-bounds tsumo access and infinite loops
-    const int max_moves_per_game =
-        100; // Cap at 100 placements to stay safely within Tsumo bounds
+    const int max_moves_per_game = 100;
 
     while (true) {
         auto now = std::chrono::high_resolution_clock::now();
@@ -143,12 +121,10 @@ BenchmarkResult runBenchmark(double duration_seconds, const SoloBeamConfig& cfg,
             break;
 
         PuyotanMatch match(seed);
-        Tsumo tsumo(seed);
         match.start();
 
         int game_moves = 0;
 
-        // Match progression loop
         while (match.getStatus() == MatchStatus::Playing &&
                game_moves < max_moves_per_game) {
 
@@ -158,12 +134,13 @@ BenchmarkResult runBenchmark(double duration_seconds, const SoloBeamConfig& cfg,
             // Run beam search once at Player 0 (1P) decision timing
             if (decision_mask & 1) {
                 auto start = std::chrono::high_resolution_clock::now();
-                auto search_res = soloBeamSearch(match.getPlayer(0), tsumo, cfg);
+                
+                auto search_res = soloBeamSearch(match.getPlayer(0), *match.getTsumoSequence(), cfg);
+                
                 auto end = std::chrono::high_resolution_clock::now();
 
                 double latency_ms =
-                    std::chrono::duration<double, std::milli>(end - start)
-                        .count();
+                    std::chrono::duration<double, std::milli>(end - start).count();
                 latencies.push_back(latency_ms);
                 total_search_time_ms += latency_ms;
                 expected_scores.push_back(search_res.second);
@@ -173,8 +150,6 @@ BenchmarkResult runBenchmark(double duration_seconds, const SoloBeamConfig& cfg,
                     Action act = getRLAction(action_idx);
                     result.action_counts[action_idx]++;
 
-                    // Apply identical action to both 1P and 2P to maintain
-                    // perfect symmetry (Solo Mode)
                     match.setAction(0, act);
                     match.setAction(1, act);
 
@@ -182,15 +157,12 @@ BenchmarkResult runBenchmark(double duration_seconds, const SoloBeamConfig& cfg,
                     game_moves++;
                     action_set = true;
                 } else {
-                    // No valid action found (game over/dead end) -> exit match
-                    // loop immediately
                     break;
                 }
                 result.total_nodes += estimateNodesProcessed(cfg);
                 result.total_searches++;
             }
 
-            // Advance match frames
             if (match.canStepNextFrame()) {
                 match.stepNextFrame();
                 result.total_frames++;
@@ -207,7 +179,6 @@ BenchmarkResult runBenchmark(double duration_seconds, const SoloBeamConfig& cfg,
     result.elapsed_seconds =
         std::chrono::duration<double>(end_time - start_time).count();
 
-    // Throughput metrics (Use pure search time for search speed metrics)
     double total_search_time_sec = total_search_time_ms / 1000.0;
     if (total_search_time_sec > 1e-6) {
         result.searches_per_sec = result.total_searches / total_search_time_sec;
@@ -219,7 +190,6 @@ BenchmarkResult runBenchmark(double duration_seconds, const SoloBeamConfig& cfg,
     result.fps = result.total_frames / result.elapsed_seconds;
     result.moves_per_sec = result.total_moves / result.elapsed_seconds;
 
-    // Compute latency percentiles
     if (!latencies.empty()) {
         std::sort(latencies.begin(), latencies.end());
         size_t n = latencies.size();
@@ -289,31 +259,25 @@ struct ExpectedBeamStats {
     float score;
 };
 
-/// Quick verification: runs a few games with fixed seeds and prints stats for
-/// regression testing. Returns true if all stats match expected values.
-bool runRegressionTest(
-    const SoloBeamConfig& /*cfg*/) { // 引数の cfg を無視するか、以下で上書きします
+bool runRegressionTest(const SoloBeamConfig& /*cfg*/) {
     printf("\n=== REGRESSION TEST (Fixed Seeds) ===\n");
     const ExpectedBeamStats expected[] = {
         {1, 0, 40.00f},       {42, 0, 0.00f},      {123, 0, 0.00f},
         {999, 2, 100.00f},    {12345, 2, 40.00f},   {424242, 8, 40.00f},
         {111111, 5, 40.00f},  {999999, 9, 180.00f}};
 
-    // 【修正箇所】テスト用の静的な設定（3手先読み、ビーム幅500）を強制します
-    // これにより、ベンチマークを10手や40手で回しても、テスト自体は常に同じ3手の基準で正しくパスします
     SoloBeamConfig test_cfg;
     test_cfg.beam_width = 500;
     test_cfg.look_ahead = 3;
-    test_cfg.eval_weights = SoloBeamEvalWeights{}; // デフォルトの重みを使用
+    test_cfg.eval_weights = SoloBeamEvalWeights{};
 
     bool all_ok = true;
     for (const auto& exp : expected) {
         PuyotanPlayer player = createTestPlayer(exp.seed);
-        Tsumo tsumo(exp.seed);
+        TsumoSequence tsumo_seq;
+        TsumoSequence::generate(tsumo_seq, exp.seed, 64);
 
-        // 修正：引数で渡された cfg ではなく、テスト専用의 test_cfg
-        // を使用して検索します
-        SearchStats stats = runSingleSearch(player, tsumo, test_cfg);
+        SearchStats stats = runSingleSearch(player, tsumo_seq, test_cfg);
         Action a = getRLAction(stats.action);
         printf("Seed %7u: action=%3d (Put, rot=%d, x=%2d)  score=%.2f  "
                "latency=%.3fms  valid=%d\n",
@@ -355,14 +319,10 @@ int main(int argc, char** argv) {
         } else if (arg == "--help" || arg == "-h") {
             printf("Usage: beam_search_benchmark [options]\n");
             printf("Options:\n");
-            printf("  --duration, -d <seconds>     Benchmark duration "
-                   "(default: 5.0)\n");
-            printf("  --regression, -r             Run regression test with "
-                   "fixed seeds\n");
-            printf(
-                "  --beam-width, -w <int>       Beam width (default: 500)\n");
-            printf("  --look-ahead, -l <int>       Look ahead depth (default: "
-                   "3)\n");
+            printf("  --duration, -d <seconds>     Benchmark duration (default: 5.0)\n");
+            printf("  --regression, -r             Run regression test with fixed seeds\n");
+            printf("  --beam-width, -w <int>       Beam width (default: 500)\n");
+            printf("  --look-ahead, -l <int>       Look ahead depth (default: 3)\n");
             printf("  --help, -h                   Show this help\n");
             return 0;
         }
@@ -373,8 +333,7 @@ int main(int argc, char** argv) {
     cfg.look_ahead = look_ahead;
     printf("Beam Search Benchmark (Solo-Mode format) Starting...\n");
     printf("Duration: %.1f seconds\n", duration);
-    printf("Config: width=%d, depth=%d\n", beam_width,
-           look_ahead);
+    printf("Config: width=%d, depth=%d\n", beam_width, look_ahead);
 
     if (run_regression) {
         bool ok = runRegressionTest(cfg);

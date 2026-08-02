@@ -160,10 +160,9 @@ PlaceResult simulatePlacement(const Board& src, PuyoPiece piece,
 
 template <typename ConfigType, typename EvaluatorType, bool HasFireBias = false>
 std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
-                                     const Tsumo& tsumo_const,
+                                     const TsumoSequence& tsumo_seq,
                                      const ConfigType& cfg_param,
                                      BeamSearchSession* session = nullptr) noexcept {
-    const Tsumo& tsumo = tsumo_const;
     const int tsumo_base = player.active_next_pos;
 
     ConfigType cfg = cfg_param;
@@ -190,7 +189,7 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
             const auto& aw = cfg.eval_weights;
             const int total_incoming = cfg.context.my_active_ojama + cfg.context.my_non_active_ojama;
             // 相手側の攻撃探索：3ツモ固定で高速化
-            auto enemy_attacks = collectAttackCandidates(cfg.context.enemy_field, tsumo, cfg.context.enemy_active_next_pos, 3, 150);
+            auto enemy_attacks = collectAttackCandidates(cfg.context.enemy_field, tsumo_seq, cfg.context.enemy_active_next_pos, 3, 150);
 
             // 自分側の攻撃探索：相手の連鎖状態・予告量に応じた動的なツモ範囲を設定
             int my_depth = 3;
@@ -204,7 +203,7 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                 my_depth = 2;
             }
 
-            auto my_attacks = collectAttackCandidates(player.field, tsumo, player.active_next_pos, my_depth, 250);
+            auto my_attacks = collectAttackCandidates(player.field, tsumo_seq, player.active_next_pos, my_depth, 250);
 
             if (!enemy_attacks.empty()) {
                 const_cast<VsEvalContext&>(cfg.context).enemy_best_attack_score = enemy_attacks[0].score;
@@ -275,7 +274,7 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
     tl_current_beam.emplace_back(player.field, 0.0f, 0.0f, -1);
 
     for (int depth = 0; depth < cfg.look_ahead; ++depth) {
-        PuyoPiece piece = tsumo.get(tsumo_base + depth);
+        PuyoPiece piece = tsumo_seq.get(tsumo_base + depth);
         const bool is_zoro = (piece.axis == piece.sub);
         tl_next_beam.clear();
 
@@ -390,25 +389,25 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
 }
 
 std::pair<int, float> soloBeamSearch(const PuyotanPlayer& player,
-                                     const Tsumo& tsumo_const,
+                                     const TsumoSequence& tsumo_seq,
                                      const SoloBeamConfig& cfg,
                                      BeamSearchSession* session) noexcept {
-    return beamSearchImpl<SoloBeamConfig, SoloBeamEvaluator, false>(player, tsumo_const, cfg, session);
+    return beamSearchImpl<SoloBeamConfig, SoloBeamEvaluator, false>(player, tsumo_seq, cfg, session);
 }
 
 std::pair<int, float> vsBeamSearch(const PuyotanPlayer& player,
-                                   const Tsumo& tsumo_const,
+                                   const TsumoSequence& tsumo_seq,
                                    const VsBeamConfig& cfg,
                                    BeamSearchSession* session) noexcept {
-    return beamSearchImpl<VsBeamConfig, VsBeamEvaluator, true>(player, tsumo_const, cfg, session);
+    return beamSearchImpl<VsBeamConfig, VsBeamEvaluator, true>(player, tsumo_seq, cfg, session);
 }
 
 std::vector<std::pair<int, float>> vsBeamSearchTopN(const PuyotanPlayer& player,
-                                                    const Tsumo& tsumo_const,
+                                                    const TsumoSequence& tsumo_seq,
                                                     const VsBeamConfig& cfg,
                                                     int top_n) noexcept {
     // Run the beam search
-    beamSearchImpl<VsBeamConfig, VsBeamEvaluator, true>(player, tsumo_const, cfg, nullptr);
+    beamSearchImpl<VsBeamConfig, VsBeamEvaluator, true>(player, tsumo_seq, cfg, nullptr);
 
     std::vector<std::pair<int, float>> results;
     results.reserve(top_n);

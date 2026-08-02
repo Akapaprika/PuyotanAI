@@ -70,7 +70,7 @@ struct VsBeamConfig {
  * @brief Runs a beam search from the given player state and returns the best RL action index and its expected score for Solo mode.
  */
 std::pair<int, float> soloBeamSearch(const PuyotanPlayer& player,
-                                     const Tsumo&         tsumo,
+                                     const TsumoSequence& tsumo_seq,
                                      const SoloBeamConfig& cfg,
                                      BeamSearchSession*   session = nullptr) noexcept;
 
@@ -78,7 +78,7 @@ std::pair<int, float> soloBeamSearch(const PuyotanPlayer& player,
  * @brief Runs a beam search from the given player state and returns the best RL action index and its expected score for VS mode.
  */
 std::pair<int, float> vsBeamSearch(const PuyotanPlayer& player,
-                                   const Tsumo&         tsumo,
+                                   const TsumoSequence& tsumo_seq,
                                    const VsBeamConfig&  cfg,
                                    BeamSearchSession*   session = nullptr) noexcept;
 
@@ -86,7 +86,7 @@ std::pair<int, float> vsBeamSearch(const PuyotanPlayer& player,
  * @brief Runs a VS beam search and returns the top N unique candidate actions with their scores.
  */
 std::vector<std::pair<int, float>> vsBeamSearchTopN(const PuyotanPlayer& player,
-                                                    const Tsumo&         tsumo,
+                                                    const TsumoSequence& tsumo_seq,
                                                     const VsBeamConfig&  cfg,
                                                     int                  top_n = 5) noexcept;
 
