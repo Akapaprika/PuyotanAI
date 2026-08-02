@@ -29,7 +29,6 @@
 #include <string>
 #include <vector>
 
-
 using namespace puyotan;
 using namespace puyotan::search;
 
@@ -158,7 +157,8 @@ BenchmarkResult runBenchmark(double duration_seconds, const SoloBeamConfig& cfg,
             // Run beam search once at Player 0 (1P) decision timing
             if (decision_mask & 1) {
                 auto start = std::chrono::high_resolution_clock::now();
-                auto search_res = soloBeamSearch(match.getPlayer(0), tsumo, cfg);
+                auto search_res =
+                    soloBeamSearch(match.getPlayer(0), tsumo, cfg);
                 auto end = std::chrono::high_resolution_clock::now();
 
                 double latency_ms =
@@ -246,8 +246,8 @@ void printBenchmarkResult(const BenchmarkResult& r, const SoloBeamConfig& cfg) {
     printf("\n========================================\n");
     printf("  BEAM SEARCH SOLO-MODE BENCHMARK\n");
     printf("========================================\n");
-    printf("Config: beam_width=%d, look_ahead=%d\n",
-           cfg.beam_width, cfg.look_ahead);
+    printf("Config: beam_width=%d, look_ahead=%d\n", cfg.beam_width,
+           cfg.look_ahead);
     printf("Duration:        %.3f seconds\n", r.elapsed_seconds);
     printf("Total Games:     %d\n", r.total_games);
     printf("Total Frames:    %llu\n", r.total_frames);
@@ -292,12 +292,13 @@ struct ExpectedBeamStats {
 /// Quick verification: runs a few games with fixed seeds and prints stats for
 /// regression testing. Returns true if all stats match expected values.
 bool runRegressionTest(
-    const SoloBeamConfig& /*cfg*/) { // 引数の cfg を無視するか、以下で上書きします
+    const SoloBeamConfig& /*cfg*/) { // 引数の cfg
+                                     // を無視するか、以下で上書きします
     printf("\n=== REGRESSION TEST (Fixed Seeds) ===\n");
     const ExpectedBeamStats expected[] = {
-        {1, 0, 40.00f},       {42, 0, 0.00f},      {123, 0, 0.00f},
-        {999, 2, 100.00f},    {12345, 2, 40.00f},   {424242, 8, 40.00f},
-        {111111, 5, 40.00f},  {999999, 9, 180.00f}};
+        {1, 0, 40.00f},      {42, 0, 0.00f},      {123, 0, 0.00f},
+        {999, 2, 100.00f},   {12345, 2, 40.00f},  {424242, 8, 40.00f},
+        {111111, 5, 40.00f}, {999999, 9, 180.00f}};
 
     // 【修正箇所】テスト用の静的な設定（3手先読み、ビーム幅500）を強制します
     // これにより、ベンチマークを10手や40手で回しても、テスト自体は常に同じ3手の基準で正しくパスします
@@ -373,8 +374,7 @@ int main(int argc, char** argv) {
     cfg.look_ahead = look_ahead;
     printf("Beam Search Benchmark (Solo-Mode format) Starting...\n");
     printf("Duration: %.1f seconds\n", duration);
-    printf("Config: width=%d, depth=%d\n", beam_width,
-           look_ahead);
+    printf("Config: width=%d, depth=%d\n", beam_width, look_ahead);
 
     if (run_regression) {
         bool ok = runRegressionTest(cfg);
