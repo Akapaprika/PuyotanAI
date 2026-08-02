@@ -30,7 +30,7 @@ struct AttackCandidate {
  */
 std::vector<AttackCandidate> collectAttackCandidates(
     const Board& field,
-    const TsumoSequence& tsumo_seq,
+    const Tsumo& tsumo,
     int tsumo_base,
     int max_depth = 3,
     int max_states_per_layer = 250

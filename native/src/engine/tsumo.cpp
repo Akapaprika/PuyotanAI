@@ -6,7 +6,24 @@ namespace puyotan {
 
 namespace {
 
+// ---------------------------------------------------------------------------
+// GF(2)^32 Jump Matrix for XORSHIFT(13, 17, 15)
+// ---------------------------------------------------------------------------
+// XORSHIFT(13,17,15) is a linear transformation T over GF(2)^32.
+// We precompute the matrix for T^(kTsumoPoolSize * 2) — i.e., the state
+// after advancing through all 1000 pairs (2000 XORSHIFT steps).
+//
+// jump_matrix[i] = T^2000(1 << i)
+//
+// Applying the matrix to an arbitrary state takes only 32 XOR operations:
+//   result = XOR of jump_matrix[i] for every set bit i in state
+//
+// This replaces the 2000-step sequential XORSHIFT loop in getSeed() with
+// an O(32) operation, achieving ~60x speedup for that computation.
+// ---------------------------------------------------------------------------
+
 static constexpr std::array<uint32_t, 32> computeJumpMatrix() noexcept {
+    // One XORSHIFT(13,17,15) step (C++23: arithmetic right shift is defined)
     auto xorshift_step = [](uint32_t s) constexpr noexcept -> uint32_t {
         s ^= (s << 13);
         s ^= static_cast<uint32_t>(static_cast<int32_t>(s) >> 17);
@@ -14,7 +31,8 @@ static constexpr std::array<uint32_t, 32> computeJumpMatrix() noexcept {
         return s;
     };
 
-    constexpr int kSteps = config::Rule::kTsumoPoolSize * 2;
+    // Column i of T^N = T^N applied to the basis vector (1 << i)
+    constexpr int kSteps = config::Rule::kTsumoPoolSize * 2; // 2000 steps
     std::array<uint32_t, 32> mat{};
     for (int i = 0; i < 32; ++i) {
         uint32_t s = 1u << i;
@@ -26,8 +44,10 @@ static constexpr std::array<uint32_t, 32> computeJumpMatrix() noexcept {
     return mat;
 }
 
+// Precomputed at compile time — zero runtime cost.
 static constexpr auto kJumpMatrix = computeJumpMatrix();
 
+// Apply the jump matrix: computes T^2000(state) in 32 XOR operations.
 [[nodiscard]] static inline uint32_t applyJump(uint32_t state) noexcept {
     uint32_t result = 0;
     for (int i = 0; i < 32; ++i) {
@@ -39,22 +59,25 @@ static constexpr auto kJumpMatrix = computeJumpMatrix();
 
 } // anonymous namespace
 
-TsumoSequence::TsumoSequence(uint32_t seed) noexcept {
+// ---------------------------------------------------------------------------
+// Tsumo implementation
+// ---------------------------------------------------------------------------
+
+Tsumo::Tsumo(uint32_t seed) noexcept {
     setSeed(seed);
 }
 
-void TsumoSequence::setSeed(uint32_t seed) noexcept {
+void Tsumo::setSeed(uint32_t seed) noexcept {
     const uint32_t s0 = seed + (seed == 0u);
-    initial_seed_ = s0;
     rng_state_ = s0;
+    initial_seed_ = s0;
     generated_count_ = 0;
     ojama_seed_computed_ = false;
 
-    // 対局・探索の初期化時点では、最初の 1 チャンク（64手）のみを高速事前生成
     expandTo(63);
 }
 
-uint32_t TsumoSequence::getOjamaSeed() const noexcept {
+uint32_t Tsumo::getSeed() const noexcept {
     if (!ojama_seed_computed_) {
         ojama_seed_ = applyJump(initial_seed_);
         ojama_seed_computed_ = true;
@@ -62,34 +85,34 @@ uint32_t TsumoSequence::getOjamaSeed() const noexcept {
     return ojama_seed_;
 }
 
-void TsumoSequence::expandTo(uint32_t target_idx) const noexcept {
-    std::lock_guard<std::mutex> lock(expand_mutex_);
-
-    // 二重チェック（ロック獲得中に別スレッドが生成完了している場合のショートカット）
-    if (target_idx < generated_count_) {
-        return;
-    }
-
-    constexpr uint32_t kChunk = config::Rule::kTsumoChunkSize; // 64
-    constexpr uint32_t kPoolSize = config::Rule::kTsumoPoolSize; // 1000
+void Tsumo::expandTo(uint32_t target_idx) const noexcept {
+    constexpr uint32_t kChunk = config::Rule::kTsumoChunkSize;
+    constexpr uint32_t kPoolSize = config::Rule::kTsumoPoolSize;
     constexpr uint32_t kColors = config::Rule::kColors;
-    constexpr uint32_t color_mask = kColors - 1u;
 
-    // 64手単位（Chunk）に切り上げて拡張
-    const uint32_t new_count = std::min((target_idx + kChunk) & ~(kChunk - 1u), kPoolSize);
+    // [除算・乗算の完全排除] 
+    // kChunk が 64 であるため、(target_idx + 64) & ~63 と等価になり、
+    // コンパイラは単一の ADD命令 と AND命令（実質1〜2クロック）のみで切り上げを完結させます。
+    const uint32_t new_count =
+        std::min((target_idx + kChunk) & ~(kChunk - 1u), kPoolSize);
 
+    const uint32_t color_mask = kColors - 1u;
     uint32_t s = rng_state_;
+
     for (uint32_t i = generated_count_; i < new_count; ++i) {
+        // Axis puyo
         s ^= (s << 13);
         s ^= static_cast<uint32_t>(static_cast<int32_t>(s) >> 17);
         s ^= (s << 15);
         const Cell c1 = static_cast<Cell>(s & color_mask);
 
+        // Sub puyo
         s ^= (s << 13);
         s ^= static_cast<uint32_t>(static_cast<int32_t>(s) >> 17);
         s ^= (s << 15);
         const Cell c2 = static_cast<Cell>(s & color_mask);
 
+        // Precompute dirty flag for O(1) early-exit check in beam search
         const uint8_t dirty = static_cast<uint8_t>(
             (1u << static_cast<int>(c1)) | (1u << static_cast<int>(c2)));
 

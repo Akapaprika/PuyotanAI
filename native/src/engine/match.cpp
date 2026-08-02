@@ -73,16 +73,8 @@ int PuyotanMatch::getDecisionMask() const noexcept {
     return p0_none | (p1_none << 1);
 }
 
-PuyotanMatch::PuyotanMatch(uint32_t seed) noexcept {
+PuyotanMatch::PuyotanMatch(uint32_t seed) noexcept : tsumo_(seed) {
     assert(seed != 0u);
-    thread_local TsumoSequence tl_seq;
-    tl_seq.setSeed(seed); // 最初の64手のみを超高速生成し、ヒープ確保0回でポインタ保持
-    tsumo_sequence_ = &tl_seq;
-}
-
-PuyotanMatch::PuyotanMatch(const TsumoSequence* sequence) noexcept 
-    : tsumo_sequence_(sequence) {
-    assert(sequence != nullptr);
 }
 
 void PuyotanMatch::start() noexcept {
@@ -172,13 +164,14 @@ __forceinline void PuyotanMatch::stepPlayerFrame(
                 p.current_action = {};
                 break;
             case ActionType::Put: {
-                // ポインタ経由でツモを取得
-                const PuyoPiece tumo = tsumo_sequence_->get(p.active_next_pos);
+                const PuyoPiece tumo = tsumo_.get(p.active_next_pos);
                 
+                // 従来の getColumnHeight や dropNewPiece の複数回呼び出しを、上記関数1回に集約！
                 int h_axis = 0;
                 int h_sub = 0;
                 p.field.dropPiecePair(action.x, action.rotation, tumo.axis, tumo.sub, h_axis, h_sub);
             
+                // スコア計算（h_axis, h_sub がすでに取得できているためそのまま利用）
                 p.score += std::max(0, config::Board::kSpawnRow - std::max(h_axis, h_sub));
             
                 const uint32_t dirty_colors = tumo.dirty_flag;
@@ -241,10 +234,10 @@ __forceinline void PuyotanMatch::stepPlayerFrame(
                 int fall_num = std::min(static_cast<int>(p.active_ojama),
                                         config::Rule::kMaxOjamaPerFall);
                 p.active_ojama -= static_cast<uint16_t>(fall_num);
-
-                // 計算済みの ojama_seed を即座に参照するだけ（高速）
+                // 実際におじゃまが降る最初のフレームで、初めて getSeed()
+                // を呼ぶ（遅延評価）
                 if (seed_ == 0u) [[unlikely]] {
-                    seed_ = tsumo_sequence_->getOjamaSeed();
+                    seed_ = tsumo_.getSeed();
                 }
 
                 p.fallOjama(fall_num, seed_);
@@ -282,17 +275,13 @@ int PuyotanMatch::stepUntilDecision() noexcept {
 
 int64_t PuyotanMatch::runBatch(int num_games, uint32_t seed) noexcept {
     int64_t total_frames = 0;
+    // 6 at col 5, 6 at 4, 6 at 3, etc.
     const int move_plan[] = {5, 5, 5, 5, 5, 5, 4, 4, 4,
                              4, 4, 4, 3, 3, 3, 3, 3, 3};
     const int num_moves = sizeof(move_plan) / sizeof(move_plan[0]);
 
-    // ループの外側で1つだけ変数を確保（アロケーション・スタック構築を1回に集約）
-    TsumoSequence seq;
-
     for (int i = 0; i < num_games; ++i) {
-        seq.setSeed(seed + static_cast<uint32_t>(i));
-        
-        PuyotanMatch match(&seq);
+        PuyotanMatch match(seed + static_cast<uint32_t>(i));
         match.start();
         int p_move = 0;
 
@@ -315,9 +304,11 @@ int64_t PuyotanMatch::runBatch(int num_games, uint32_t seed) noexcept {
                 match.stepNextFrame();
                 ++total_frames;
             } else if (!action_set) {
+                // デッドロック防止
                 break;
             }
 
+            // Failsafe
             if (match.frame_ > 3000)
                 break;
         }

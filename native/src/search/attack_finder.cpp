@@ -78,7 +78,7 @@ __forceinline uint32_t packHeights(const Board& field) noexcept {
 
 std::vector<AttackCandidate> collectAttackCandidates(
     const Board& field,
-    const TsumoSequence& tsumo_seq,
+    const Tsumo& tsumo,
     int tsumo_base,
     int max_depth,
     int max_states_per_layer
@@ -94,7 +94,7 @@ std::vector<AttackCandidate> collectAttackCandidates(
     current_layer.push_back({field, 0, -1, 0});
 
     for (int d = 0; d < max_depth; ++d) {
-        PuyoPiece piece = tsumo_seq.get(tsumo_base + d);
+        PuyoPiece piece = tsumo.get(tsumo_base + d);
         const bool is_zoro = (piece.axis == piece.sub);
         const auto& actions = is_zoro ? getZoroActions() : getPutActions();
 
