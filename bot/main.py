@@ -68,19 +68,21 @@ def load_config(config_path: Path) -> dict:
 
 
 def print_banner(room: str, mode_label: str, bot_name: str,
-                 beam_width: int, look_ahead: int, config_path: Path) -> None:
+                 beam_width: int, look_ahead: int, config_path: Path, is_solo: bool) -> None:
     room_name = _ROOM_DESCRIPTIONS.get(room, room)
+    solo_status = "★【ソロモード全開】(soloBeamSearch: 対戦バイアス無効・17万点本線優先)" if is_solo else "⚔️【対戦モード】(vsBeamSearch: 即発火バイアス・相手読み有効)"
     lines = [
-        "=" * 55,
+        "=" * 65,
         "  puyotan.refpuyo.net 連携 AI Bot",
-        "=" * 55,
+        "=" * 65,
         f"  設定ファイル : {config_path}",
         f"  部屋         : {room} ({room_name})",
         f"  モード       : {mode_label}",
+        f"  AI探索判定   : {solo_status}",
         f"  Bot名        : {bot_name}",
-        f"  ビーム幅     : {'デフォルト' if beam_width == -1 else beam_width}",
-        f"  先読み手数   : {'デフォルト' if look_ahead == -1 else look_ahead}",
-        "=" * 55,
+        f"  ビーム幅     : {'デフォルト (15000)' if beam_width == -1 else beam_width}",
+        f"  先読み手数   : {'デフォルト (25)' if look_ahead == -1 else look_ahead}",
+        "=" * 65,
     ]
     for line in lines:
         try:
@@ -163,8 +165,10 @@ def main() -> None:
         frozenset({0, 1}): "Both / Solo（1P・2PともにAIが操作）",
     }[frozenset(bot_players)]
 
+    is_solo = (bot_players == {0, 1})
+
     if not quiet:
-        print_banner(room, mode_label, bot_name, beam_width, look_ahead, config_path)
+        print_banner(room, mode_label, bot_name, beam_width, look_ahead, config_path, is_solo)
 
     # Firestore 接続
     try:

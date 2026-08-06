@@ -29,7 +29,7 @@ struct BeamAction {
     int sub_dy;
 };
 
-// Returns all Put actions precomputed
+// Returns all Put actions precomputed, ordered from edge columns to center
 const std::vector<BeamAction>& getPutActions() noexcept {
     static const auto v = []() {
         std::vector<BeamAction> r;
@@ -44,12 +44,22 @@ const std::vector<BeamAction>& getPutActions() noexcept {
                 r.emplace_back(i, ax, sx, axis_dy, sub_dy);
             }
         }
+
+        // Priority for columns from edges to center: 0, 5, 1, 4, 2, 3
+        constexpr int col_prio[6] = {0, 2, 4, 5, 3, 1};
+        std::sort(r.begin(), r.end(), [&](const BeamAction& a, const BeamAction& b) {
+            int prio_a = (std::min(col_prio[a.ax], col_prio[a.sx]) << 3) | std::max(col_prio[a.ax], col_prio[a.sx]);
+            int prio_b = (std::min(col_prio[b.ax], col_prio[b.sx]) << 3) | std::max(col_prio[b.ax], col_prio[b.sx]);
+            if (prio_a != prio_b) return prio_a < prio_b;
+            return a.idx < b.idx;
+        });
+
         return r;
     }();
     return v;
 }
 
-// Returns Zoro actions precomputed
+// Returns Zoro actions precomputed, ordered from edge columns to center
 const std::vector<BeamAction>& getZoroActions() noexcept {
     static const auto v = []() {
         std::vector<BeamAction> r;
@@ -67,6 +77,15 @@ const std::vector<BeamAction>& getZoroActions() noexcept {
             const int sub_dy = kSubDySimple[rot];
             r.emplace_back(i, ax, sx, axis_dy, sub_dy);
         }
+
+        constexpr int col_prio[6] = {0, 2, 4, 5, 3, 1};
+        std::sort(r.begin(), r.end(), [&](const BeamAction& a, const BeamAction& b) {
+            int prio_a = (std::min(col_prio[a.ax], col_prio[a.sx]) << 3) | std::max(col_prio[a.ax], col_prio[a.sx]);
+            int prio_b = (std::min(col_prio[b.ax], col_prio[b.sx]) << 3) | std::max(col_prio[b.ax], col_prio[b.sx]);
+            if (prio_a != prio_b) return prio_a < prio_b;
+            return a.idx < b.idx;
+        });
+
         return r;
     }();
     return v;
