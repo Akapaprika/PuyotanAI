@@ -5,10 +5,11 @@ Player Agent (Strategy) pattern.
 Each agent is responsible for providing a p.Action when the engine marks
 the player as needing a decision (decision_mask bit is set).
 
-  HumanPlayerAgent     — waits for keyboard/button input buffered in pres state
-  EmptyPlayerAgent     — immediately PASSes, creating an uncontested 1P side
-  BeamSearchAgent      — heuristic beam search (calls beam_search_action)
-  VsBeamSearchAgent    — VS-mode beam search with explicit enable_attack_search
+  HumanPlayerAgent    — waits for keyboard/button input buffered in pres state
+  EmptyPlayerAgent    — immediately PASSes, creating an uncontested 1P side
+  BeamSearchAgent     — solo beam search (soloBeamSearch / vsBeamSearch via is_solo flag)
+  VsBeamSearchAgent   — VS beam search with explicit enable_attack_search flag + context
+  NegamaxAgent        — Negamax adversarial search over PuyotanMatch states
 """
 from __future__ import annotations
 from abc import ABC, abstractmethod
@@ -55,9 +56,6 @@ class HumanPlayerAgent(BasePlayerAgent):
         return None
 
 
-
-
-
 # ---------------------------------------------------------------------------
 # Empty (Solo / Pass-through)
 # ---------------------------------------------------------------------------
@@ -86,11 +84,7 @@ class EmptyPlayerAgent(BasePlayerAgent):
 
 
 # ---------------------------------------------------------------------------
-import threading
-
-# Beam Search AI
-# ---------------------------------------------------------------------------
-# Beam Search
+# Beam Search AI (Solo / VS共用)
 # ---------------------------------------------------------------------------
 class BeamSearchAgent(BasePlayerAgent):
     """
@@ -100,22 +94,20 @@ class BeamSearchAgent(BasePlayerAgent):
     retains the top `beam_width` boards at each depth, and returns the action
     leading to the highest-evaluated leaf.
 
-    All JSON parsing, static caching, multi-turn stagnation tracking, and profile
-    overrides are managed inside C++ using BeamSearchSession.
+    Multi-turn session state (stagnation detection) is managed inside C++
+    using BeamSearchSession.
     """
 
     def __init__(self,
                  beam_width: int | None = None,
                  look_ahead: int | None = None,
-                 dbs_max_similar: int | None = None,
-                 is_enemy: bool | None = None) -> None:
+                 dbs_max_similar: int | None = None) -> None:
         self._beam_width = beam_width
         self._look_ahead = look_ahead
         self._dbs_max_similar = dbs_max_similar
-        self._is_enemy_override = is_enemy
         self._session = p.BeamSearchSession()
         self._is_solo = False
-        
+
         # Thread management for async non-blocking search
         self._thread: threading.Thread | None = None
         self._result: tuple[int, float] | None = None
@@ -132,7 +124,7 @@ class BeamSearchAgent(BasePlayerAgent):
                 self._result = None
                 self._thread = None
                 return p.get_rl_action(idx)
-            
+
             # If the search is still running, return None to wait (non-blocking)
             if self._thread is not None and self._thread.is_alive():
                 return None
@@ -142,22 +134,18 @@ class BeamSearchAgent(BasePlayerAgent):
 
         width = self._beam_width if self._beam_width is not None else -1
         depth = self._look_ahead if self._look_ahead is not None else -1
-        dbs = self._dbs_max_similar if self._dbs_max_similar is not None else -1
+        dbs   = self._dbs_max_similar if self._dbs_max_similar is not None else -1
 
-        if self._is_enemy_override is not None:
-            is_enemy = self._is_enemy_override
-        else:
-            is_enemy = (not self._is_solo) and (player_id == 1)
-
-        # Create deep snapshots of player and tsumo on the main thread (while GIL is held)
+        # Create deep snapshots on the main thread (while GIL is held)
         player_snap = player.clone()
         tsumo_snap  = tsumo.clone()
 
         # Define thread worker (GIL is released inside C++ bindings.cpp)
         def worker():
             res = p.beam_search_action(
-                player_snap, tsumo_snap, _CONFIG_PATH, width, depth, self._is_solo,
-                dbs_max_similar=dbs, is_enemy=is_enemy, session=self._session
+                player_snap, tsumo_snap, _CONFIG_PATH, width, depth,
+                self._is_solo,
+                dbs_max_similar=dbs, session=self._session
             )
             with self._lock:
                 self._result = res
@@ -169,13 +157,14 @@ class BeamSearchAgent(BasePlayerAgent):
 
 
 # ---------------------------------------------------------------------------
-# VS Beam Search AI (explicit enable_attack_search flag)
+# VS Beam Search AI (explicit enable_attack_search flag + VsEvalContext)
 # ---------------------------------------------------------------------------
 class VsBeamSearchAgent(BasePlayerAgent):
     """
     VS-mode beam search agent that explicitly controls the enable_attack_search flag.
 
     Calls load_vs_config + vs_beam_search with BeamSearchSession for session state tracking.
+    Automatically populates VsEvalContext from the live match state each turn.
     """
 
     def __init__(self,
@@ -204,22 +193,22 @@ class VsBeamSearchAgent(BasePlayerAgent):
             if self._thread is not None and self._thread.is_alive():
                 return None
 
-        player     = match.match.getPlayer(player_id)
-        tsumo      = match.match.getTsumo()
-        enemy_id   = 1 - player_id
-        enemy      = match.match.getPlayer(enemy_id)
+        player   = match.match.getPlayer(player_id)
+        tsumo    = match.match.getTsumo()
+        enemy_id = 1 - player_id
+        enemy    = match.match.getPlayer(enemy_id)
 
-        enable_attack = self._enable_attack_search
-        bw  = self._beam_width    if self._beam_width    is not None else -1
-        la  = self._look_ahead    if self._look_ahead    is not None else -1
+        bw  = self._beam_width      if self._beam_width      is not None else -1
+        la  = self._look_ahead      if self._look_ahead      is not None else -1
         dbs = self._dbs_max_similar if self._dbs_max_similar is not None else -1
 
         cfg = p.load_vs_config(_CONFIG_PATH)
-        cfg.enable_attack_search = enable_attack
-        if bw  > 0: cfg.beam_width      = bw
-        if la  > 0: cfg.look_ahead      = la
+        cfg.enable_attack_search = self._enable_attack_search
+        if bw  > 0:  cfg.beam_width      = bw
+        if la  > 0:  cfg.look_ahead      = la
         if dbs >= 0: cfg.dbs_max_similar = dbs
 
+        # Populate VsEvalContext from live match state
         ctx = cfg.context
         ctx.enemy_field            = enemy.field
         ctx.enemy_active_next_pos  = enemy.active_next_pos
@@ -233,7 +222,7 @@ class VsBeamSearchAgent(BasePlayerAgent):
         ctx.my_non_active_ojama    = player.non_active_ojama
         cfg.context = ctx
 
-        # Create deep snapshots of player and tsumo on the main thread (while GIL is held)
+        # Create deep snapshots on the main thread (while GIL is held)
         player_snap = player.clone()
         tsumo_snap  = tsumo.clone()
 
@@ -247,6 +236,9 @@ class VsBeamSearchAgent(BasePlayerAgent):
         return None
 
 
+# ---------------------------------------------------------------------------
+# Negamax AI (Matchを用いた先読み対戦探索)
+# ---------------------------------------------------------------------------
 class NegamaxAgent(BasePlayerAgent):
     """
     Adversarial AI using Negamax (minimax) lookahead over deterministic PuyotanMatch states.
@@ -300,4 +292,3 @@ class NegamaxAgent(BasePlayerAgent):
         self._thread = threading.Thread(target=worker, daemon=True)
         self._thread.start()
         return None
-

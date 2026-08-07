@@ -1,6 +1,5 @@
 #pragma once
 
-#include <vector>
 #include <utility>
 #include <puyotan/engine/match.hpp>
 #include <puyotan/search/beam_evaluator.hpp>
@@ -47,23 +46,24 @@ struct SoloBeamConfig {
     int beam_width = 500;
     int look_ahead = 3;
     int dbs_max_similar = 0;
+    int full_beam_depth = 2;
+    float min_beam_width_ratio = 1.0f;
     SoloBeamEvalWeights eval_weights;
 };
 
 /**
  * @struct VsBeamConfig
  * @brief Parameters controlling VS beam search behaviour.
- *
- * Populate context from the live match state before every call to
- * vsBeamSearch().
  */
 struct VsBeamConfig {
     int beam_width = 500;
     int look_ahead = 3;
     int dbs_max_similar = 0;
+    int full_beam_depth = 2;
+    float min_beam_width_ratio = 1.0f;
     bool enable_attack_search = true;
     VsBeamEvalWeights eval_weights;
-    VsEvalContext     context;                          // set before each call
+    VsEvalContext     context;
 };
 
 /**

@@ -3,11 +3,8 @@
 #include <fstream>
 #include <string>
 #include <filesystem>
-#include <mutex>
 #include <external/nlohmann/json.hpp>
 #include <puyotan/search/beam_search.hpp>
-#include <puyotan/search/negamax_search.hpp>
-#include <puyotan/search/abs_search.hpp>
 
 namespace puyotan::search {
 
@@ -21,10 +18,8 @@ class BeamConfigLoader {
     static inline std::filesystem::file_time_type s_last_write_time;
     static inline std::string s_cached_path;
     static inline bool s_has_cache = false;
-    static inline std::mutex s_mutex;
 
     static nlohmann::json getJson(const std::string& path) {
-        std::lock_guard<std::mutex> lock(s_mutex);
         try {
             auto current_time = std::filesystem::last_write_time(path);
             if (s_has_cache && path == s_cached_path && current_time == s_last_write_time) {
@@ -65,6 +60,12 @@ class BeamConfigLoader {
         if (section.contains("dbs_max_similar") && section["dbs_max_similar"].is_number_integer())
             cfg.dbs_max_similar = section["dbs_max_similar"].get<int>();
 
+        if (section.contains("full_beam_depth") && section["full_beam_depth"].is_number_integer())
+            cfg.full_beam_depth = section["full_beam_depth"].get<int>();
+
+        if (section.contains("min_beam_width_ratio") && section["min_beam_width_ratio"].is_number())
+            cfg.min_beam_width_ratio = section["min_beam_width_ratio"].get<float>();
+
         if (section.contains("eval_weights") && section["eval_weights"].is_object())
             applyPatch(cfg.eval_weights, section["eval_weights"]);
 
@@ -87,8 +88,11 @@ class BeamConfigLoader {
         if (section.contains("dbs_max_similar") && section["dbs_max_similar"].is_number_integer())
             cfg.dbs_max_similar = section["dbs_max_similar"].get<int>();
 
-        if (section.contains("enable_attack_search") && section["enable_attack_search"].is_boolean())
-            cfg.enable_attack_search = section["enable_attack_search"].get<bool>();
+        if (section.contains("full_beam_depth") && section["full_beam_depth"].is_number_integer())
+            cfg.full_beam_depth = section["full_beam_depth"].get<int>();
+
+        if (section.contains("min_beam_width_ratio") && section["min_beam_width_ratio"].is_number())
+            cfg.min_beam_width_ratio = section["min_beam_width_ratio"].get<float>();
 
         if (section.contains("eval_weights") && section["eval_weights"].is_object())
             applyPatch(cfg.eval_weights, section["eval_weights"]);
@@ -112,87 +116,14 @@ class BeamConfigLoader {
         if (section.contains("dbs_max_similar") && section["dbs_max_similar"].is_number_integer())
             cfg.dbs_max_similar = section["dbs_max_similar"].get<int>();
 
-        if (section.contains("enable_attack_search") && section["enable_attack_search"].is_boolean())
-            cfg.enable_attack_search = section["enable_attack_search"].get<bool>();
+        if (section.contains("full_beam_depth") && section["full_beam_depth"].is_number_integer())
+            cfg.full_beam_depth = section["full_beam_depth"].get<int>();
+
+        if (section.contains("min_beam_width_ratio") && section["min_beam_width_ratio"].is_number())
+            cfg.min_beam_width_ratio = section["min_beam_width_ratio"].get<float>();
 
         if (section.contains("eval_weights") && section["eval_weights"].is_object())
             applyPatch(cfg.eval_weights, section["eval_weights"]);
-
-        return cfg;
-    }
-
-    static NegamaxConfig loadNegamax(const std::string& path) {
-        NegamaxConfig cfg{};
-        cfg.vs_config = loadVs(path);
-        cfg.interior_vs_config = cfg.vs_config;
-
-        nlohmann::json j = getJson(path);
-        if (j.is_discarded() || j.empty()) return cfg;
-        if (!j.contains("negamax") || !j["negamax"].is_object()) return cfg;
-
-        const auto& section = j["negamax"];
-        if (section.contains("depth") && section["depth"].is_number_integer())
-            cfg.depth = section["depth"].get<int>();
-
-        if (section.contains("candidate_n") && section["candidate_n"].is_number_integer())
-            cfg.candidate_n = section["candidate_n"].get<int>();
-
-        if (section.contains("interior_candidate_n") && section["interior_candidate_n"].is_number_integer())
-            cfg.interior_candidate_n = section["interior_candidate_n"].get<int>();
-
-        if (section.contains("chain_cutoff_enabled") && section["chain_cutoff_enabled"].is_boolean())
-            cfg.chain_cutoff_enabled = section["chain_cutoff_enabled"].get<bool>();
-
-        if (section.contains("use_interior_beam_config") && section["use_interior_beam_config"].is_boolean())
-            cfg.use_interior_config = section["use_interior_beam_config"].get<bool>();
-
-        if (section.contains("interior_beam_width") && section["interior_beam_width"].is_number_integer())
-            cfg.interior_vs_config.beam_width = section["interior_beam_width"].get<int>();
-
-        if (section.contains("interior_look_ahead") && section["interior_look_ahead"].is_number_integer())
-            cfg.interior_vs_config.look_ahead = section["interior_look_ahead"].get<int>();
-
-        if (section.contains("interior_dbs_max_similar") && section["interior_dbs_max_similar"].is_number_integer())
-            cfg.interior_vs_config.dbs_max_similar = section["interior_dbs_max_similar"].get<int>();
-
-        return cfg;
-    }
-
-    static AbsConfig loadAbs(const std::string& path) {
-        AbsConfig cfg{};
-        // Inherit default solo eval weights
-        cfg.eval_weights = loadSolo(path).eval_weights;
-
-        nlohmann::json j = getJson(path);
-        if (j.is_discarded() || j.empty()) return cfg;
-        if (!j.contains("abs") || !j["abs"].is_object()) return cfg;
-
-        const auto& section = j["abs"];
-        if (section.contains("depth") && section["depth"].is_number_integer())
-            cfg.depth = section["depth"].get<int>();
-
-        if (section.contains("chain_cutoff_enabled") && section["chain_cutoff_enabled"].is_boolean())
-            cfg.chain_cutoff_enabled = section["chain_cutoff_enabled"].get<bool>();
-
-        if (section.contains("my_category_budgets") && section["my_category_budgets"].is_object()) {
-            const auto& mb = section["my_category_budgets"];
-            if (mb.contains("build")  && mb["build"].is_number_integer())  cfg.my_budgets.build  = mb["build"].get<int>();
-            if (mb.contains("crush")  && mb["crush"].is_number_integer())  cfg.my_budgets.crush  = mb["crush"].get<int>();
-            if (mb.contains("strike") && mb["strike"].is_number_integer()) cfg.my_budgets.strike = mb["strike"].get<int>();
-            if (mb.contains("evade")  && mb["evade"].is_number_integer())  cfg.my_budgets.evade  = mb["evade"].get<int>();
-        }
-
-        if (section.contains("opp_category_budgets") && section["opp_category_budgets"].is_object()) {
-            const auto& ob = section["opp_category_budgets"];
-            if (ob.contains("build")  && ob["build"].is_number_integer())  cfg.opp_budgets.build  = ob["build"].get<int>();
-            if (ob.contains("crush")  && ob["crush"].is_number_integer())  cfg.opp_budgets.crush  = ob["crush"].get<int>();
-            if (ob.contains("strike") && ob["strike"].is_number_integer()) cfg.opp_budgets.strike = ob["strike"].get<int>();
-            if (ob.contains("evade")  && ob["evade"].is_number_integer())  cfg.opp_budgets.evade  = ob["evade"].get<int>();
-        }
-
-        if (section.contains("eval_weights") && section["eval_weights"].is_object()) {
-            applyPatch(cfg.eval_weights, section["eval_weights"]);
-        }
 
         return cfg;
     }
@@ -207,6 +138,8 @@ class BeamConfigLoader {
         solo["beam_width"] = cfg.beam_width;
         solo["look_ahead"] = cfg.look_ahead;
         solo["dbs_max_similar"] = cfg.dbs_max_similar;
+        solo["full_beam_depth"] = cfg.full_beam_depth;
+        solo["min_beam_width_ratio"] = cfg.min_beam_width_ratio;
 
         auto& ew = solo["eval_weights"];
         const auto& w = cfg.eval_weights;
@@ -235,13 +168,16 @@ class BeamConfigLoader {
         vs["beam_width"] = cfg.beam_width;
         vs["look_ahead"] = cfg.look_ahead;
         vs["dbs_max_similar"] = cfg.dbs_max_similar;
-        vs["enable_attack_search"] = cfg.enable_attack_search;
+        vs["full_beam_depth"] = cfg.full_beam_depth;
+        vs["min_beam_width_ratio"] = cfg.min_beam_width_ratio;
 
         auto& ew = vs["eval_weights"];
         const auto& w = cfg.eval_weights;
         ew["potential_score_scale"]   = w.potential_score_scale;
+        ew["connectivity_bonus"]      = w.connectivity_bonus;
+        ew["isolated_penalty"]        = w.isolated_penalty;
+        ew["buried_penalty"]          = w.buried_penalty;
         ew["fire_bias"]               = w.fire_bias;
-        ew["incoming_ojama_penalty"]  = w.incoming_ojama_penalty;
 
         std::ofstream ofs(path);
         ofs << j.dump(2);
@@ -266,13 +202,14 @@ class BeamConfigLoader {
         enemy["beam_width"] = cfg.beam_width;
         enemy["look_ahead"] = cfg.look_ahead;
         enemy["dbs_max_similar"] = cfg.dbs_max_similar;
-        enemy["enable_attack_search"] = cfg.enable_attack_search;
 
         auto& ew = enemy["eval_weights"];
         const auto& w = cfg.eval_weights;
         ew["potential_score_scale"]   = w.potential_score_scale;
+        ew["connectivity_bonus"]      = w.connectivity_bonus;
+        ew["isolated_penalty"]        = w.isolated_penalty;
+        ew["buried_penalty"]          = w.buried_penalty;
         ew["fire_bias"]               = w.fire_bias;
-        ew["incoming_ojama_penalty"]  = w.incoming_ojama_penalty;
 
         std::ofstream ofs(path);
         ofs << j.dump(2);
@@ -299,14 +236,10 @@ class BeamConfigLoader {
         for (auto& [key, val] : patch.items()) {
             if (key.starts_with("_comment")) continue;
             if      (key == "potential_score_scale"   && val.is_number()) w.potential_score_scale   = val.get<float>();
+            else if (key == "connectivity_bonus"       && val.is_number()) w.connectivity_bonus       = val.get<float>();
+            else if (key == "isolated_penalty"         && val.is_number()) w.isolated_penalty         = val.get<float>();
+            else if (key == "buried_penalty"           && val.is_number()) w.buried_penalty           = val.get<float>();
             else if (key == "fire_bias"                && val.is_number()) w.fire_bias                = val.get<float>();
-            else if (key == "incoming_ojama_penalty"   && val.is_number()) w.incoming_ojama_penalty   = val.get<float>();
-            else if (key == "incoming_threat_bias"     && val.is_number()) w.incoming_threat_bias     = val.get<float>();
-            else if (key == "counter_attack_bias"      && val.is_number()) w.counter_attack_bias      = val.get<float>();
-            else if (key == "timing_advantage_bias"    && val.is_number()) w.timing_advantage_bias    = val.get<float>();
-            else if (key == "urgency_weight"           && val.is_number()) w.urgency_weight           = val.get<float>();
-            else if (key == "lethal_danger_scale"      && val.is_number()) w.lethal_danger_scale      = val.get<float>();
-            else if (key == "effective_strike_multiplier" && val.is_number()) w.effective_strike_multiplier = val.get<float>();
         }
     }
 };

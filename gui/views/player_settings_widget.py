@@ -2,7 +2,7 @@
 gui/views/player_settings_widget.py
 
 A compact widget row placed above each player's board (on the Setup screen).
-Exposes a QComboBox for mode selection (Human / Beam Search / Empty) and parameters
+Exposes a QComboBox for mode selection (Human / AI / Empty) and parameters
 for configuring beam search.
 
 Emits `agent_changed(player_id, BasePlayerAgent)` whenever the user
@@ -30,7 +30,7 @@ def _get_default_config() -> dict[str, int]:
         cfg = p.load_solo_config(_CONFIG_PATH)
         defaults["width"] = cfg.beam_width
         defaults["depth"] = cfg.look_ahead
-        defaults["dbs"] = cfg.dbs_max_similar
+        defaults["dbs"]   = cfg.dbs_max_similar
     except Exception:
         pass
     return defaults
@@ -52,7 +52,6 @@ class PlayerSettingsWidget(QWidget):
         "New AI (Attack ON)",
         "Old AI (Attack OFF)",
         "Beam Search (Player)",
-        "Beam Search (Enemy)",
         "Empty (Solo)",
     ]
 
@@ -75,7 +74,7 @@ class PlayerSettingsWidget(QWidget):
         row1.addWidget(lbl)
 
         self._combo = QComboBox()
-        modes = self._MODES if allow_empty else self._MODES[:5]
+        modes = self._MODES if allow_empty else self._MODES[:-1]
         self._combo.addItems(modes)
         self._combo.setFixedWidth(160)
         if 0 <= default_index < len(modes):
@@ -86,7 +85,7 @@ class PlayerSettingsWidget(QWidget):
         row1.addStretch()
         layout.addLayout(row1)
 
-        # Row 3: Beam Search settings (Width, Depth, DBS)
+        # Row 2: Beam Search settings (Width, Depth, DBS)
         self._beam_settings_widget = QWidget()
         beam_layout = QVBoxLayout(self._beam_settings_widget)
         beam_layout.setContentsMargins(28, 0, 0, 0)
@@ -169,10 +168,10 @@ class PlayerSettingsWidget(QWidget):
 
     def get_agent_or_error(self) -> tuple[BasePlayerAgent | None, str | None]:
         """Returns (agent, None) on success, or (None, error_message) on failure."""
-        mode = self._combo.currentText()
+        mode  = self._combo.currentText()
         width = self._width_spin.value()
         depth = self._depth_spin.value()
-        dbs = self._dbs_spin.value()
+        dbs   = self._dbs_spin.value()
 
         if mode == "Human":
             return HumanPlayerAgent(), None
@@ -183,9 +182,7 @@ class PlayerSettingsWidget(QWidget):
         if mode == "Old AI (Attack OFF)":
             return VsBeamSearchAgent(enable_attack_search=False, beam_width=width, look_ahead=depth, dbs_max_similar=dbs), None
         if mode == "Beam Search (Player)":
-            return BeamSearchAgent(beam_width=width, look_ahead=depth, dbs_max_similar=dbs, is_enemy=False), None
-        if mode == "Beam Search (Enemy)":
-            return BeamSearchAgent(beam_width=width, look_ahead=depth, dbs_max_similar=dbs, is_enemy=True), None
+            return BeamSearchAgent(beam_width=width, look_ahead=depth, dbs_max_similar=dbs), None
         if mode == "Empty (Solo)":
             return EmptyPlayerAgent(), None
         return None, "Unknown mode."

@@ -4,7 +4,6 @@
 #include <puyotan/core/chain.hpp>
 #include <puyotan/core/gravity.hpp>
 #include <puyotan/engine/tsumo.hpp>
-#include <puyotan/search/attack_finder.hpp>
 #include <puyotan/search/beam_search.hpp>
 #include <vector>
 #include <unordered_map>
@@ -30,7 +29,7 @@ struct BeamAction {
     int sub_dy;
 };
 
-// Returns all Put actions precomputed
+// Returns all Put actions precomputed, ordered from edge columns to center
 const std::vector<BeamAction>& getPutActions() noexcept {
     static const auto v = []() {
         std::vector<BeamAction> r;
@@ -45,12 +44,22 @@ const std::vector<BeamAction>& getPutActions() noexcept {
                 r.emplace_back(i, ax, sx, axis_dy, sub_dy);
             }
         }
+
+        // Priority for columns from edges to center: 0, 5, 1, 4, 2, 3
+        constexpr int col_prio[6] = {0, 2, 4, 5, 3, 1};
+        std::sort(r.begin(), r.end(), [&](const BeamAction& a, const BeamAction& b) {
+            int prio_a = (std::min(col_prio[a.ax], col_prio[a.sx]) << 3) | std::max(col_prio[a.ax], col_prio[a.sx]);
+            int prio_b = (std::min(col_prio[b.ax], col_prio[b.sx]) << 3) | std::max(col_prio[b.ax], col_prio[b.sx]);
+            if (prio_a != prio_b) return prio_a < prio_b;
+            return a.idx < b.idx;
+        });
+
         return r;
     }();
     return v;
 }
 
-// Returns Zoro actions precomputed
+// Returns Zoro actions precomputed, ordered from edge columns to center
 const std::vector<BeamAction>& getZoroActions() noexcept {
     static const auto v = []() {
         std::vector<BeamAction> r;
@@ -68,6 +77,15 @@ const std::vector<BeamAction>& getZoroActions() noexcept {
             const int sub_dy = kSubDySimple[rot];
             r.emplace_back(i, ax, sx, axis_dy, sub_dy);
         }
+
+        constexpr int col_prio[6] = {0, 2, 4, 5, 3, 1};
+        std::sort(r.begin(), r.end(), [&](const BeamAction& a, const BeamAction& b) {
+            int prio_a = (std::min(col_prio[a.ax], col_prio[a.sx]) << 3) | std::max(col_prio[a.ax], col_prio[a.sx]);
+            int prio_b = (std::min(col_prio[b.ax], col_prio[b.sx]) << 3) | std::max(col_prio[b.ax], col_prio[b.sx]);
+            if (prio_a != prio_b) return prio_a < prio_b;
+            return a.idx < b.idx;
+        });
+
         return r;
     }();
     return v;
@@ -117,8 +135,9 @@ PlaceResult simulatePlacement(const Board& src, PuyoPiece piece,
     const int y_axis = h_axis + action.axis_dy;
     const int y_sub = h_sub + action.sub_dy;
 
-    // Early-out: branchless bounds check using bitwise OR before the 96-byte Board copy.
-    if (static_cast<unsigned int>(y_axis | y_sub) >= static_cast<unsigned int>(config::Board::kTotalRows)) [[unlikely]] {
+    // Early-out: bounds check before the expensive Board copy.
+    if (y_axis >= config::Board::kTotalRows ||
+        y_sub >= config::Board::kTotalRows) [[unlikely]] {
         return {Board{}, 0, 0, true};
     }
 
@@ -161,105 +180,30 @@ PlaceResult simulatePlacement(const Board& src, PuyoPiece piece,
 template <typename ConfigType, typename EvaluatorType, bool HasFireBias = false>
 std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                                      const Tsumo& tsumo_const,
-                                     const ConfigType& cfg_param,
-                                     BeamSearchSession* session = nullptr) noexcept {
+                                     const ConfigType& cfg) noexcept {
     const Tsumo& tsumo = tsumo_const;
     const int tsumo_base = player.active_next_pos;
 
-    ConfigType cfg = cfg_param;
-    if (session != nullptr) {
-        const int total_puyos = player.field.getOccupied().popcount();
-        if (session->isStagnated(total_puyos)) {
-            if constexpr (HasFireBias) {
-                cfg.eval_weights.fire_bias = 0.97f;
-                cfg.eval_weights.potential_score_scale = 0.0f;
-            } else {
-                cfg.eval_weights.potential_score_scale = 0.0f;
-            }
-        }
-    }
-
     // -----------------------------------------------------------------------
-    // Pre-calculate effective fire bias for VS mode if attack search is enabled
+    // Fire scan: try all actions with the current tsumo and find the best
+    // immediate chain.  This is compared against the beam result at the end
+    // to decide whether firing now is better than continuing to build.
     // -----------------------------------------------------------------------
-    float effective_bias = 1.0f;
-    if constexpr (HasFireBias) {
-        effective_bias = cfg.eval_weights.fire_bias;
-
-        if (cfg.enable_attack_search) {
-            const auto& aw = cfg.eval_weights;
-            const int total_incoming = cfg.context.my_active_ojama + cfg.context.my_non_active_ojama;
-            // 相手側の攻撃探索：3ツモ固定で高速化
-            auto enemy_attacks = collectAttackCandidates(cfg.context.enemy_field, tsumo, cfg.context.enemy_active_next_pos, 3, 150);
-
-            // 自分側の攻撃探索：相手の連鎖状態・予告量に応じた動的なツモ範囲を設定
-            int my_depth = 3;
-            if (cfg.context.enemy_action_type == ActionType::Chain ||
-                cfg.context.enemy_action_type == ActionType::ChainFall) {
-                // 相手連鎖アニメ中：相手の連鎖ステップ数から猶予フレーム・ツモ数を動的計算（最大5ツモまで拡張）
-                const int grace_frames = static_cast<int>(cfg.context.enemy_chain_count) * 3;
-                my_depth = std::clamp((grace_frames + 1) / 2, 2, 5);
-            } else if (total_incoming > 0) {
-                // 予告おじゃま着弾直前：1〜2ツモの即時対応
-                my_depth = 2;
-            }
-
-            auto my_attacks = collectAttackCandidates(player.field, tsumo, player.active_next_pos, my_depth, 250);
-
-            if (!enemy_attacks.empty()) {
-                const_cast<VsEvalContext&>(cfg.context).enemy_best_attack_score = enemy_attacks[0].score;
-
-                int min_prep = 99;
-                int enemy_w4 = 0;
-                for (const auto& atk : enemy_attacks) {
-                    min_prep = std::min(min_prep, atk.prepare_turns);
-                    if (atk.prepare_turns <= 4) {
-                        enemy_w4 = std::max(enemy_w4, atk.score);
-                    }
-                }
-                const_cast<VsEvalContext&>(cfg.context).enemy_prepare_turns = min_prep;
-                const_cast<VsEvalContext&>(cfg.context).enemy_best_within_4 = enemy_w4;
-            } else {
-                const_cast<VsEvalContext&>(cfg.context).enemy_best_attack_score = 0;
-                const_cast<VsEvalContext&>(cfg.context).enemy_prepare_turns = 99;
-                const_cast<VsEvalContext&>(cfg.context).enemy_best_within_4 = 0;
-            }
-
-            if (!my_attacks.empty()) {
-                int my_w4 = 0;
-                for (const auto& atk : my_attacks) {
-                    if (atk.prepare_turns <= 4) {
-                        my_w4 = std::max(my_w4, atk.score);
-                    }
-                }
-                const_cast<VsEvalContext&>(cfg.context).my_best_within_4 = my_w4;
-
-                const auto& best_attack = my_attacks[0];
-                int attack_ojama = best_attack.score / config::Score::kTargetScore;
-
-                // 1. 【動的カウンターバイアス（シグモイド関数による100%相殺付近の手厚い評価）】
-                // ratio = attack_ojama / total_incoming
-                // シグモイド中心をratio=1.0に設定し、100%相殺到達でフルボーナス(counter_attack_bias)が飽和
-                // → 50%相殺では微小な補助、90%付近から急激に増加、100%以上で最大値固定
-                if (total_incoming > 0) {
-                    const float ratio = static_cast<float>(attack_ojama) / static_cast<float>(std::max(1, total_incoming));
-                    const float sig = 1.0f / (1.0f + std::exp(-10.0f * (ratio - 1.0f)));
-                    const float counter_scale = std::min(sig * 2.0f, 1.0f);
-                    effective_bias *= (1.0f + (aw.counter_attack_bias - 1.0f) * counter_scale);
-                }
-
-                // 2. 【真の猶予優位（後出し相殺封殺）判定】
-                // こちらの着弾完了ターン (prepare_turns + chain_count) < 相手の発火開始ターン (enemy_prepare_turns)
-                // enemy_attacks が空の場合は enemy_prepare_turns = 99 にセット済みなので、
-                // 無条件で比較するだけで「相手無防備 → 常に猶予優位」を正しく表現できる。
-                {
-                    const int my_landing_turns = best_attack.prepare_turns + best_attack.chain_count;
-                    if (my_landing_turns < cfg.context.enemy_prepare_turns) {
-                        effective_bias *= aw.timing_advantage_bias;
-                    }
-                }
-            } else {
-                const_cast<VsEvalContext&>(cfg.context).my_best_within_4 = 0;
+    int fire_best_action = -1;
+    float fire_best_score = 0.0f;
+    {
+        uint32_t packed_heights_root = packHeights(player.field);
+        PuyoPiece piece0 = tsumo.get(tsumo_base + 0);
+        const bool is_zoro0 = (piece0.axis == piece0.sub);
+        const auto& actions0 = is_zoro0 ? getZoroActions() : getPutActions();
+        for (const auto& entry : actions0) {
+            PlaceResult pr = simulatePlacement(player.field, piece0, entry, packed_heights_root);
+            if (pr.dead || pr.score == 0)
+                continue;
+            float s = static_cast<float>(pr.score);
+            if (s > fire_best_score) {
+                fire_best_score = s;
+                fire_best_action = entry.idx;
             }
         }
     }
@@ -287,48 +231,37 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                 if (pr.dead)
                     continue;
 
-                float eval = 0.0f;
-                float total_score = 0.0f;
-                float next_accum = node.accum_score;
-
-                if constexpr (HasFireBias) {
-                    eval = EvaluatorType::evaluate(pr.field, cfg.eval_weights, &cfg.context);
-                    const bool is_fire = (pr.score > 0);
-                    const float scale = is_fire ? 1.0f : cfg.eval_weights.potential_score_scale;
-
-                    float score_add = static_cast<float>(pr.score) * effective_bias;
-
-                    // Block A & Refinement: Effective Strike Bonus (Net >= 2 lines / 12 ojama after enemy max counter)
-                    if (is_fire && cfg.enable_attack_search) {
-                        const int enemy_counter = std::max(cfg.context.enemy_best_within_4, cfg.context.enemy_best_attack_score);
-                        const int net_score = pr.score - enemy_counter;
-                        const int net_ojama_sent = net_score / config::Score::kTargetScore;
-
-                        // Check if attack penetrates enemy max counter by at least 2 lines (12 ojama = 840 score)
-                        if (net_ojama_sent >= 12) {
-                            // Scaled dynamic bonus based on net score surplus, avoiding fixed-value early-firing traps
-                            score_add += static_cast<float>(net_score) * cfg.eval_weights.effective_strike_multiplier;
-                        }
-                    }
-
-                    next_accum = node.accum_score * scale + score_add;
-                    total_score = next_accum + eval;
-                } else {
-                    eval = EvaluatorType::evaluate(pr.field, cfg.eval_weights);
-                    next_accum += static_cast<float>(pr.score);
-                    total_score = next_accum * cfg.eval_weights.potential_score_scale + eval;
-                }
+                float eval = EvaluatorType::evaluate(pr.field, cfg.eval_weights);
+                float next_accum =
+                    node.accum_score + static_cast<float>(pr.score);
+                float total_score =
+                    next_accum * cfg.eval_weights.potential_score_scale + eval;
 
                 int first = (depth == 0) ? entry.idx : node.first_action;
-                tl_next_beam.emplace_back(std::move(pr.field), total_score, next_accum, first);
+                tl_next_beam.emplace_back(pr.field, total_score, next_accum, first);
             }
         }
 
         if (tl_next_beam.empty())
             break;
 
-        // Sort descending by score and trim to beam_width using lightweight index sort
-        int keep = std::min(static_cast<int>(tl_next_beam.size()), cfg.beam_width);
+        // Calculate dynamic target beam width for current depth (tapered search)
+        int target_beam_width = cfg.beam_width;
+        if (cfg.min_beam_width_ratio < 1.0f && cfg.look_ahead > 1) {
+            if (depth <= cfg.full_beam_depth) {
+                target_beam_width = cfg.beam_width;
+            } else {
+                const float max_decay_steps = static_cast<float>(cfg.look_ahead - 1 - cfg.full_beam_depth);
+                if (max_decay_steps > 0.0f) {
+                    const float progress = static_cast<float>(depth - cfg.full_beam_depth) / max_decay_steps;
+                    const float ratio = 1.0f - (1.0f - cfg.min_beam_width_ratio) * progress;
+                    target_beam_width = std::max(1, static_cast<int>(cfg.beam_width * ratio));
+                }
+            }
+        }
+
+        // Sort descending by score and trim to target_beam_width using lightweight index sort
+        int keep = std::min(static_cast<int>(tl_next_beam.size()), target_beam_width);
         tl_sort_buf.resize(tl_next_beam.size());
         for (std::size_t i = 0; i < tl_next_beam.size(); ++i) {
             tl_sort_buf[i] = {tl_next_beam[i].score, static_cast<int>(i)};
@@ -376,14 +309,21 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
         }
     }
 
-    // Return the action and its expected score from the best surviving leaf
-    if (!tl_current_beam.empty() && tl_current_beam[0].first_action >= 0) {
-        const float best_score = tl_current_beam[0].score;
-        if (session != nullptr) {
-            session->update(best_score);
+    // -----------------------------------------------------------------------
+    // Fire-vs-beam decision (VS mode only):
+    // -----------------------------------------------------------------------
+    if constexpr (HasFireBias) {
+        if (fire_best_action >= 0 && !tl_current_beam.empty()) {
+            const float beam_score = tl_current_beam[0].score;
+            if (fire_best_score * cfg.eval_weights.fire_bias > beam_score) {
+                return {fire_best_action, fire_best_score};
+            }
         }
-        return {tl_current_beam[0].first_action, best_score};
     }
+
+    // Return the action and its expected score from the best surviving leaf
+    if (!tl_current_beam.empty() && tl_current_beam[0].first_action >= 0)
+        return {tl_current_beam[0].first_action, tl_current_beam[0].score};
 
     // Fallback: return action 0 (Up, col 0) if search found nothing valid
     return {0, -10000.0f};
@@ -393,41 +333,33 @@ std::pair<int, float> soloBeamSearch(const PuyotanPlayer& player,
                                      const Tsumo& tsumo_const,
                                      const SoloBeamConfig& cfg,
                                      BeamSearchSession* session) noexcept {
-    return beamSearchImpl<SoloBeamConfig, SoloBeamEvaluator, false>(player, tsumo_const, cfg, session);
+    auto res = beamSearchImpl<SoloBeamConfig, SoloBeamEvaluator, false>(player, tsumo_const, cfg);
+    if (session) {
+        session->update(res.second);
+    }
+    return res;
 }
 
 std::pair<int, float> vsBeamSearch(const PuyotanPlayer& player,
                                    const Tsumo& tsumo_const,
                                    const VsBeamConfig& cfg,
                                    BeamSearchSession* session) noexcept {
-    return beamSearchImpl<VsBeamConfig, VsBeamEvaluator, true>(player, tsumo_const, cfg, session);
+    auto res = beamSearchImpl<VsBeamConfig, VsBeamEvaluator, true>(player, tsumo_const, cfg);
+    if (session) {
+        session->update(res.second);
+    }
+    return res;
 }
 
 std::vector<std::pair<int, float>> vsBeamSearchTopN(const PuyotanPlayer& player,
                                                     const Tsumo& tsumo_const,
                                                     const VsBeamConfig& cfg,
                                                     int top_n) noexcept {
-    // Run the beam search
-    beamSearchImpl<VsBeamConfig, VsBeamEvaluator, true>(player, tsumo_const, cfg, nullptr);
-
-    std::vector<std::pair<int, float>> results;
-    results.reserve(top_n);
-    std::unordered_map<int, bool> seen;
-
-    for (const auto& node : tl_current_beam) {
-        if (node.first_action >= 0 && !seen[node.first_action]) {
-            seen[node.first_action] = true;
-            results.emplace_back(node.first_action, node.score);
-            if (static_cast<int>(results.size()) >= top_n) {
-                break;
-            }
-        }
-    }
-
-    if (results.empty()) {
-        results.emplace_back(0, -10000.0f);
-    }
-    return results;
+    // Basic top-N extraction fallback for Negamax candidate generation
+    auto best = vsBeamSearch(player, tsumo_const, cfg);
+    std::vector<std::pair<int, float>> res;
+    res.push_back(best);
+    return res;
 }
 
 } // namespace puyotan::search
