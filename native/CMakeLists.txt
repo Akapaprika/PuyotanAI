@@ -38,7 +38,7 @@ target_link_libraries(engine_benchmark PRIVATE puyotan_core OpenMP::OpenMP_CXX)
 target_link_libraries(beam_search_benchmark PRIVATE puyotan_search OpenMP::OpenMP_CXX)
 
 # 3. Pybind11 Native Module
-file(GLOB_RECURSE NATIVE_SOURCES src/bindings/*.cpp)
+set(NATIVE_SOURCES src/bindings/bindings.cpp)
 pybind11_add_module(puyotan_native ${NATIVE_SOURCES})
 target_link_libraries(puyotan_native PRIVATE puyotan_core puyotan_search OpenMP::OpenMP_CXX)
 
@@ -75,7 +75,7 @@ if (MSVC)
             # /favor:AMD64: tune instruction scheduling for AMD64 (benefits AMD 3020e)
             # /Zi: generate PDB for profiling — does NOT affect generated machine code or runtime speed.
             #       Combined with /OPT:REF /OPT:ICF on the linker side, there is zero performance penalty.
-            $<$<CONFIG:Release>: /O2 /Ot /Oy /arch:AVX2 /Gy /Gw /GF /fp:fast /Oi /DNDEBUG /MP /Ob3 /GS- /Qspectre- /favor:AMD64 /Zi >
+            $<$<CONFIG:Release>: /O2 /Ot /Oy /arch:AVX2 /Gy /Gw /GF /fp:fast /Oi /DNDEBUG /MP /FS /Ob3 /GS- /Qspectre- /favor:AMD64 /Zi >
         )
     endforeach()
 
@@ -105,6 +105,14 @@ if (MSVC)
         add_custom_command(TARGET ${LT} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_SOURCE_DIR}/dist
             COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${LT}> ${CMAKE_SOURCE_DIR}/dist/
+        )
+    endforeach()
+else()
+    foreach(T IN LISTS ALL_TARGETS)
+        set_property(TARGET ${T} PROPERTY INTERPROCEDURAL_OPTIMIZATION $<$<CONFIG:Release>:TRUE>)
+        target_precompile_headers(${T} PRIVATE include/puyotan/pch.hpp)
+        target_compile_options(${T} PRIVATE
+            $<$<CONFIG:Release>: -O3 -flto -march=native -ffast-math -funroll-loops -DNDEBUG >
         )
     endforeach()
 endif()
