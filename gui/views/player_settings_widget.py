@@ -2,7 +2,7 @@
 gui/views/player_settings_widget.py
 
 A compact widget row placed above each player's board (on the Setup screen).
-Exposes a QComboBox for mode selection (Human / Beam Search / Empty) and parameters
+Exposes a QComboBox for mode selection (Human / AI / Empty) and parameters
 for configuring beam search.
 
 Emits `agent_changed(player_id, BasePlayerAgent)` whenever the user
@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (
 
 from ..agents import (
     HumanPlayerAgent, EmptyPlayerAgent, BasePlayerAgent,
-    BeamSearchAgent, _CONFIG_PATH
+    BeamSearchAgent, VsBeamSearchAgent, NegamaxAgent, _CONFIG_PATH
 )
 
 
@@ -30,7 +30,7 @@ def _get_default_config() -> dict[str, int]:
         cfg = p.load_solo_config(_CONFIG_PATH)
         defaults["width"] = cfg.beam_width
         defaults["depth"] = cfg.look_ahead
-        defaults["dbs"] = cfg.dbs_max_similar
+        defaults["dbs"]   = cfg.dbs_max_similar
     except Exception:
         pass
     return defaults
@@ -46,7 +46,14 @@ class PlayerSettingsWidget(QWidget):
     #: Emitted with (player_id, new_agent) whenever the agent type or model changes.
     agent_changed = pyqtSignal(int, object)
 
-    _MODES = ["Human", "Beam Search (Player)", "Beam Search (Enemy)", "Empty (Solo)"]
+    _MODES = [
+        "Human",
+        "Negamax AI (Lookahead)",
+        "New AI (Attack ON)",
+        "Old AI (Attack OFF)",
+        "Beam Search (Player)",
+        "Empty (Solo)",
+    ]
 
     def __init__(self, player_id: int, allow_empty: bool = True, default_index: int = 0, parent=None):
         super().__init__(parent)
@@ -67,9 +74,9 @@ class PlayerSettingsWidget(QWidget):
         row1.addWidget(lbl)
 
         self._combo = QComboBox()
-        modes = self._MODES if allow_empty else self._MODES[:3]
+        modes = self._MODES if allow_empty else self._MODES[:-1]
         self._combo.addItems(modes)
-        self._combo.setFixedWidth(130)
+        self._combo.setFixedWidth(160)
         if 0 <= default_index < len(modes):
             self._combo.setCurrentIndex(default_index)
         self._combo.currentIndexChanged.connect(self._on_mode_changed)
@@ -78,7 +85,7 @@ class PlayerSettingsWidget(QWidget):
         row1.addStretch()
         layout.addLayout(row1)
 
-        # Row 3: Beam Search settings (Width, Depth, DBS)
+        # Row 2: Beam Search settings (Width, Depth, DBS)
         self._beam_settings_widget = QWidget()
         beam_layout = QVBoxLayout(self._beam_settings_widget)
         beam_layout.setContentsMargins(28, 0, 0, 0)
@@ -146,7 +153,7 @@ class PlayerSettingsWidget(QWidget):
     # ------------------------------------------------------------------
     def _on_mode_changed(self, idx: int) -> None:
         current_mode = self._combo.currentText()
-        is_beam = "Beam Search" in current_mode
+        is_beam = ("Beam Search" in current_mode) or ("AI" in current_mode)
 
         self._beam_settings_widget.setVisible(is_beam)
         self._emit_agent()
@@ -161,17 +168,21 @@ class PlayerSettingsWidget(QWidget):
 
     def get_agent_or_error(self) -> tuple[BasePlayerAgent | None, str | None]:
         """Returns (agent, None) on success, or (None, error_message) on failure."""
-        mode = self._combo.currentText()
+        mode  = self._combo.currentText()
         width = self._width_spin.value()
         depth = self._depth_spin.value()
-        dbs = self._dbs_spin.value()
+        dbs   = self._dbs_spin.value()
 
         if mode == "Human":
             return HumanPlayerAgent(), None
+        if mode == "Negamax AI (Lookahead)":
+            return NegamaxAgent(depth=depth, candidate_n=22, beam_width=width, look_ahead=3), None
+        if mode == "New AI (Attack ON)":
+            return VsBeamSearchAgent(enable_attack_search=True,  beam_width=width, look_ahead=depth, dbs_max_similar=dbs), None
+        if mode == "Old AI (Attack OFF)":
+            return VsBeamSearchAgent(enable_attack_search=False, beam_width=width, look_ahead=depth, dbs_max_similar=dbs), None
         if mode == "Beam Search (Player)":
-            return BeamSearchAgent(beam_width=width, look_ahead=depth, dbs_max_similar=dbs, is_enemy=False), None
-        if mode == "Beam Search (Enemy)":
-            return BeamSearchAgent(beam_width=width, look_ahead=depth, dbs_max_similar=dbs, is_enemy=True), None
+            return BeamSearchAgent(beam_width=width, look_ahead=depth, dbs_max_similar=dbs), None
         if mode == "Empty (Solo)":
             return EmptyPlayerAgent(), None
         return None, "Unknown mode."
