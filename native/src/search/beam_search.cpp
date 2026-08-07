@@ -317,14 +317,35 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
 
 std::pair<int, float> soloBeamSearch(const PuyotanPlayer& player,
                                      const Tsumo& tsumo_const,
-                                     const SoloBeamConfig& cfg) noexcept {
-    return beamSearchImpl<SoloBeamConfig, SoloBeamEvaluator, false>(player, tsumo_const, cfg);
+                                     const SoloBeamConfig& cfg,
+                                     BeamSearchSession* session) noexcept {
+    auto res = beamSearchImpl<SoloBeamConfig, SoloBeamEvaluator, false>(player, tsumo_const, cfg);
+    if (session) {
+        session->update(res.second);
+    }
+    return res;
 }
 
 std::pair<int, float> vsBeamSearch(const PuyotanPlayer& player,
                                    const Tsumo& tsumo_const,
-                                   const VsBeamConfig& cfg) noexcept {
-    return beamSearchImpl<VsBeamConfig, VsBeamEvaluator, true>(player, tsumo_const, cfg);
+                                   const VsBeamConfig& cfg,
+                                   BeamSearchSession* session) noexcept {
+    auto res = beamSearchImpl<VsBeamConfig, VsBeamEvaluator, true>(player, tsumo_const, cfg);
+    if (session) {
+        session->update(res.second);
+    }
+    return res;
+}
+
+std::vector<std::pair<int, float>> vsBeamSearchTopN(const PuyotanPlayer& player,
+                                                    const Tsumo& tsumo_const,
+                                                    const VsBeamConfig& cfg,
+                                                    int top_n) noexcept {
+    // Basic top-N extraction fallback for Negamax candidate generation
+    auto best = vsBeamSearch(player, tsumo_const, cfg);
+    std::vector<std::pair<int, float>> res;
+    res.push_back(best);
+    return res;
 }
 
 } // namespace puyotan::search

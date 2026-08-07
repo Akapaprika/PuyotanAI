@@ -50,5 +50,31 @@
       "_comment_fire_bias": "発火判断のバイアス係数。fire_bias × 発火スコア > ビームスコア のとき即時発火を選択。\n                                    > 1.0: 発火を積極的に選ぶ / == 1.0: 等価比較 / < 1.0: 継続を優先",
       "fire_bias": 0.97
     }
+  },
+  "negamax": {
+    "depth": 4,
+    "candidate_n": 22,
+    "interior_candidate_n": 11,
+    "chain_cutoff_enabled": true,
+    "use_interior_beam_config": true,
+    "interior_beam_width": 1500,
+    "interior_look_ahead": 3,
+    "interior_dbs_max_similar": 6
+  },
+  "abs": {
+    "depth": 6,
+    "chain_cutoff_enabled": true,
+    "my_category_budgets": {
+      "build": 3000,
+      "crush": 1500,
+      "strike": 1000,
+      "evade": 500
+    },
+    "opp_category_budgets": {
+      "build": 2000,
+      "crush": 1000,
+      "strike": 500,
+      "evade": 300
+    }
   }
 }
