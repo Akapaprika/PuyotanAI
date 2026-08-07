@@ -60,6 +60,12 @@ class BeamConfigLoader {
         if (section.contains("dbs_max_similar") && section["dbs_max_similar"].is_number_integer())
             cfg.dbs_max_similar = section["dbs_max_similar"].get<int>();
 
+        if (section.contains("full_beam_depth") && section["full_beam_depth"].is_number_integer())
+            cfg.full_beam_depth = section["full_beam_depth"].get<int>();
+
+        if (section.contains("min_beam_width_ratio") && section["min_beam_width_ratio"].is_number())
+            cfg.min_beam_width_ratio = section["min_beam_width_ratio"].get<float>();
+
         if (section.contains("eval_weights") && section["eval_weights"].is_object())
             applyPatch(cfg.eval_weights, section["eval_weights"]);
 
@@ -81,6 +87,12 @@ class BeamConfigLoader {
 
         if (section.contains("dbs_max_similar") && section["dbs_max_similar"].is_number_integer())
             cfg.dbs_max_similar = section["dbs_max_similar"].get<int>();
+
+        if (section.contains("full_beam_depth") && section["full_beam_depth"].is_number_integer())
+            cfg.full_beam_depth = section["full_beam_depth"].get<int>();
+
+        if (section.contains("min_beam_width_ratio") && section["min_beam_width_ratio"].is_number())
+            cfg.min_beam_width_ratio = section["min_beam_width_ratio"].get<float>();
 
         if (section.contains("eval_weights") && section["eval_weights"].is_object())
             applyPatch(cfg.eval_weights, section["eval_weights"]);
@@ -104,6 +116,12 @@ class BeamConfigLoader {
         if (section.contains("dbs_max_similar") && section["dbs_max_similar"].is_number_integer())
             cfg.dbs_max_similar = section["dbs_max_similar"].get<int>();
 
+        if (section.contains("full_beam_depth") && section["full_beam_depth"].is_number_integer())
+            cfg.full_beam_depth = section["full_beam_depth"].get<int>();
+
+        if (section.contains("min_beam_width_ratio") && section["min_beam_width_ratio"].is_number())
+            cfg.min_beam_width_ratio = section["min_beam_width_ratio"].get<float>();
+
         if (section.contains("eval_weights") && section["eval_weights"].is_object())
             applyPatch(cfg.eval_weights, section["eval_weights"]);
 
@@ -120,6 +138,8 @@ class BeamConfigLoader {
         solo["beam_width"] = cfg.beam_width;
         solo["look_ahead"] = cfg.look_ahead;
         solo["dbs_max_similar"] = cfg.dbs_max_similar;
+        solo["full_beam_depth"] = cfg.full_beam_depth;
+        solo["min_beam_width_ratio"] = cfg.min_beam_width_ratio;
 
         auto& ew = solo["eval_weights"];
         const auto& w = cfg.eval_weights;
@@ -148,6 +168,8 @@ class BeamConfigLoader {
         vs["beam_width"] = cfg.beam_width;
         vs["look_ahead"] = cfg.look_ahead;
         vs["dbs_max_similar"] = cfg.dbs_max_similar;
+        vs["full_beam_depth"] = cfg.full_beam_depth;
+        vs["min_beam_width_ratio"] = cfg.min_beam_width_ratio;
 
         auto& ew = vs["eval_weights"];
         const auto& w = cfg.eval_weights;

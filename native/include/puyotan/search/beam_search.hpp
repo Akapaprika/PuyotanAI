@@ -46,6 +46,8 @@ struct SoloBeamConfig {
     int beam_width = 500;
     int look_ahead = 3;
     int dbs_max_similar = 0;
+    int full_beam_depth = 2;
+    float min_beam_width_ratio = 1.0f;
     SoloBeamEvalWeights eval_weights;
 };
 
@@ -57,6 +59,8 @@ struct VsBeamConfig {
     int beam_width = 500;
     int look_ahead = 3;
     int dbs_max_similar = 0;
+    int full_beam_depth = 2;
+    float min_beam_width_ratio = 1.0f;
     bool enable_attack_search = true;
     VsBeamEvalWeights eval_weights;
     VsEvalContext     context;

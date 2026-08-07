@@ -245,9 +245,23 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
         if (tl_next_beam.empty())
             break;
 
-        // Sort descending by score and trim to beam_width using lightweight
-        // index sort
-        int keep = std::min(static_cast<int>(tl_next_beam.size()), cfg.beam_width);
+        // Calculate dynamic target beam width for current depth (tapered search)
+        int target_beam_width = cfg.beam_width;
+        if (cfg.min_beam_width_ratio < 1.0f && cfg.look_ahead > 1) {
+            if (depth <= cfg.full_beam_depth) {
+                target_beam_width = cfg.beam_width;
+            } else {
+                const float max_decay_steps = static_cast<float>(cfg.look_ahead - 1 - cfg.full_beam_depth);
+                if (max_decay_steps > 0.0f) {
+                    const float progress = static_cast<float>(depth - cfg.full_beam_depth) / max_decay_steps;
+                    const float ratio = 1.0f - (1.0f - cfg.min_beam_width_ratio) * progress;
+                    target_beam_width = std::max(1, static_cast<int>(cfg.beam_width * ratio));
+                }
+            }
+        }
+
+        // Sort descending by score and trim to target_beam_width using lightweight index sort
+        int keep = std::min(static_cast<int>(tl_next_beam.size()), target_beam_width);
         tl_sort_buf.resize(tl_next_beam.size());
         for (std::size_t i = 0; i < tl_next_beam.size(); ++i) {
             tl_sort_buf[i] = {tl_next_beam[i].score, static_cast<int>(i)};
