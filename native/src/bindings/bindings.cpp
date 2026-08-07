@@ -334,7 +334,8 @@ PYBIND11_MODULE(puyotan_native, m) {
     pybind11::class_<search::NegamaxResult>(m, "NegamaxResult")
         .def(pybind11::init<>())
         .def_readwrite("best_action", &search::NegamaxResult::best_action)
-        .def_readwrite("best_score",  &search::NegamaxResult::best_eval);
+        .def_readwrite("best_score",  &search::NegamaxResult::best_eval)
+        .def_readwrite("candidate_evals", &search::NegamaxResult::candidate_evals);
 
     m.def("load_negamax_config", [](const std::string& path) {
         search::NegamaxConfig cfg;
@@ -371,5 +372,40 @@ PYBIND11_MODULE(puyotan_native, m) {
           pybind11::call_guard<pybind11::gil_scoped_release>(),
           "Simulate multiple VS matches in parallel using OpenMP. "
           "Returns list of MatchResult.");
+
+    // ABS (Adversarial Beam Search) bindings
+    pybind11::class_<search::CategoryBudgets>(m, "CategoryBudgets")
+        .def(pybind11::init<>())
+        .def_readwrite("build",  &search::CategoryBudgets::build)
+        .def_readwrite("crush",  &search::CategoryBudgets::crush)
+        .def_readwrite("strike", &search::CategoryBudgets::strike)
+        .def_readwrite("evade",  &search::CategoryBudgets::evade);
+
+    pybind11::class_<search::AbsConfig>(m, "AbsConfig")
+        .def(pybind11::init<>())
+        .def_readwrite("depth",                &search::AbsConfig::depth)
+        .def_readwrite("chain_cutoff_enabled", &search::AbsConfig::chain_cutoff_enabled)
+        .def_readwrite("my_budgets",           &search::AbsConfig::my_budgets)
+        .def_readwrite("opp_budgets",          &search::AbsConfig::opp_budgets);
+
+    pybind11::class_<search::AbsResult>(m, "AbsResult")
+        .def(pybind11::init<>())
+        .def_readwrite("best_action",     &search::AbsResult::best_action)
+        .def_readwrite("best_eval",       &search::AbsResult::best_eval)
+        .def_readwrite("candidate_evals", &search::AbsResult::candidate_evals);
+
+    m.def("load_abs_config", [](const std::string& path) {
+        search::AbsConfig cfg;
+        return cfg;
+    }, pybind11::arg("path"), "Load AbsConfig from JSON");
+
+    m.def(
+        "abs_search",
+        [](const PuyotanMatch& match, int player_id, const search::AbsConfig& cfg) {
+            pybind11::gil_scoped_release release;
+            return search::absSearch(match, player_id, cfg);
+        },
+        pybind11::arg("match"), pybind11::arg("player_id"), pybind11::arg("cfg"),
+        "Run Adversarial Beam Search over match states.");
 }
 } // namespace puyotan

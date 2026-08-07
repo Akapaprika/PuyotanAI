@@ -40,7 +40,7 @@ def main():
     print(f"Time taken: {elapsed * 1000:.2f} ms")
     print(f"Best Action Index: {res.best_action}")
     print(f"Best Action Details: {p.get_rl_action(res.best_action)}")
-    print(f"Best Evaluation: {res.best_eval:.2f}")
+    print(f"Best Evaluation: {res.best_score:.2f}")
     print("\nCandidate Evaluations at Root:")
     for act_idx, score in res.candidate_evals:
         action = p.get_rl_action(act_idx)
