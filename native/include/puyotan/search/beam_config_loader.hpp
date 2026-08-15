@@ -3,8 +3,9 @@
 #include <fstream>
 #include <string>
 #include <filesystem>
+#include <mutex>
 #include <external/nlohmann/json.hpp>
-#include <puyotan/search/beam_search.hpp>
+#include <puyotan/search/beam_config.hpp>
 
 namespace puyotan::search {
 
@@ -14,12 +15,14 @@ namespace puyotan::search {
  */
 class BeamConfigLoader {
   private:
+    static inline std::mutex s_mutex;
     static inline nlohmann::json s_cached_json;
     static inline std::filesystem::file_time_type s_last_write_time;
     static inline std::string s_cached_path;
     static inline bool s_has_cache = false;
 
     static nlohmann::json getJson(const std::string& path) {
+        std::lock_guard<std::mutex> lock(s_mutex);
         try {
             auto current_time = std::filesystem::last_write_time(path);
             if (s_has_cache && path == s_cached_path && current_time == s_last_write_time) {

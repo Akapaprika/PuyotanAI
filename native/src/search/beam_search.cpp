@@ -4,6 +4,7 @@
 #include <puyotan/core/chain.hpp>
 #include <puyotan/core/gravity.hpp>
 #include <puyotan/engine/tsumo.hpp>
+#include <puyotan/search/action_table.hpp>
 #include <puyotan/search/beam_search.hpp>
 #include <vector>
 #include <unordered_map>
@@ -21,75 +22,7 @@ struct BeamNode {
     int first_action; // RL action index chosen at depth 0
 };
 
-struct BeamAction {
-    int idx;
-    int ax;
-    int sx;
-    int axis_dy;
-    int sub_dy;
-};
-
-// Returns all Put actions precomputed, ordered from edge columns to center
-const std::vector<BeamAction>& getPutActions() noexcept {
-    static const auto v = []() {
-        std::vector<BeamAction> r;
-        for (int i = 0; i < kNumRLActions; ++i) {
-            Action a = getRLAction(i);
-            if (a.type == ActionType::Put) {
-                const int rot = static_cast<int>(a.rotation) & 3;
-                const int ax = a.x;
-                const int sx = ax + kSubDx[rot];
-                const int axis_dy = kAxisDy[rot];
-                const int sub_dy = kSubDySimple[rot];
-                r.emplace_back(i, ax, sx, axis_dy, sub_dy);
-            }
-        }
-
-        // Priority for columns from edges to center: 0, 5, 1, 4, 2, 3
-        constexpr int col_prio[6] = {0, 2, 4, 5, 3, 1};
-        std::sort(r.begin(), r.end(), [&](const BeamAction& a, const BeamAction& b) {
-            int prio_a = (std::min(col_prio[a.ax], col_prio[a.sx]) << 3) | std::max(col_prio[a.ax], col_prio[a.sx]);
-            int prio_b = (std::min(col_prio[b.ax], col_prio[b.sx]) << 3) | std::max(col_prio[b.ax], col_prio[b.sx]);
-            if (prio_a != prio_b) return prio_a < prio_b;
-            return a.idx < b.idx;
-        });
-
-        return r;
-    }();
-    return v;
-}
-
-// Returns Zoro actions precomputed, ordered from edge columns to center
-const std::vector<BeamAction>& getZoroActions() noexcept {
-    static const auto v = []() {
-        std::vector<BeamAction> r;
-        for (int i = 0; i < kNumRLActions; ++i) {
-            Action a = getRLAction(i);
-            if (a.type != ActionType::Put)
-                continue;
-            if (a.rotation == Rotation::Down || a.rotation == Rotation::Left)
-                continue;
-
-            const int rot = static_cast<int>(a.rotation) & 3;
-            const int ax = a.x;
-            const int sx = ax + kSubDx[rot];
-            const int axis_dy = kAxisDy[rot];
-            const int sub_dy = kSubDySimple[rot];
-            r.emplace_back(i, ax, sx, axis_dy, sub_dy);
-        }
-
-        constexpr int col_prio[6] = {0, 2, 4, 5, 3, 1};
-        std::sort(r.begin(), r.end(), [&](const BeamAction& a, const BeamAction& b) {
-            int prio_a = (std::min(col_prio[a.ax], col_prio[a.sx]) << 3) | std::max(col_prio[a.ax], col_prio[a.sx]);
-            int prio_b = (std::min(col_prio[b.ax], col_prio[b.sx]) << 3) | std::max(col_prio[b.ax], col_prio[b.sx]);
-            if (prio_a != prio_b) return prio_a < prio_b;
-            return a.idx < b.idx;
-        });
-
-        return r;
-    }();
-    return v;
-}
+// BeamAction, getPutActions(), and getZoroActions() are defined in action_table.hpp.
 
 struct ScoreIdx {
     float score;

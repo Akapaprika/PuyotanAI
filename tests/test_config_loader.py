@@ -25,10 +25,38 @@ def test_load_vs_config():
     assert cfg.beam_width > 0
     assert cfg.look_ahead > 0
 
+def test_rule_constants():
+    assert p.kRuleColors == 4
+    assert p.kRuleConnectCount == 4
+    assert p.kDeathCol == 2
+    assert p.kDeathRow == 11
+    assert p.kTargetScore == 70
+    assert p.kAllClearBonus == 2100
+
+def test_pure_search_apis():
+    match = p.PuyotanMatch(12345)
+    match.start()
+    player = match.getPlayer(0)
+    tsumo = match.getTsumo()
+
+    solo_cfg = p.SoloBeamConfig()
+    solo_cfg.beam_width = 100
+    solo_cfg.look_ahead = 2
+    act_idx, score = p.solo_beam_search(player, tsumo, solo_cfg)
+    assert 0 <= act_idx < p.kNumRLActions
+
+    vs_cfg = p.VsBeamConfig()
+    vs_cfg.beam_width = 100
+    vs_cfg.look_ahead = 2
+    act_idx_vs, score_vs = p.vs_beam_search(player, tsumo, vs_cfg)
+    assert 0 <= act_idx_vs < p.kNumRLActions
+
 def run_all():
     print("Running test_config_loader...")
     test_load_solo_config()
     test_load_vs_config()
+    test_rule_constants()
+    test_pure_search_apis()
     print("  [PASS] test_config_loader")
 
 if __name__ == "__main__":

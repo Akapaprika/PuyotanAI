@@ -172,6 +172,14 @@ PYBIND11_MODULE(puyotan_native, m) {
           "Convert a flat RL action index to an Action (col, rotation). "
           "Returns Pass action for out-of-range indices.");
 
+    // -- Rule & Score Constants (Single Source of Truth) --
+    m.attr("kRuleColors")       = config::Rule::kColors;
+    m.attr("kRuleConnectCount") = config::Rule::kConnectCount;
+    m.attr("kDeathCol")         = config::Rule::kDeathCol;
+    m.attr("kDeathRow")         = config::Rule::kDeathRow;
+    m.attr("kTargetScore")      = config::Score::kTargetScore;
+    m.attr("kAllClearBonus")    = config::Score::kAllClearBonus;
+
     // =========================================================================
     // Beam Search
     // =========================================================================
@@ -249,6 +257,45 @@ PYBIND11_MODULE(puyotan_native, m) {
     m.def("load_enemy_config", &search::BeamConfigLoader::loadEnemy, pybind11::arg("path"),
           "Load VsBeamConfig (enemy) from JSON");
 
+    // Pure Solo beam search
+    m.def(
+        "solo_beam_search",
+        [](const PuyotanPlayer& player, const Tsumo& tsumo,
+           const search::SoloBeamConfig& cfg,
+           search::BeamSearchSession* session) {
+            pybind11::gil_scoped_release release;
+            return search::soloBeamSearch(player, tsumo, cfg, session);
+        },
+        pybind11::arg("player"), pybind11::arg("tsumo"),
+        pybind11::arg("cfg"), pybind11::arg("session") = nullptr,
+        "Run Solo beam search with a SoloBeamConfig. Returns (RL action index, expected score).");
+
+    // Pure VS beam search
+    m.def(
+        "vs_beam_search",
+        [](const PuyotanPlayer& player, const Tsumo& tsumo,
+           const search::VsBeamConfig& cfg,
+           search::BeamSearchSession* session) {
+            pybind11::gil_scoped_release release;
+            return search::vsBeamSearch(player, tsumo, cfg, session);
+        },
+        pybind11::arg("player"), pybind11::arg("tsumo"),
+        pybind11::arg("cfg"), pybind11::arg("session") = nullptr,
+        "Run VS beam search with a VsBeamConfig. Returns (RL action index, expected score).");
+
+    // Top N VS candidate search
+    m.def(
+        "vs_beam_search_top_n",
+        [](const PuyotanPlayer& player, const Tsumo& tsumo,
+           const search::VsBeamConfig& cfg, int top_n) {
+            pybind11::gil_scoped_release release;
+            return search::vsBeamSearchTopN(player, tsumo, cfg, top_n);
+        },
+        pybind11::arg("player"), pybind11::arg("tsumo"),
+        pybind11::arg("cfg"), pybind11::arg("top_n") = 5,
+        "Run VS beam search returning top N unique actions with scores.");
+
+    // Backward-compatible unified search helper
     m.def(
         "beam_search_action",
         [](const PuyotanPlayer& player, const Tsumo& tsumo,
@@ -267,7 +314,6 @@ PYBIND11_MODULE(puyotan_native, m) {
                     cfg = search::BeamConfigLoader::loadSolo(config_path);
                 }
 
-                // Override parameters if specified
                 if (beam_width > 0) { cfg.beam_width = beam_width; }
                 if (look_ahead > 0) { cfg.look_ahead = look_ahead; }
                 if (dbs_max_similar >= 0) { cfg.dbs_max_similar = dbs_max_similar; }
@@ -285,12 +331,10 @@ PYBIND11_MODULE(puyotan_native, m) {
                     }
                 }
 
-                // Override parameters if specified
                 if (beam_width > 0) { cfg.beam_width = beam_width; }
                 if (look_ahead > 0) { cfg.look_ahead = look_ahead; }
                 if (dbs_max_similar >= 0) { cfg.dbs_max_similar = dbs_max_similar; }
 
-                // Apply stagnated override dynamically for VS mode
                 if (is_stagnated) {
                     cfg.eval_weights.fire_bias = 0.97f;
                     cfg.eval_weights.potential_score_scale = 0.0f;
@@ -308,20 +352,6 @@ PYBIND11_MODULE(puyotan_native, m) {
         pybind11::arg("is_enemy") = false,
         pybind11::arg("session") = nullptr,
         "Run beam search internally managing config loading. "
-        "Returns tuple of (RL action index, expected score).");
-
-    // Standalone VS beam search (used by VsBeamSearchAgent)
-    m.def(
-        "vs_beam_search",
-        [](const PuyotanPlayer& player, const Tsumo& tsumo,
-           const search::VsBeamConfig& cfg,
-           search::BeamSearchSession* session) {
-            pybind11::gil_scoped_release release;
-            return search::vsBeamSearch(player, tsumo, cfg, session);
-        },
-        pybind11::arg("player"), pybind11::arg("tsumo"),
-        pybind11::arg("cfg"), pybind11::arg("session") = nullptr,
-        "Run VS beam search with a pre-configured VsBeamConfig. "
         "Returns tuple of (RL action index, expected score).");
 
     // Negamax config struct
