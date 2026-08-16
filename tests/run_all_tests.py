@@ -9,6 +9,12 @@ import time
 import subprocess
 from pathlib import Path
 
+# Force UTF-8 stdout/stderr on Windows
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # パス設定
 _PROJECT_ROOT = Path(__file__).parent.parent
 _CANDIDATE_PATHS = [
@@ -52,7 +58,7 @@ class TestRunner:
         print(f"[{self.total:02d}] {name:<45}", end="", flush=True)
         t0 = time.time()
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True)
+            res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
             assert res.returncode == 0, f"Return code {res.returncode}:\n{res.stdout}\n{res.stderr}"
             assert "Regression test PASSED!" in res.stdout
             elapsed = time.time() - t0

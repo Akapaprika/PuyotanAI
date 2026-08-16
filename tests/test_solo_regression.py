@@ -42,13 +42,13 @@ def run_50step_simulation(seed: int = 1, num_moves: int = 50):
 
     records = []
 
-    print(f"[Regression Test] Seed={seed}, BW={BENCH_BEAM_WIDTH}, LA={BENCH_LOOK_AHEAD} で {num_moves}手分のソロビームサーチを実行中...")
+    print(f"[Regression Test] Seed={seed}, BW={BENCH_BEAM_WIDTH}, LA={BENCH_LOOK_AHEAD}: Running {num_moves} moves...")
 
     for move in range(1, num_moves + 1):
         player = match.getPlayer(0)
         tsumo = match.getTsumo()
 
-        # 純粋探索 API (solo_beam_search) を使用して固定パラメータで探索
+        # Pure search API (solo_beam_search)
         act_idx, score = p.solo_beam_search(player, tsumo, cfg)
 
         action = p.get_rl_action(act_idx)
@@ -64,7 +64,7 @@ def run_50step_simulation(seed: int = 1, num_moves: int = 50):
 
         print(f"  Move {move:2d}/50: Action={act_idx:2d} (x={action.x}, rot={int(action.rotation)}) | EvalScore={score:.1f}")
 
-        # 手を反映してゲームを進める
+        # Step match forward
         match.setAction(0, action)
         while match.status == p.MatchStatus.PLAYING:
             mask = match.getDecisionMask()
@@ -75,26 +75,26 @@ def run_50step_simulation(seed: int = 1, num_moves: int = 50):
             match.stepNextFrame()
 
         if match.status != p.MatchStatus.PLAYING:
-            print(f"  [Notice] Move {move} でゲーム終了（MatchStatus != PLAYING）")
+            print(f"  [Notice] Match finished at move {move} (Status != PLAYING)")
             break
 
     return records
 
 
 def generate_golden():
-    """現在のコード動作を正しいゴールドマスターとして保存する。"""
+    """Generates the golden master reference dataset."""
     records = run_50step_simulation(seed=1, num_moves=50)
     _GOLDEN_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(_GOLDEN_PATH, "w", encoding="utf-8") as f:
         json.dump(records, f, indent=2, ensure_ascii=False)
-    print(f"\n[OK] ゴールドマスター（基準データ）を生成・保存しました: {_GOLDEN_PATH}")
+    print(f"\n[OK] Golden master saved: {_GOLDEN_PATH}")
     return records
 
 
 def verify_against_golden():
-    """既存のゴールドマスターと現在の動作を1手ずつ比較し、100%完全一致するか検証する。"""
+    """Verifies 100% exact match against golden master."""
     if not _GOLDEN_PATH.exists():
-        print(f"\n[Notice] ゴールドマスターファイルが見つかりません。まず基準データを生成します。")
+        print(f"\n[Notice] Golden master not found. Generating...")
         return generate_golden()
 
     with open(_GOLDEN_PATH, "r", encoding="utf-8") as f:
@@ -103,7 +103,7 @@ def verify_against_golden():
     current = run_50step_simulation(seed=1, num_moves=50)
 
     print("\n" + "=" * 60)
-    print("  ソロAI リグレッションテスト結果（ゴールドマスター比較）")
+    print("  Solo AI Regression Test (Golden Master Comparison)")
     print("=" * 60)
 
     mismatches = 0
@@ -115,9 +115,9 @@ def verify_against_golden():
 
         is_match = (g["act_idx"] == c["act_idx"] and g["x"] == c["x"] and g["rotation"] == c["rotation"])
         if is_match:
-            status = "OK (一致)"
+            status = "OK (MATCH)"
         else:
-            status = f"NG (不一致! Golden: act={g['act_idx']} x={g['x']} rot={g['rotation']} | Current: act={c['act_idx']} x={c['x']} rot={c['rotation']})"
+            status = f"NG (MISMATCH! Golden: act={g['act_idx']} x={g['x']} rot={g['rotation']} | Current: act={c['act_idx']} x={c['x']} rot={c['rotation']})"
             mismatches += 1
 
         print(f"Move {i+1:2d}: {status}")
@@ -125,10 +125,10 @@ def verify_against_golden():
     print("=" * 60)
 
     if mismatches == 0 and len(golden) == len(current):
-        print(" [PASS] 50手すべて 100% 完全一致しました！ソロAIの機能回帰はありません。")
+        print(" [PASS] All 50 moves 100% MATCHED! No solo AI regression.")
         return True
     else:
-        print(f" [FAIL] 不一致が {mismatches} 件検出されました！")
+        print(f" [FAIL] Found {mismatches} mismatches!")
         return False
 
 
