@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 )
 
 from .player_settings_widget import PlayerSettingsWidget
-from ..agents import BasePlayerAgent, HumanPlayerAgent, EmptyPlayerAgent
+from ..agents import BasePlayerAgent
 
 
 class SetupWidget(QWidget):

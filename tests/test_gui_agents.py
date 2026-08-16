@@ -8,7 +8,7 @@ from pathlib import Path
 
 _DIST_PATH = Path(__file__).parent.parent / "native" / "dist"
 _PROJECT_ROOT = Path(__file__).parent.parent
-_CONFIG_PATH = str(_PROJECT_ROOT / "native" / "resources" / "beam_config.json")
+
 
 if str(_DIST_PATH) not in sys.path:
     sys.path.insert(0, str(_DIST_PATH))
@@ -26,6 +26,12 @@ class DummyGameModel:
 
     def get_player_state(self, player_id: int):
         return self.match.getPlayer(player_id)
+
+    def get_tsumo(self):
+        return self.match.getTsumo()
+
+    def get_match_snapshot(self):
+        return self.match.clone()
 
 def test_gui_agent_instantiation_and_action():
     model = DummyGameModel(seed=1)

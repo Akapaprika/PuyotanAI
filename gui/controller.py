@@ -1,5 +1,4 @@
 from PyQt6.QtCore import Qt
-import puyotan_native as p
 from .agents import HumanPlayerAgent
 
 

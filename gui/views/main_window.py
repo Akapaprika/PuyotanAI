@@ -10,7 +10,7 @@ Restart / Game Over always returns to the Setup page.
 """
 from __future__ import annotations
 
-import puyotan_native as p
+
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
@@ -25,7 +25,7 @@ from .setup_widget import SetupWidget
 from .board_widget import (
     BoardSnapshot, PieceSpec, piece_spec_from_native, CELL_COLORS
 )
-from ..agents import HumanPlayerAgent
+
 from .. import config
 
 
@@ -185,8 +185,7 @@ class MainWindow(QMainWindow):
         """Commit agent choices, configure panels, and begin the match."""
         for pid, agent in enumerate(agents):
             self.vm.set_agent(pid, agent)
-            is_human = isinstance(agent, HumanPlayerAgent)
-            self._panels[pid].set_human_controlled(is_human)
+            self._panels[pid].set_human_controlled(agent.is_human)
 
         self.vm.model.seed = seed
         self._status_bar.set_seed(seed)

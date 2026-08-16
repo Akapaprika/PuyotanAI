@@ -13,19 +13,70 @@ the player as needing a decision (decision_mask bit is set).
 """
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from pathlib import Path
+from typing import Any
 import threading
 
 import puyotan_native as p
+from . import config
+
+# Sentinel returned by _AsyncSearchMixin._check_result() while a thread is alive.
+_STILL_THINKING = object()
+
 
 # ---------------------------------------------------------------------------
-# beam_config.json のパス（C++ 側に渡すためだけに保持）
+# Async search thread management mixin
 # ---------------------------------------------------------------------------
-_CONFIG_PATH = str(Path(__file__).parent.parent / "native" / "resources" / "beam_config.json")
+class _AsyncSearchMixin:
+    """
+    Reusable thread-management helpers for AI agents that run search in a background
+    thread. Call _init_async() from __init__ before using any other method.
+    """
+
+    def _init_async(self) -> None:
+        self._thread: threading.Thread | None = None
+        self._result: Any = None
+        self._lock = threading.Lock()
+
+    def _check_result(self):
+        """
+        Non-blocking poll of the background search.
+
+        Returns
+        -------
+        result          — the stored value if search finished (clears state).
+        _STILL_THINKING — a search thread is alive but not yet done.
+        None            — no thread is running; caller should start one.
+        """
+        with self._lock:
+            if self._result is not None:
+                r, self._result, self._thread = self._result, None, None
+                return r
+            if self._thread is not None and self._thread.is_alive():
+                return _STILL_THINKING
+        return None
+
+    def _launch(self, target) -> None:
+        """Start a new daemon search thread."""
+        t = threading.Thread(target=target, daemon=True)
+        with self._lock:
+            self._thread = t
+        t.start()
+
+    def _store_result(self, result) -> None:
+        """Called from inside the worker thread to publish the result."""
+        with self._lock:
+            self._result = result
 
 
+# ---------------------------------------------------------------------------
+# Base agent interface
+# ---------------------------------------------------------------------------
 class BasePlayerAgent(ABC):
     """Abstract interface for a player controller."""
+
+    # Subclasses override these as class-level flags to avoid isinstance checks.
+    is_human: bool = False
+    is_empty: bool = False
 
     @abstractmethod
     def get_action(self, match, player_id: int, pres) -> p.Action | None:
@@ -40,6 +91,12 @@ class BasePlayerAgent(ABC):
         pres       : PlayerPresentationState — UI-layer state for this player
         """
 
+    def on_mode_updated(self, is_solo: bool) -> None:
+        """
+        Called each frame before get_action() when the game mode context changes.
+        Default is a no-op; override in subclasses that adapt behaviour to solo/vs mode.
+        """
+
 
 # ---------------------------------------------------------------------------
 # Human
@@ -49,6 +106,8 @@ class HumanPlayerAgent(BasePlayerAgent):
     Returns a PUT action when the user has confirmed their placement
     (pres.confirmed == True), otherwise returns None to keep waiting.
     """
+
+    is_human: bool = True
 
     def get_action(self, match, player_id: int, pres) -> p.Action | None:
         if pres.confirmed:
@@ -72,6 +131,8 @@ class EmptyPlayerAgent(BasePlayerAgent):
     that we always read a valid action.
     """
 
+    is_empty: bool = True
+
     def get_action(self, match, player_id: int, pres) -> p.Action | None:
         other_id = 1 - player_id
         other_state = match.get_player_state(other_id)
@@ -86,7 +147,7 @@ class EmptyPlayerAgent(BasePlayerAgent):
 # ---------------------------------------------------------------------------
 # Beam Search AI (Solo / VS共用)
 # ---------------------------------------------------------------------------
-class BeamSearchAgent(BasePlayerAgent):
+class BeamSearchAgent(_AsyncSearchMixin, BasePlayerAgent):
     """
     Pure beam search agent — no neural network required.
 
@@ -107,33 +168,23 @@ class BeamSearchAgent(BasePlayerAgent):
         self._dbs_max_similar = dbs_max_similar
         self._session = p.BeamSearchSession()
         self._is_solo = False
+        self._init_async()
 
-        # Thread management for async non-blocking search
-        self._thread: threading.Thread | None = None
-        self._result: tuple[int, float] | None = None
-        self._lock = threading.Lock()
-
-    def adjust_for_mode(self, is_solo: bool) -> None:
+    def on_mode_updated(self, is_solo: bool) -> None:
         self._is_solo = is_solo
 
     def get_action(self, match, player_id: int, pres) -> p.Action | None:
-        with self._lock:
-            # If the background search finished and has a result, retrieve it and return
-            if self._result is not None:
-                idx, _ = self._result
-                self._result = None
-                self._thread = None
-                return p.get_rl_action(idx)
+        r = self._check_result()
+        if r is _STILL_THINKING:
+            return None
+        if r is not None:
+            return p.get_rl_action(r[0])
 
-            # If the search is still running, return None to wait (non-blocking)
-            if self._thread is not None and self._thread.is_alive():
-                return None
+        player = match.get_player_state(player_id)
+        tsumo  = match.get_tsumo()
 
-        player = match.match.getPlayer(player_id)
-        tsumo  = match.match.getTsumo()
-
-        width = self._beam_width if self._beam_width is not None else -1
-        depth = self._look_ahead if self._look_ahead is not None else -1
+        width = self._beam_width      if self._beam_width      is not None else -1
+        depth = self._look_ahead      if self._look_ahead      is not None else -1
         dbs   = self._dbs_max_similar if self._dbs_max_similar is not None else -1
 
         # Create deep snapshots on the main thread (while GIL is held)
@@ -143,23 +194,20 @@ class BeamSearchAgent(BasePlayerAgent):
         # Define thread worker (GIL is released inside C++ bindings.cpp)
         def worker():
             res = p.beam_search_action(
-                player_snap, tsumo_snap, _CONFIG_PATH, width, depth,
+                player_snap, tsumo_snap, config.CONFIG_PATH, width, depth,
                 self._is_solo,
                 dbs_max_similar=dbs, session=self._session
             )
-            with self._lock:
-                self._result = res
+            self._store_result(res)
 
-        self._thread = threading.Thread(target=worker, daemon=True)
-        self._thread.start()
-
+        self._launch(worker)
         return None
 
 
 # ---------------------------------------------------------------------------
 # VS Beam Search AI (explicit enable_attack_search flag + VsEvalContext)
 # ---------------------------------------------------------------------------
-class VsBeamSearchAgent(BasePlayerAgent):
+class VsBeamSearchAgent(_AsyncSearchMixin, BasePlayerAgent):
     """
     VS-mode beam search agent that explicitly controls the enable_attack_search flag.
 
@@ -177,32 +225,25 @@ class VsBeamSearchAgent(BasePlayerAgent):
         self._look_ahead = look_ahead
         self._dbs_max_similar = dbs_max_similar
         self._session = p.BeamSearchSession()
-
-        self._thread: threading.Thread | None = None
-        self._result: tuple[int, float] | None = None
-        self._lock = threading.Lock()
+        self._init_async()
 
     def get_action(self, match, player_id: int, pres) -> p.Action | None:
-        with self._lock:
-            if self._result is not None:
-                idx, _ = self._result
-                self._result = None
-                self._thread = None
-                return p.get_rl_action(idx)
+        r = self._check_result()
+        if r is _STILL_THINKING:
+            return None
+        if r is not None:
+            return p.get_rl_action(r[0])
 
-            if self._thread is not None and self._thread.is_alive():
-                return None
-
-        player   = match.match.getPlayer(player_id)
-        tsumo    = match.match.getTsumo()
+        player   = match.get_player_state(player_id)
+        tsumo    = match.get_tsumo()
         enemy_id = 1 - player_id
-        enemy    = match.match.getPlayer(enemy_id)
+        enemy    = match.get_player_state(enemy_id)
 
         bw  = self._beam_width      if self._beam_width      is not None else -1
         la  = self._look_ahead      if self._look_ahead      is not None else -1
         dbs = self._dbs_max_similar if self._dbs_max_similar is not None else -1
 
-        cfg = p.load_vs_config(_CONFIG_PATH)
+        cfg = p.load_vs_config(config.CONFIG_PATH)
         cfg.enable_attack_search = self._enable_attack_search
         if bw  > 0:  cfg.beam_width      = bw
         if la  > 0:  cfg.look_ahead      = la
@@ -228,18 +269,16 @@ class VsBeamSearchAgent(BasePlayerAgent):
 
         def worker():
             res = p.vs_beam_search(player_snap, tsumo_snap, cfg, self._session)
-            with self._lock:
-                self._result = res
+            self._store_result(res)
 
-        self._thread = threading.Thread(target=worker, daemon=True)
-        self._thread.start()
+        self._launch(worker)
         return None
 
 
 # ---------------------------------------------------------------------------
 # Negamax AI (Matchを用いた先読み対戦探索)
 # ---------------------------------------------------------------------------
-class NegamaxAgent(BasePlayerAgent):
+class NegamaxAgent(_AsyncSearchMixin, BasePlayerAgent):
     """
     Adversarial AI using Negamax (minimax) lookahead over deterministic PuyotanMatch states.
     Prunes move candidates at each decision turn using VS beam search, and simulates
@@ -255,26 +294,19 @@ class NegamaxAgent(BasePlayerAgent):
         self._candidate_n = candidate_n
         self._beam_width = beam_width
         self._look_ahead = look_ahead
-
-        self._thread: threading.Thread | None = None
-        self._result: int | None = None
-        self._lock = threading.Lock()
+        self._init_async()
 
     def get_action(self, match, player_id: int, pres) -> p.Action | None:
-        with self._lock:
-            if self._result is not None:
-                idx = self._result
-                self._result = None
-                self._thread = None
-                return p.get_rl_action(idx)
+        r = self._check_result()
+        if r is _STILL_THINKING:
+            return None
+        if r is not None:
+            return p.get_rl_action(r)
 
-            if self._thread is not None and self._thread.is_alive():
-                return None
+        # Snapshot match on main thread (safe to clone while GIL is held)
+        match_snap = match.get_match_snapshot()
 
-        # Snapshot match on main thread
-        match_snap = match.match.clone()
-
-        cfg = p.load_negamax_config(_CONFIG_PATH)
+        cfg = p.load_negamax_config(config.CONFIG_PATH)
         if self._depth is not None and self._depth > 0:
             cfg.depth = self._depth
         if self._candidate_n is not None and self._candidate_n > 0:
@@ -286,9 +318,7 @@ class NegamaxAgent(BasePlayerAgent):
 
         def worker():
             res = p.negamax_search(match_snap, player_id, cfg)
-            with self._lock:
-                self._result = res.best_action
+            self._store_result(res.best_action)
 
-        self._thread = threading.Thread(target=worker, daemon=True)
-        self._thread.start()
+        self._launch(worker)
         return None

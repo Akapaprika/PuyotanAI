@@ -17,9 +17,10 @@ from PyQt6.QtWidgets import (
     QLabel, QSpinBox
 )
 
+from .. import config
 from ..agents import (
     HumanPlayerAgent, EmptyPlayerAgent, BasePlayerAgent,
-    BeamSearchAgent, VsBeamSearchAgent, NegamaxAgent, _CONFIG_PATH
+    BeamSearchAgent, VsBeamSearchAgent, NegamaxAgent
 )
 
 
@@ -27,7 +28,7 @@ def _get_default_config() -> dict[str, int]:
     """Load default beam configuration from beam_config.json using the C++ bindings."""
     defaults = {"width": 15000, "depth": 25, "dbs": 6}
     try:
-        cfg = p.load_solo_config(_CONFIG_PATH)
+        cfg = p.load_solo_config(config.CONFIG_PATH)
         defaults["width"] = cfg.beam_width
         defaults["depth"] = cfg.look_ahead
         defaults["dbs"]   = cfg.dbs_max_similar

@@ -1,3 +1,10 @@
+from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Config file path (single source of truth for the whole gui package)
+# ---------------------------------------------------------------------------
+CONFIG_PATH = str(Path(__file__).parent.parent / "native" / "resources" / "beam_config.json")
+
 # Screen Dimensions
 WINDOW_WIDTH = 750
 WINDOW_HEIGHT = 700
