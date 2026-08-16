@@ -26,10 +26,10 @@ def test_base64s_roundtrip():
     for n in test_values:
         s = num_to_base64s(n)
         decoded = base64s_to_num(s)
-        status = "✅" if decoded == n else "❌"
+        status = "[OK]" if decoded == n else "[FAIL]"
         if decoded != n:
             ok = False
-        print(f"  {status} {n} → '{s}' → {decoded}")
+        print(f"  {status} {n} -> '{s}' -> {decoded}")
     return ok
 
 
@@ -55,7 +55,7 @@ def test_known_seed():
 
     # JS の nextInt(4) → 0=RED,1=GREEN,2=BLUE,3=YELLOW と一致するか
     # C++ Cell: Red=0,Green=1,Blue=2,Yellow=3 → 同じ
-    print("  ✅ 色マッピング確認完了（C++ Cell と JS Enum は値が同じ）")
+    print("  [OK] 色マッピング確認完了（C++ Cell と JS Enum は値が同じ）")
 
 
 if __name__ == "__main__":
@@ -72,7 +72,7 @@ if __name__ == "__main__":
 
     print()
     if ok1 and ok2:
-        print("🎉 全テスト PASS")
+        print("[PASS] 全テスト PASS")
     else:
-        print("❌ 一部テスト FAIL")
+        print("[FAIL] 一部テスト FAIL")
         sys.exit(1)

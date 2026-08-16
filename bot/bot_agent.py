@@ -485,21 +485,50 @@ class PuyotanBot:
 
         player = state.get_player_state(target_pid)
         tsumo = state.get_tsumo()
-        is_solo = self.is_solo
-        is_enemy = (not is_solo) and (target_pid == 1)
-
         session = self._sessions[target_pid]
 
-        def worker():
-            result = p.beam_search_action(
-                player, tsumo, CONFIG_PATH,
-                self.beam_width, self.look_ahead,
-                is_solo,
-                is_enemy=is_enemy,
-                session=session
-            )
-            with self._search_lock:
-                self._search_result = result
+        player_snap = player.clone()
+        tsumo_snap = tsumo.clone()
+
+        if self.is_solo:
+            cfg = p.load_solo_config(CONFIG_PATH)
+            if self.beam_width > 0:
+                cfg.beam_width = self.beam_width
+            if self.look_ahead > 0:
+                cfg.look_ahead = self.look_ahead
+
+            def worker():
+                result = p.solo_beam_search(player_snap, tsumo_snap, cfg, session)
+                with self._search_lock:
+                    self._search_result = result
+        else:
+            enemy_pid = 1 - target_pid
+            enemy = state.get_player_state(enemy_pid)
+
+            cfg = p.load_vs_config(CONFIG_PATH)
+            if self.beam_width > 0:
+                cfg.beam_width = self.beam_width
+            if self.look_ahead > 0:
+                cfg.look_ahead = self.look_ahead
+
+            # Populate VsEvalContext with enemy live state for optimal counter & attack timing
+            ctx = cfg.context
+            ctx.enemy_field = enemy.field
+            ctx.enemy_active_next_pos = enemy.active_next_pos
+            ctx.enemy_action_type = enemy.current_action.action.type
+            ctx.enemy_chain_count = enemy.chain_count
+            ctx.enemy_score = enemy.score
+            ctx.enemy_used_score = enemy.used_score
+            ctx.enemy_active_ojama = enemy.active_ojama
+            ctx.enemy_non_active_ojama = enemy.non_active_ojama
+            ctx.my_active_ojama = player.active_ojama
+            ctx.my_non_active_ojama = player.non_active_ojama
+            cfg.context = ctx
+
+            def worker():
+                result = p.vs_beam_search(player_snap, tsumo_snap, cfg, session)
+                with self._search_lock:
+                    self._search_result = result
 
         with self._search_lock:
             self._search_thread = threading.Thread(target=worker, daemon=True)
