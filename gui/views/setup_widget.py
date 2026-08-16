@@ -61,7 +61,7 @@ class SetupWidget(QWidget):
         vs_lbl.setStyleSheet("font-size: 28px; font-weight: bold; color: #475569;")
         settings_row.addWidget(vs_lbl)
 
-        self._p2_settings = PlayerSettingsWidget(1, allow_empty=True, default_index=2)
+        self._p2_settings = PlayerSettingsWidget(1, allow_empty=True, default_index=1)
         settings_row.addWidget(self._p2_settings)
 
         root.addLayout(settings_row)

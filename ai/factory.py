@@ -6,33 +6,26 @@ AgentFactory: Centralized Factory for instantiating AI and player agents from UI
 from __future__ import annotations
 from typing import Optional, Tuple
 
-import puyotan_native as p
 from .base import BasePlayerAgent
 from .beam_agents import HumanPlayerAgent, EmptyPlayerAgent, BeamSearchAgent, VsBeamSearchAgent
 from .negamax_agent import NegamaxAgent
-from .config import CONFIG_PATH
 
 
 class AgentFactory:
     """
     Translates player mode strings into concrete Agent instances.
-    Provides default config values loaded from the central JSON configuration.
+    Provides standard player choices: Human, AI (VS Beam Search), and Empty (Solo).
     """
 
     MODE_HUMAN = "Human"
+    MODE_AI = "AI"
     MODE_EMPTY_SOLO = "Empty (Solo)"
-    MODE_BEAM_SEARCH_PLAYER = "AI: BeamSearch (Solo / Normal)"
-    MODE_NEW_AI_ATTACK_ON = "AI: VS Beam (Gaze / Defense)"
-    MODE_OLD_AI_ATTACK_OFF = "AI: VS Beam (No Gaze)"
-    MODE_NEGAMAX = "AI: Negamax (Alpha-Beta)"
 
+    # Clean, streamlined UI modes
     MODES: list[str] = [
         MODE_HUMAN,
+        MODE_AI,
         MODE_EMPTY_SOLO,
-        MODE_BEAM_SEARCH_PLAYER,
-        MODE_NEW_AI_ATTACK_ON,
-        MODE_OLD_AI_ATTACK_OFF,
-        MODE_NEGAMAX,
     ]
 
     @classmethod
@@ -42,19 +35,6 @@ class AgentFactory:
             return list(cls.MODES)
         return [m for m in cls.MODES if m != cls.MODE_EMPTY_SOLO]
 
-    @staticmethod
-    def get_default_config() -> dict[str, int]:
-        """Load default parameters from beam_config.json."""
-        try:
-            cfg = p.load_solo_config(CONFIG_PATH)
-            return {
-                "width": cfg.beam_width,
-                "depth": cfg.look_ahead,
-                "dbs": cfg.dbs_max_similar,
-            }
-        except Exception:
-            return {"width": 1000, "depth": 15, "dbs": 6}
-
     @classmethod
     def create_agent(
         cls,
@@ -63,21 +43,14 @@ class AgentFactory:
         depth: int | None = None,
         dbs: int | None = None,
     ) -> Tuple[Optional[BasePlayerAgent], Optional[str]]:
-        """Instantiate an agent configured with the given parameters. Returns (agent, error_message)."""
+        """
+        Instantiate an agent configured with the given mode.
+        Returns (agent, error_message).
+        """
+        # Primary standard modes
         if mode == cls.MODE_HUMAN:
             return HumanPlayerAgent(), None
-        elif mode == cls.MODE_EMPTY_SOLO:
-            return EmptyPlayerAgent(), None
-        elif mode == cls.MODE_BEAM_SEARCH_PLAYER:
-            return (
-                BeamSearchAgent(
-                    beam_width=width,
-                    look_ahead=depth,
-                    dbs_max_similar=dbs,
-                ),
-                None,
-            )
-        elif mode == cls.MODE_NEW_AI_ATTACK_ON:
+        elif mode == cls.MODE_AI:
             return (
                 VsBeamSearchAgent(
                     enable_attack_search=True,
@@ -87,17 +60,31 @@ class AgentFactory:
                 ),
                 None,
             )
-        elif mode == cls.MODE_OLD_AI_ATTACK_OFF:
+        elif mode == cls.MODE_EMPTY_SOLO:
+            return EmptyPlayerAgent(), None
+
+        # Backward-compatible aliases
+        elif mode in ("AI: VS Beam (Gaze / Defense)", "AI: VS Beam (No Gaze)"):
+            enable_attack = (mode == "AI: VS Beam (Gaze / Defense)")
             return (
                 VsBeamSearchAgent(
-                    enable_attack_search=False,
+                    enable_attack_search=enable_attack,
                     beam_width=width,
                     look_ahead=depth,
                     dbs_max_similar=dbs,
                 ),
                 None,
             )
-        elif mode == cls.MODE_NEGAMAX:
+        elif mode == "AI: BeamSearch (Solo / Normal)":
+            return (
+                BeamSearchAgent(
+                    beam_width=width,
+                    look_ahead=depth,
+                    dbs_max_similar=dbs,
+                ),
+                None,
+            )
+        elif mode == "AI: Negamax (Alpha-Beta)":
             return (
                 NegamaxAgent(
                     depth=4,
