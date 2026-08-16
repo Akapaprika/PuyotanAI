@@ -1,9 +1,5 @@
 from pathlib import Path
-
-# ---------------------------------------------------------------------------
-# Config file path (single source of truth for the whole project)
-# ---------------------------------------------------------------------------
-CONFIG_PATH = str(Path(__file__).parent.parent / "native" / "resources" / "beam_config.json")
+from ai.config import CONFIG_PATH
 
 # Screen Dimensions
 WINDOW_WIDTH = 750

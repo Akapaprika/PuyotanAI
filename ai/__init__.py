@@ -8,10 +8,12 @@ from .base import BasePlayerAgent, _AsyncSearchMixin, _STILL_THINKING
 from .beam_agents import (
     HumanPlayerAgent,
     EmptyPlayerAgent,
+    SoloBeamAgent,
+    VsBeamAgent,
     BeamSearchAgent,
     VsBeamSearchAgent,
 )
-from .factory import AgentFactory
+from .factory import AgentFactory, PlayerMode
 
 __all__ = [
     "CONFIG_PATH",
@@ -20,7 +22,10 @@ __all__ = [
     "_STILL_THINKING",
     "HumanPlayerAgent",
     "EmptyPlayerAgent",
+    "SoloBeamAgent",
+    "VsBeamAgent",
     "BeamSearchAgent",
     "VsBeamSearchAgent",
     "AgentFactory",
+    "PlayerMode",
 ]

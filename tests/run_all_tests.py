@@ -87,7 +87,7 @@ def main():
 
     # 2. C++ ネイティブバイナリの回帰テスト
     if _BENCHMARK_EXE.exists():
-        runner.run_executable("9. Native C++ Executable Benchmark (-r)", [str(_BENCHMARK_EXE), "-r"])
+        runner.run_executable("7. Native C++ Executable Benchmark (-r)", [str(_BENCHMARK_EXE), "-r"])
 
     print("=" * 70)
     if runner.failed == 0:

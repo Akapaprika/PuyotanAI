@@ -1,5 +1,5 @@
 from PyQt6.QtCore import Qt
-from .agents import HumanPlayerAgent
+from ai import HumanPlayerAgent
 
 
 class GameplayController:

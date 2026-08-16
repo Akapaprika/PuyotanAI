@@ -12,7 +12,7 @@ from __future__ import annotations
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QComboBox, QLabel
 
-from ai import AgentFactory, BasePlayerAgent
+from ai import AgentFactory, BasePlayerAgent, PlayerMode
 
 
 class PlayerSettingsWidget(QWidget):
@@ -35,7 +35,8 @@ class PlayerSettingsWidget(QWidget):
 
         self._combo = QComboBox()
         modes = AgentFactory.get_modes(allow_empty=allow_empty)
-        self._combo.addItems(modes)
+        for m in modes:
+            self._combo.addItem(m.value, m)
         self._combo.setFixedWidth(180)
         self._combo.setFixedHeight(32)
         if 0 <= default_index < len(modes):
@@ -43,16 +44,23 @@ class PlayerSettingsWidget(QWidget):
         self._combo.currentIndexChanged.connect(self._on_mode_changed)
         layout.addWidget(self._combo)
 
+    @property
+    def mode(self) -> PlayerMode:
+        """Return the currently selected PlayerMode enum."""
+        data = self._combo.currentData()
+        if isinstance(data, PlayerMode):
+            return data
+        return PlayerMode(self._combo.currentText())
+
     # ------------------------------------------------------------------
     def _on_mode_changed(self, idx: int) -> None:
         agent, _ = self.get_agent_or_error()
         if agent is not None:
             self.agent_changed.emit(self.player_id, agent)
 
-    def get_agent_or_error(self) -> tuple[BasePlayerAgent | None, str | None]:
+    def get_agent_or_error(self, is_solo: bool = False) -> tuple[BasePlayerAgent | None, str | None]:
         """
         Returns (agent, None) on success, or (None, error_message) on failure.
         The created agent automatically loads all latest search parameters from beam_config.json.
         """
-        mode = self._combo.currentText()
-        return AgentFactory.create_agent(mode)
+        return AgentFactory.create_agent(self.mode, is_solo=is_solo)

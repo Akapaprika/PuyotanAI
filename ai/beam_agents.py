@@ -41,10 +41,10 @@ class EmptyPlayerAgent(BasePlayerAgent):
         return None
 
 
-class BeamSearchAgent(_AsyncSearchMixin, BasePlayerAgent):
+class _BaseBeamAgent(_AsyncSearchMixin, BasePlayerAgent):
     """
-    Solo / Unified Beam Search Agent.
-    Executes solo_beam_search or vs_beam_search asynchronously in a background thread.
+    Abstract base for beam search AI agents.
+    Provides session tracking, async thread lifecycle, score tracking, and config override helpers.
     """
 
     def __init__(self,
@@ -55,16 +55,90 @@ class BeamSearchAgent(_AsyncSearchMixin, BasePlayerAgent):
         self._look_ahead = look_ahead
         self._dbs_max_similar = dbs_max_similar
         self._session = p.BeamSearchSession()
-        self._is_solo = False
         self._last_result: tuple[int, float] | None = None
+        self._cfg: Any = None
         self._init_async()
 
-    def on_mode_updated(self, is_solo: bool) -> None:
-        self._is_solo = is_solo
+    def _apply_overrides(self, cfg: Any) -> None:
+        if self._beam_width is not None and self._beam_width > 0:
+            cfg.beam_width = self._beam_width
+        if self._look_ahead is not None and self._look_ahead > 0:
+            cfg.look_ahead = self._look_ahead
+        if self._dbs_max_similar is not None and self._dbs_max_similar >= 0:
+            cfg.dbs_max_similar = self._dbs_max_similar
+
+    def reset(self) -> None:
+        self.reset_search()
+        self._session.reset()
+        self._last_result = None
+        self.reload_config()
+
+    def reload_config(self) -> None:
+        raise NotImplementedError
 
     @property
     def last_score(self) -> float:
         return self._last_result[1] if self._last_result is not None else 0.0
+
+
+class SoloBeamAgent(_BaseBeamAgent):
+    """
+    Dedicated Solo Beam Search Agent (Endless / Tokoton mode).
+    Uses pure solo evaluation weights without opponent threat/attack heuristics.
+    """
+
+    def __init__(self,
+                 beam_width: int | None = None,
+                 look_ahead: int | None = None,
+                 dbs_max_similar: int | None = None) -> None:
+        super().__init__(beam_width, look_ahead, dbs_max_similar)
+        self.reload_config()
+
+    def reload_config(self) -> None:
+        cfg = p.load_solo_config(CONFIG_PATH)
+        self._apply_overrides(cfg)
+        self._cfg = cfg
+
+    def get_action(self, match: Any, player_id: int, pres: Any = None) -> p.Action | None:
+        r = self._check_result()
+        if r is _STILL_THINKING:
+            return None
+        if r is not None:
+            self._last_result = r
+            return p.get_rl_action(r[0])
+
+        player_snap = match.get_player_state(player_id).clone()
+        tsumo_snap  = match.get_tsumo().clone()
+        cfg         = self._cfg
+
+        def worker():
+            res = p.solo_beam_search(player_snap, tsumo_snap, cfg, self._session)
+            self._store_result(res)
+
+        self._launch(worker)
+        return None
+
+
+class VsBeamAgent(_BaseBeamAgent):
+    """
+    Dedicated VS Adversarial Beam Search Agent (1v1 Match mode).
+    Populates opponent context and evaluates counter-attacks, incoming ojama, and defense.
+    """
+
+    def __init__(self,
+                 enable_attack_search: bool = True,
+                 beam_width: int | None = None,
+                 look_ahead: int | None = None,
+                 dbs_max_similar: int | None = None) -> None:
+        self._enable_attack_search = enable_attack_search
+        super().__init__(beam_width, look_ahead, dbs_max_similar)
+        self.reload_config()
+
+    def reload_config(self) -> None:
+        cfg = p.load_vs_config(CONFIG_PATH)
+        cfg.enable_attack_search = self._enable_attack_search
+        self._apply_overrides(cfg)
+        self._cfg = cfg
 
     def get_action(self, match: Any, player_id: int, pres: Any = None) -> p.Action | None:
         r = self._check_result()
@@ -75,85 +149,9 @@ class BeamSearchAgent(_AsyncSearchMixin, BasePlayerAgent):
             return p.get_rl_action(r[0])
 
         player = match.get_player_state(player_id)
-        tsumo  = match.get_tsumo()
+        enemy  = match.get_player_state(1 - player_id)
 
-        width = self._beam_width      if self._beam_width      is not None else -1
-        depth = self._look_ahead      if self._look_ahead      is not None else -1
-        dbs   = self._dbs_max_similar if self._dbs_max_similar is not None else -1
-
-        # Deep snapshots created on main thread
-        player_snap = player.clone()
-        tsumo_snap  = tsumo.clone()
-
-        if self._is_solo:
-            def worker():
-                cfg = p.load_solo_config(CONFIG_PATH)
-                if width > 0:  cfg.beam_width      = width
-                if depth > 0:  cfg.look_ahead      = depth
-                if dbs  >= 0:  cfg.dbs_max_similar = dbs
-                res = p.solo_beam_search(player_snap, tsumo_snap, cfg, self._session)
-                self._store_result(res)
-        else:
-            def worker():
-                cfg = p.load_vs_config(CONFIG_PATH)
-                if width > 0:  cfg.beam_width      = width
-                if depth > 0:  cfg.look_ahead      = depth
-                if dbs  >= 0:  cfg.dbs_max_similar = dbs
-                res = p.vs_beam_search(player_snap, tsumo_snap, cfg, self._session)
-                self._store_result(res)
-
-        self._launch(worker)
-        return None
-
-
-class VsBeamSearchAgent(_AsyncSearchMixin, BasePlayerAgent):
-    """
-    VS Adversarial Beam Search Agent.
-    Automatically populates VsEvalContext from the live game state each turn,
-    enabling intelligent counter-attacks and threat avoidance.
-    """
-
-    def __init__(self,
-                 enable_attack_search: bool = True,
-                 beam_width: int | None = None,
-                 look_ahead: int | None = None,
-                 dbs_max_similar: int | None = None) -> None:
-        self._enable_attack_search = enable_attack_search
-        self._beam_width = beam_width
-        self._look_ahead = look_ahead
-        self._dbs_max_similar = dbs_max_similar
-        self._session = p.BeamSearchSession()
-        self._last_result: tuple[int, float] | None = None
-        self._init_async()
-
-    @property
-    def last_score(self) -> float:
-        return self._last_result[1] if self._last_result is not None else 0.0
-
-    def get_action(self, match: Any, player_id: int, pres: Any = None) -> p.Action | None:
-        r = self._check_result()
-        if r is _STILL_THINKING:
-            return None
-        if r is not None:
-            self._last_result = r
-            return p.get_rl_action(r[0])
-
-        player   = match.get_player_state(player_id)
-        tsumo    = match.get_tsumo()
-        enemy_id = 1 - player_id
-        enemy    = match.get_player_state(enemy_id)
-
-        bw  = self._beam_width      if self._beam_width      is not None else -1
-        la  = self._look_ahead      if self._look_ahead      is not None else -1
-        dbs = self._dbs_max_similar if self._dbs_max_similar is not None else -1
-
-        cfg = p.load_vs_config(CONFIG_PATH)
-        cfg.enable_attack_search = self._enable_attack_search
-        if bw  > 0:  cfg.beam_width      = bw
-        if la  > 0:  cfg.look_ahead      = la
-        if dbs >= 0: cfg.dbs_max_similar = dbs
-
-        # Populate VsEvalContext from live match state
+        cfg = self._cfg
         ctx = cfg.context
         ctx.enemy_field            = enemy.field
         ctx.enemy_active_next_pos  = enemy.active_next_pos
@@ -167,9 +165,8 @@ class VsBeamSearchAgent(_AsyncSearchMixin, BasePlayerAgent):
         ctx.my_non_active_ojama    = player.non_active_ojama
         cfg.context = ctx
 
-        # Create deep snapshots on the main thread
         player_snap = player.clone()
-        tsumo_snap  = tsumo.clone()
+        tsumo_snap  = match.get_tsumo().clone()
 
         def worker():
             res = p.vs_beam_search(player_snap, tsumo_snap, cfg, self._session)
@@ -177,3 +174,8 @@ class VsBeamSearchAgent(_AsyncSearchMixin, BasePlayerAgent):
 
         self._launch(worker)
         return None
+
+
+# Backward-compatibility aliases
+BeamSearchAgent = SoloBeamAgent
+VsBeamSearchAgent = VsBeamAgent

@@ -15,8 +15,12 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from ai import (
     AgentFactory,
+    PlayerMode,
     HumanPlayerAgent,
     EmptyPlayerAgent,
+    SoloBeamAgent,
+    VsBeamAgent,
+    BeamSearchAgent,
     VsBeamSearchAgent,
 )
 
@@ -37,18 +41,28 @@ def test_agent_factory_modes():
 
 
 def test_agent_factory_create():
-    # Human
-    agent, err = AgentFactory.create_agent(AgentFactory.MODE_HUMAN)
+    # PlayerMode Enum direct pass
+    agent, err = AgentFactory.create_agent(PlayerMode.HUMAN)
     assert err is None and isinstance(agent, HumanPlayerAgent)
 
-    # Empty
-    agent, err = AgentFactory.create_agent(AgentFactory.MODE_EMPTY_SOLO)
+    agent, err = AgentFactory.create_agent(PlayerMode.EMPTY)
     assert err is None and isinstance(agent, EmptyPlayerAgent)
 
-    # AI (vs beam search with attack search ON)
-    agent, err = AgentFactory.create_agent(AgentFactory.MODE_AI)
-    assert err is None and isinstance(agent, VsBeamSearchAgent)
-    assert agent._enable_attack_search is True
+    agent, err = AgentFactory.create_agent(PlayerMode.AI, is_solo=False)
+    assert err is None and isinstance(agent, VsBeamAgent)
+
+    agent, err = AgentFactory.create_agent(PlayerMode.AI, is_solo=True)
+    assert err is None and isinstance(agent, SoloBeamAgent)
+
+    # String aliases
+    agent, err = AgentFactory.create_agent("Human")
+    assert err is None and isinstance(agent, HumanPlayerAgent)
+
+    agent, err = AgentFactory.create_agent("AI", is_solo=False)
+    assert err is None and isinstance(agent, VsBeamAgent)
+
+    agent, err = AgentFactory.create_agent("AI", is_solo=True)
+    assert err is None and isinstance(agent, SoloBeamAgent)
 
     # 旧モード名の後方互換性確認 (backward-compat aliases)
     agent, err = AgentFactory.create_agent("AI: VS Beam (Gaze / Defense)")
@@ -58,6 +72,9 @@ def test_agent_factory_create():
     agent, err = AgentFactory.create_agent("AI: VS Beam (No Gaze)")
     assert err is None and isinstance(agent, VsBeamSearchAgent)
     assert agent._enable_attack_search is False
+
+    agent, err = AgentFactory.create_agent("AI: BeamSearch (Solo / Normal)")
+    assert err is None and isinstance(agent, BeamSearchAgent)
 
     # 存在しないモード
     agent, err = AgentFactory.create_agent("NonExistentMode")

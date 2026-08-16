@@ -89,10 +89,6 @@ class PuyotanViewModel(QObject):
                 if not (mask & (1 << pid)):
                     continue
 
-                # Inform the agent about solo/vs mode so it can adapt evaluation weights.
-                is_solo = self.agents[1 - pid].is_empty
-                self.agents[pid].on_mode_updated(is_solo)
-
                 action = self.agents[pid].get_action(self.model, pid, self.players[pid])
                 if action is not None:
                     if self.model.set_action(pid, action):
@@ -226,6 +222,7 @@ class PuyotanViewModel(QObject):
         self.prev_actions = [p.ActionType.NONE, p.ActionType.NONE]
         for pid in [0, 1]:
             self.reset_player_input(pid)
+            self.agents[pid].reset()
         self.last_step_time = self.timer.elapsed()
         self.update_presentation()
 

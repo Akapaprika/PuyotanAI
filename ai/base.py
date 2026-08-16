@@ -83,8 +83,8 @@ class BasePlayerAgent(ABC):
         pres       : Optional presentation state (used by HumanPlayerAgent in GUI)
         """
 
-    def on_mode_updated(self, is_solo: bool) -> None:
+    def reset(self) -> None:
         """
-        Called when the game mode context changes (e.g. solo vs adversarial).
-        Default is a no-op; override in subclasses that adapt behaviour.
+        Called when a match starts or restarts to reset internal search session and reload config.
+        Default is a no-op; override in subclasses.
         """

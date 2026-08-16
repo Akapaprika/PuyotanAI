@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 )
 
 from .player_settings_widget import PlayerSettingsWidget
-from ..agents import BasePlayerAgent
+from ai import BasePlayerAgent, PlayerMode
 
 
 class SetupWidget(QWidget):
@@ -28,8 +28,6 @@ class SetupWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-
-
 
         root = QVBoxLayout(self)
         root.setContentsMargins(40, 40, 40, 40)
@@ -123,21 +121,22 @@ class SetupWidget(QWidget):
         self._start_btn.clicked.connect(self._on_start)
         root.addWidget(self._start_btn)
 
-
-
     def _on_random_seed(self) -> None:
         r = random.randint(1, 2147483647)
         self._seed_spin.setValue(float(r))
 
     def _on_start(self) -> None:
+        p1_is_solo = (self._p2_settings.mode == PlayerMode.EMPTY)
+        p2_is_solo = (self._p1_settings.mode == PlayerMode.EMPTY)
+
         # Validate P1
-        a1, err1 = self._p1_settings.get_agent_or_error()
+        a1, err1 = self._p1_settings.get_agent_or_error(is_solo=p1_is_solo)
         if err1:
             QMessageBox.critical(self, "Player 1 Setup Error", f"Cannot start match.\nP1 error: {err1}")
             return
 
         # Validate P2
-        a2, err2 = self._p2_settings.get_agent_or_error()
+        a2, err2 = self._p2_settings.get_agent_or_error(is_solo=p2_is_solo)
         if err2:
             QMessageBox.critical(self, "Player 2 Setup Error", f"Cannot start match.\nP2 error: {err2}")
             return
