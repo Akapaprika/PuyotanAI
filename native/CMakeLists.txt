@@ -14,7 +14,17 @@ include_directories(include)
 set(PYBIND11_FINDPYTHON ON)
 find_package(Python REQUIRED COMPONENTS Interpreter Development)
 find_package(pybind11 CONFIG REQUIRED)
-find_package(OpenMP REQUIRED)
+find_package(OpenMP)
+if(OpenMP_CXX_FOUND)
+    set(OPENMP_LIB OpenMP::OpenMP_CXX)
+else()
+    # Fallback for Clang-CL on Windows / MSVC where OpenMP_CXX is not standard-exported
+    add_library(openmp_fallback INTERFACE)
+    if(MSVC)
+        target_compile_options(openmp_fallback INTERFACE /openmp)
+    endif()
+    set(OPENMP_LIB openmp_fallback)
+endif()
 
 # ---------------------------------------------------------
 # Targets Definitions
@@ -23,24 +33,24 @@ find_package(OpenMP REQUIRED)
 # 1. Core Engine (No Pybind, No Torch)
 file(GLOB_RECURSE CORE_SOURCES src/core/*.cpp src/engine/*.cpp)
 add_library(puyotan_core STATIC ${CORE_SOURCES})
-target_link_libraries(puyotan_core PUBLIC OpenMP::OpenMP_CXX)
+target_link_libraries(puyotan_core PUBLIC ${OPENMP_LIB})
 
 # 2. Search Components (Beam Search, depends on Core only)
 file(GLOB_RECURSE SEARCH_SOURCES src/search/*.cpp)
 add_library(puyotan_search STATIC ${SEARCH_SOURCES})
-target_link_libraries(puyotan_search PUBLIC puyotan_core OpenMP::OpenMP_CXX)
+target_link_libraries(puyotan_search PUBLIC puyotan_core ${OPENMP_LIB})
 
 # Benchmarks (C++ only)
 file(GLOB_RECURSE BENCHMARK_SOURCES src/benchmarks/*.cpp)
 add_executable(engine_benchmark src/benchmarks/engine_benchmark.cpp)
 add_executable(beam_search_benchmark src/benchmarks/beam_search_benchmark.cpp)
-target_link_libraries(engine_benchmark PRIVATE puyotan_core OpenMP::OpenMP_CXX)
-target_link_libraries(beam_search_benchmark PRIVATE puyotan_search OpenMP::OpenMP_CXX)
+target_link_libraries(engine_benchmark PRIVATE puyotan_core ${OPENMP_LIB})
+target_link_libraries(beam_search_benchmark PRIVATE puyotan_search ${OPENMP_LIB})
 
 # 3. Pybind11 Native Module
 set(NATIVE_SOURCES src/bindings/bindings.cpp)
 pybind11_add_module(puyotan_native ${NATIVE_SOURCES})
-target_link_libraries(puyotan_native PRIVATE puyotan_core puyotan_search OpenMP::OpenMP_CXX)
+target_link_libraries(puyotan_native PRIVATE puyotan_core puyotan_search ${OPENMP_LIB})
 
 # ---------------------------------------------------------
 # Compile & Link Options (All Targets)
