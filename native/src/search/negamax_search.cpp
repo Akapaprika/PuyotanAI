@@ -1,6 +1,7 @@
 #include <puyotan/search/negamax_search.hpp>
 #include <algorithm>
 #include <limits>
+#include <omp.h>
 
 namespace puyotan::search {
 
@@ -133,8 +134,6 @@ static float negamaxRec(PuyotanMatch match, int my_id, int depth, float alpha, f
         return min_eval;
     }
 }
-
-#include <omp.h>
 
 NegamaxResult negamaxSearch(const PuyotanMatch& match, int my_id, const NegamaxConfig& cfg) noexcept {
     NegamaxResult res;

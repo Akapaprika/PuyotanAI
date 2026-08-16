@@ -116,7 +116,7 @@ struct alignas(16) BitBoard {
         int shift = ((x & 3) << 4) | y;
         (&lo)[idx] &= ~(1ULL << shift);
     }
-    static [[nodiscard]] __forceinline BitBoard
+    [[nodiscard]] static __forceinline BitBoard
     fromColumnMask(uint32_t cols) noexcept {
         const uint64_t mask_lo = kPdepLut[cols & 0x0Fu] * 0xFFFFULL;
         const uint64_t mask_hi = kPdepLut[(cols >> 4) & 0x03u] * 0xFFFFULL;
