@@ -39,7 +39,7 @@ class SetupWidget(QWidget):
         title = QLabel("Puyotan AI — Match Setup")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet(
-            "font-size: 22px; font-weight: bold; color: #6366f1; margin-bottom: 8px;"
+            "font-size: 16pt; font-weight: bold; color: #6366f1; margin-bottom: 8px;"
         )
         root.addWidget(title)
 
@@ -58,7 +58,7 @@ class SetupWidget(QWidget):
 
         vs_lbl = QLabel("VS")
         vs_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        vs_lbl.setStyleSheet("font-size: 28px; font-weight: bold; color: #475569;")
+        vs_lbl.setStyleSheet("font-size: 20pt; font-weight: bold; color: #475569;")
         settings_row.addWidget(vs_lbl)
 
         self._p2_settings = PlayerSettingsWidget(1, allow_empty=True, default_index=1)
@@ -73,7 +73,7 @@ class SetupWidget(QWidget):
         seed_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         seed_lbl = QLabel("Match Seed:")
-        seed_lbl.setStyleSheet("font-size: 14px; font-weight: bold; color: #94a3b8;")
+        seed_lbl.setStyleSheet("font-size: 11pt; font-weight: bold; color: #94a3b8;")
         seed_row.addWidget(seed_lbl)
 
         # Use QDoubleSpinBox with 0 decimals to support full 31-bit signed integers (up to 2147483647)
@@ -86,7 +86,7 @@ class SetupWidget(QWidget):
         self._seed_spin.setFixedHeight(30)
         self._seed_spin.setStyleSheet(
             "QDoubleSpinBox {"
-            "  font-size: 14px; font-weight: bold; color: white;"
+            "  font-size: 11pt; font-weight: bold; color: white;"
             "  background: #1e293b; border: 1px solid #334155; border-radius: 6px; padding: 2px 5px;"
             "}"
         )
@@ -98,7 +98,7 @@ class SetupWidget(QWidget):
         self._rand_btn.setFixedHeight(30)
         self._rand_btn.setStyleSheet(
             "QPushButton {"
-            "  background: #334155; color: white; font-size: 12px; font-weight: bold; border-radius: 6px;"
+            "  background: #334155; color: white; font-size: 10pt; font-weight: bold; border-radius: 6px;"
             "}"
             "QPushButton:hover { background: #475569; }"
             "QPushButton:pressed { background: #1e293b; }"
@@ -114,7 +114,7 @@ class SetupWidget(QWidget):
         self._start_btn.setFixedHeight(50)
         self._start_btn.setStyleSheet(
             "QPushButton {"
-            "  background: #6366f1; color: white; font-size: 16px;"
+            "  background: #6366f1; color: white; font-size: 13pt;"
             "  font-weight: bold; border-radius: 8px; border: none;"
             "}"
             "QPushButton:hover { background: #4f46e5; }"

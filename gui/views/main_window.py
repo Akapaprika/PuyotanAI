@@ -144,10 +144,10 @@ class MainWindow(QMainWindow):
         self._frame_counter = QLabel("0")
         self._frame_counter.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._frame_counter.setStyleSheet(
-            "font-size: 24px; font-weight: bold; color: #6366f1;"
+            "font-size: 18pt; font-weight: bold; color: #6366f1;"
         )
         f_lbl = QLabel("FRAME")
-        f_lbl.setStyleSheet("font-size: 10px; color: #94a3b8;")
+        f_lbl.setStyleSheet("font-size: 8pt; color: #94a3b8;")
         f_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         center_col.addWidget(f_lbl)
         center_col.addWidget(self._frame_counter)

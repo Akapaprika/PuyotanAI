@@ -6,7 +6,7 @@ QMainWindow {
 
 QWidget {
     font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Arial, sans-serif;
-    font-size: 13px;
+    font-size: 10pt;
     color: #e2e8f0;
 }
 
@@ -23,13 +23,13 @@ QLabel {
 }
 
 QLabel#TitleLabel {
-    font-size: 18px;
+    font-size: 14pt;
     font-weight: bold;
     color: #a78bfa;
 }
 
 QLabel#StateLabel {
-    font-size: 14px;
+    font-size: 11pt;
     font-weight: bold;
     padding: 4px;
     border-radius: 4px;
@@ -42,7 +42,7 @@ QPushButton {
     border-radius: 4px;
     padding: 8px 12px;
     font-weight: bold;
-    font-size: 14px;
+    font-size: 11pt;
 }
 
 QPushButton:hover {
@@ -55,26 +55,62 @@ QPushButton:pressed {
 }
 
 QPushButton#ActionBtn {
-    font-size: 16px;
+    font-size: 12pt;
 }
 
-QSpinBox {
+QSpinBox, QDoubleSpinBox {
     background-color: #2d3748;
     color: white;
+    font-size: 10pt;
     border: 1px solid #4a5568;
     border-radius: 4px;
     padding: 4px;
     min-width: 60px;
 }
 
-QSpinBox::up-button, QSpinBox::down-button {
+QSpinBox::up-button, QSpinBox::down-button,
+QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
     background-color: #4a5568;
     width: 16px;
     border-radius: 2px;
 }
 
-QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+QSpinBox::up-button:hover, QSpinBox::down-button:hover,
+QDoubleSpinBox::up-button:down-button:hover {
     background-color: #7c3aed;
+}
+
+QComboBox {
+    background-color: #1e293b;
+    color: white;
+    font-size: 10pt;
+    font-weight: bold;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 2px 8px;
+    min-height: 24px;
+}
+
+QComboBox:hover {
+    border-color: #6366f1;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 20px;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #1e293b;
+    color: white;
+    font-size: 10pt;
+    font-weight: bold;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    selection-background-color: #6366f1;
+    selection-color: white;
+    outline: none;
+    padding: 4px;
 }
 
 QToolTip {

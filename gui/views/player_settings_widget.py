@@ -30,7 +30,7 @@ class PlayerSettingsWidget(QWidget):
         layout.setSpacing(6)
 
         lbl = QLabel(f"P{player_id + 1}:")
-        lbl.setStyleSheet("font-weight: bold; color: #94a3b8; font-size: 13px;")
+        lbl.setStyleSheet("font-weight: bold; color: #94a3b8; font-size: 10pt;")
         layout.addWidget(lbl)
 
         self._combo = QComboBox()
@@ -38,14 +38,6 @@ class PlayerSettingsWidget(QWidget):
         self._combo.addItems(modes)
         self._combo.setFixedWidth(180)
         self._combo.setFixedHeight(32)
-        self._combo.setStyleSheet(
-            "QComboBox {"
-            "  background: #1e293b; color: white; font-size: 12px; font-weight: bold;"
-            "  border: 1px solid #334155; border-radius: 6px; padding: 2px 8px;"
-            "}"
-            "QComboBox:hover { border-color: #6366f1; }"
-            "QComboBox::drop-down { border: none; }"
-        )
         if 0 <= default_index < len(modes):
             self._combo.setCurrentIndex(default_index)
         self._combo.currentIndexChanged.connect(self._on_mode_changed)

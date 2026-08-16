@@ -25,6 +25,7 @@ from .view_model import PuyotanViewModel
 from . import config
 
 from PyQt6.QtWidgets import QApplication
+from PyQt6.QtGui import QFont
 
 from .controller import GameplayController
 from .views import MainWindow
@@ -43,6 +44,7 @@ def main() -> None:
     app = QApplication(sys.argv)
     app.setApplicationName("Puyotan AI")
     app.setApplicationDisplayName("Puyotan AI — Match Viewer")
+    app.setFont(QFont("Segoe UI", 10))
 
     # Apply global dark theme
     qss = _load_qss("assets/theme.qss")
