@@ -42,7 +42,7 @@ if str(_DIST_PATH) not in sys.path:
 
 import puyotan_native as p
 
-from ai import BeamSearchAgent, VsBeamSearchAgent
+from ai import SoloBeamAgent, VsBeamAgent
 from bot.firebase_client import FirebaseClient, num_to_base64s
 from bot.game_sync import GameState, cpp_action_to_js, js_action_to_cpp
 
@@ -95,15 +95,14 @@ class PuyotanBot:
         # 送信済みフレームの追跡（プレイヤーIDごと）
         self._submitted: dict[int, set[int]] = {0: set(), 1: set()}
 
-        # AI エージェントの初期化（ソロなら BeamSearchAgent、VSなら相手注視・反撃対応の VsBeamSearchAgent）
+        # AI エージェントの初期化（ソロなら SoloBeamAgent、VSなら相手注視・反撃対応の VsBeamAgent）
         bw = beam_width if beam_width > 0 else None
         la = look_ahead if look_ahead > 0 else None
         if self.is_solo:
-            self._agents = {0: BeamSearchAgent(beam_width=bw, look_ahead=la)}
-            self._agents[0].on_mode_updated(is_solo=True)
+            self._agents = {0: SoloBeamAgent(beam_width=bw, look_ahead=la)}
         else:
             self._agents = {
-                pid: VsBeamSearchAgent(enable_attack_search=True, beam_width=bw, look_ahead=la)
+                pid: VsBeamAgent(enable_attack_search=True, beam_width=bw, look_ahead=la)
                 for pid in self.bot_players
             }
 
