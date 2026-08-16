@@ -30,7 +30,7 @@ class SoloBeamEvaluator {
         {
             const uint64_t lo = board.getOccupied().lo;
             const uint64_t hi = board.getOccupied().hi;
-        heights[0] = static_cast<int>(_mm_popcnt_u64((lo >>  0) & config::Board::kColMask));
+            heights[0] = static_cast<int>(_mm_popcnt_u64((lo >>  0) & config::Board::kColMask));
             heights[1] = static_cast<int>(_mm_popcnt_u64((lo >> 16) & config::Board::kColMask));
             heights[2] = static_cast<int>(_mm_popcnt_u64((lo >> 32) & config::Board::kColMask));
             heights[3] = static_cast<int>(_mm_popcnt_u64((lo >> 48) & config::Board::kColMask));
@@ -66,7 +66,7 @@ class VsBeamEvaluator {
         {
             const uint64_t lo = board.getOccupied().lo;
             const uint64_t hi = board.getOccupied().hi;
-        heights[0] = static_cast<int>(_mm_popcnt_u64((lo >>  0) & config::Board::kColMask));
+            heights[0] = static_cast<int>(_mm_popcnt_u64((lo >>  0) & config::Board::kColMask));
             heights[1] = static_cast<int>(_mm_popcnt_u64((lo >> 16) & config::Board::kColMask));
             heights[2] = static_cast<int>(_mm_popcnt_u64((lo >> 32) & config::Board::kColMask));
             heights[3] = static_cast<int>(_mm_popcnt_u64((lo >> 48) & config::Board::kColMask));

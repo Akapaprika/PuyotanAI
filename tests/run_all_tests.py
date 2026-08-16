@@ -76,20 +76,14 @@ def main():
     import tests.test_config_loader as t_cfg
     runner.run_module("3. BeamConfigLoader JSON Parser", t_cfg.run_all)
 
-    import tests.test_negamax as t_nega
-    runner.run_module("4. Negamax Adversarial Search Engine", t_nega.main)
-
-    import tests.test_abs as t_abs
-    runner.run_module("5. Adversarial Beam Search (ABS) Engine", t_abs.main)
-
     import tests.test_gui_agents as t_gui
-    runner.run_module("6. Unified AI Agent Strategy Classes", t_gui.run_all)
+    runner.run_module("4. Unified AI Agent Strategy Classes", t_gui.run_all)
 
     import tests.test_agent_factory as t_factory
-    runner.run_module("7. AgentFactory Mode & Instantiation", t_factory.run_all)
+    runner.run_module("5. AgentFactory Mode & Instantiation", t_factory.run_all)
 
     import tests.test_solo_regression as t_solo
-    runner.run_module("8. Solo AI Golden Master (50-steps)", t_solo.verify_against_golden)
+    runner.run_module("6. Solo AI Golden Master (50-steps)", t_solo.verify_against_golden)
 
     # 2. C++ ネイティブバイナリの回帰テスト
     if _BENCHMARK_EXE.exists():

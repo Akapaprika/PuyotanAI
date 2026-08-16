@@ -8,7 +8,6 @@ from typing import Optional, Tuple
 
 from .base import BasePlayerAgent
 from .beam_agents import HumanPlayerAgent, EmptyPlayerAgent, BeamSearchAgent, VsBeamSearchAgent
-from .negamax_agent import NegamaxAgent
 
 
 class AgentFactory:
@@ -81,16 +80,6 @@ class AgentFactory:
                     beam_width=width,
                     look_ahead=depth,
                     dbs_max_similar=dbs,
-                ),
-                None,
-            )
-        elif mode == "AI: Negamax (Alpha-Beta)":
-            return (
-                NegamaxAgent(
-                    depth=4,
-                    candidate_n=5,
-                    beam_width=width,
-                    look_ahead=depth,
                 ),
                 None,
             )

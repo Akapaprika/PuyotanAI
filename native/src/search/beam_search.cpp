@@ -284,14 +284,4 @@ std::pair<int, float> vsBeamSearch(const PuyotanPlayer& player,
     return res;
 }
 
-std::vector<std::pair<int, float>> vsBeamSearchTopN(const PuyotanPlayer& player,
-                                                    const Tsumo& tsumo_const,
-                                                    const VsBeamConfig& cfg,
-                                                    int top_n) noexcept {
-    auto best = vsBeamSearch(player, tsumo_const, cfg);
-    std::vector<std::pair<int, float>> res;
-    res.push_back(best);
-    return res;
-}
-
 } // namespace puyotan::search

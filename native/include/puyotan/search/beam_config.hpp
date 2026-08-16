@@ -13,7 +13,7 @@ struct BeamSearchSession {
     std::vector<float> score_history;
     int max_history_size = 10;
     int min_history_to_check = 4;
-    int total_puyos_threshold = 66;
+    int total_puyos_threshold = 66;    // 6 cols × 11 rows: field is near-full; stagnation is dangerous
     float growth_threshold = 0.5f;
 
     void update(float expected_score) {

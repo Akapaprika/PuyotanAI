@@ -11,7 +11,6 @@ from .beam_agents import (
     BeamSearchAgent,
     VsBeamSearchAgent,
 )
-from .negamax_agent import NegamaxAgent
 from .factory import AgentFactory
 
 __all__ = [
@@ -23,6 +22,5 @@ __all__ = [
     "EmptyPlayerAgent",
     "BeamSearchAgent",
     "VsBeamSearchAgent",
-    "NegamaxAgent",
     "AgentFactory",
 ]

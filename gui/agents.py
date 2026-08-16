@@ -11,7 +11,6 @@ from ai import (
     EmptyPlayerAgent,
     BeamSearchAgent,
     VsBeamSearchAgent,
-    NegamaxAgent,
 )
 
 __all__ = [
@@ -22,5 +21,4 @@ __all__ = [
     "EmptyPlayerAgent",
     "BeamSearchAgent",
     "VsBeamSearchAgent",
-    "NegamaxAgent",
 ]
