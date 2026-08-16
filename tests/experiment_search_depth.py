@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../n
 import puyotan_native as puyotan
 
 def run_experiment(name, beam_width, look_ahead, num_games=100):
-    config_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../gui/beam_config.json"))
+    config_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../native/resources/beam_config.json"))
     
     p1_cfg = puyotan.load_vs_config(config_path)
     p1_cfg.enable_attack_search = True

@@ -2,19 +2,17 @@
 tests/test_solo_regression.py
 
 ソロAIのリグレッションテスト（回帰テスト）スクリプト。
-Seed=1、LookAhead=25、BeamWidth=15000（ソロ全開モード）で50手分実行し、
-ゴールドマスター（マスターデータ）と100%完全一致するかどうかを厳格に判定します。
+固定標準パラメータ: Seed=1, BeamWidth=15000, LookAhead=25, DBS=6 で50手分実行し、
+ゴールドマスター（基準データ）と100%完全一致するかどうかを厳格に判定します。
 """
 import os
 import sys
 import json
-import subprocess
 from pathlib import Path
 
 # C++ モジュール (puyotan_native) のパス設定
 _PROJECT_ROOT = Path(__file__).parent.parent
 _NATIVE_DIST = _PROJECT_ROOT / "native" / "dist"
-_CONFIG_PATH = str(_PROJECT_ROOT / "native" / "resources" / "beam_config.json")
 _GOLDEN_PATH = _PROJECT_ROOT / "tests" / "golden_solo_seed1_50steps.json"
 
 if str(_NATIVE_DIST) not in sys.path:
@@ -22,26 +20,36 @@ if str(_NATIVE_DIST) not in sys.path:
 
 import puyotan_native as p
 
+# 回帰テスト用 固定標準パラメータ
+BENCH_BEAM_WIDTH = 15000
+BENCH_LOOK_AHEAD = 25
+BENCH_DBS = 6
+
+
 def run_50step_simulation(seed: int = 1, num_moves: int = 50):
-    """Seed=1 で50手分のソロビームサーチを実行し、(move, act_idx, x, rotation, score) の記録を返す。"""
+    """Seed=1 で固定パラメータ (BW=15000, LA=25) で50手分のソロビームサーチを実行し、記録を返す。"""
     match = p.PuyotanMatch(seed)
     match.start()
     pass_act = p.Action(p.ActionType.PASS, 0, p.Rotation.Up)
 
+    # 固定設定の構築
+    cfg = p.SoloBeamConfig()
+    cfg.beam_width = BENCH_BEAM_WIDTH
+    cfg.look_ahead = BENCH_LOOK_AHEAD
+    cfg.dbs_max_similar = BENCH_DBS
+    cfg.full_beam_depth = 2
+    cfg.min_beam_width_ratio = 1.0  # 基準はテーパリング減衰なし（均一幅）
+
     records = []
 
-    print(f"[Regression Test] Seed={seed} で {num_moves}手分のソロビームサーチを実行中...")
+    print(f"[Regression Test] Seed={seed}, BW={BENCH_BEAM_WIDTH}, LA={BENCH_LOOK_AHEAD} で {num_moves}手分のソロビームサーチを実行中...")
 
     for move in range(1, num_moves + 1):
         player = match.getPlayer(0)
-        tsumo  = match.getTsumo()
+        tsumo = match.getTsumo()
 
-        # ソロ全開ビームサーチを実行 (beam_width=-1, look_ahead=-1 -> beam_config.json のデフォルト使用)
-        act_idx, score = p.beam_search_action(
-            player, tsumo, _CONFIG_PATH,
-            beam_width=-1, look_ahead=-1,
-            is_solo=True, is_stagnated=False
-        )
+        # 純粋探索 API (solo_beam_search) を使用して固定パラメータで探索
+        act_idx, score = p.solo_beam_search(player, tsumo, cfg)
 
         action = p.get_rl_action(act_idx)
 
@@ -72,6 +80,7 @@ def run_50step_simulation(seed: int = 1, num_moves: int = 50):
 
     return records
 
+
 def generate_golden():
     """現在のコード動作を正しいゴールドマスターとして保存する。"""
     records = run_50step_simulation(seed=1, num_moves=50)
@@ -80,6 +89,7 @@ def generate_golden():
         json.dump(records, f, indent=2, ensure_ascii=False)
     print(f"\n[OK] ゴールドマスター（基準データ）を生成・保存しました: {_GOLDEN_PATH}")
     return records
+
 
 def verify_against_golden():
     """既存のゴールドマスターと現在の動作を1手ずつ比較し、100%完全一致するか検証する。"""
@@ -118,8 +128,9 @@ def verify_against_golden():
         print(" [PASS] 50手すべて 100% 完全一致しました！ソロAIの機能回帰はありません。")
         return True
     else:
-        print(f" [FAIL] 不一致が {mismatches} 件検出されました！ソロAIの動作が変化しています。")
+        print(f" [FAIL] 不一致が {mismatches} 件検出されました！")
         return False
+
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--generate":

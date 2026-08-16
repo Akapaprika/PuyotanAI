@@ -10,57 +10,30 @@ makes a new selection so the ViewModel can swap out the agent.
 """
 from __future__ import annotations
 
-import puyotan_native as p
-from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
-    QWidget, QHBoxLayout, QVBoxLayout, QComboBox, QPushButton,
+    QWidget, QHBoxLayout, QVBoxLayout, QComboBox,
     QLabel, QSpinBox
 )
 
-from .. import config
-from ..agents import (
-    HumanPlayerAgent, EmptyPlayerAgent, BasePlayerAgent,
-    BeamSearchAgent, VsBeamSearchAgent, NegamaxAgent
-)
-
-
-def _get_default_config() -> dict[str, int]:
-    """Load default beam configuration from beam_config.json using the C++ bindings."""
-    defaults = {"width": 15000, "depth": 25, "dbs": 6}
-    try:
-        cfg = p.load_solo_config(config.CONFIG_PATH)
-        defaults["width"] = cfg.beam_width
-        defaults["depth"] = cfg.look_ahead
-        defaults["dbs"]   = cfg.dbs_max_similar
-    except Exception:
-        pass
-    return defaults
-
-
+from ..agent_factory import AgentFactory
+from ..agents import BasePlayerAgent
 
 
 class PlayerSettingsWidget(QWidget):
     """
     Thin settings row: [P# ▼ Mode] and optional Beam Search parameters.
+    Delegates all agent instantiation and default loading to AgentFactory.
     """
 
     #: Emitted with (player_id, new_agent) whenever the agent type or model changes.
     agent_changed = pyqtSignal(int, object)
 
-    _MODES = [
-        "Human",
-        "Negamax AI (Lookahead)",
-        "New AI (Attack ON)",
-        "Old AI (Attack OFF)",
-        "Beam Search (Player)",
-        "Empty (Solo)",
-    ]
-
     def __init__(self, player_id: int, allow_empty: bool = True, default_index: int = 0, parent=None):
         super().__init__(parent)
         self.player_id = player_id
 
-        defaults = _get_default_config()
+        defaults = AgentFactory.get_default_config()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -75,7 +48,7 @@ class PlayerSettingsWidget(QWidget):
         row1.addWidget(lbl)
 
         self._combo = QComboBox()
-        modes = self._MODES if allow_empty else self._MODES[:-1]
+        modes = AgentFactory.get_modes(allow_empty=allow_empty)
         self._combo.addItems(modes)
         self._combo.setFixedWidth(160)
         if 0 <= default_index < len(modes):
@@ -169,21 +142,8 @@ class PlayerSettingsWidget(QWidget):
 
     def get_agent_or_error(self) -> tuple[BasePlayerAgent | None, str | None]:
         """Returns (agent, None) on success, or (None, error_message) on failure."""
-        mode  = self._combo.currentText()
+        mode = self._combo.currentText()
         width = self._width_spin.value()
         depth = self._depth_spin.value()
-        dbs   = self._dbs_spin.value()
-
-        if mode == "Human":
-            return HumanPlayerAgent(), None
-        if mode == "Negamax AI (Lookahead)":
-            return NegamaxAgent(depth=depth, candidate_n=22, beam_width=width, look_ahead=3), None
-        if mode == "New AI (Attack ON)":
-            return VsBeamSearchAgent(enable_attack_search=True,  beam_width=width, look_ahead=depth, dbs_max_similar=dbs), None
-        if mode == "Old AI (Attack OFF)":
-            return VsBeamSearchAgent(enable_attack_search=False, beam_width=width, look_ahead=depth, dbs_max_similar=dbs), None
-        if mode == "Beam Search (Player)":
-            return BeamSearchAgent(beam_width=width, look_ahead=depth, dbs_max_similar=dbs), None
-        if mode == "Empty (Solo)":
-            return EmptyPlayerAgent(), None
-        return None, "Unknown mode."
+        dbs = self._dbs_spin.value()
+        return AgentFactory.create_agent(mode, width=width, depth=depth, dbs=dbs)

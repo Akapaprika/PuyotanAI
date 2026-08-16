@@ -85,12 +85,15 @@ def main():
     import tests.test_gui_agents as t_gui
     runner.run_module("6. GUI Agent Strategy Classes", t_gui.run_all)
 
+    import tests.test_agent_factory as t_factory
+    runner.run_module("7. AgentFactory Mode & Instantiation", t_factory.run_all)
+
     import tests.test_solo_regression as t_solo
-    runner.run_module("7. Solo AI Golden Master (50-steps)", t_solo.verify_against_golden)
+    runner.run_module("8. Solo AI Golden Master (50-steps)", t_solo.verify_against_golden)
 
     # 2. C++ ネイティブバイナリの回帰テスト
     if _BENCHMARK_EXE.exists():
-        runner.run_executable("8. Native C++ Executable Benchmark (-r)", [str(_BENCHMARK_EXE), "-r"])
+        runner.run_executable("9. Native C++ Executable Benchmark (-r)", [str(_BENCHMARK_EXE), "-r"])
 
     print("=" * 70)
     if runner.failed == 0:

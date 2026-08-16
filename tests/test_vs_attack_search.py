@@ -12,7 +12,7 @@ def run_vs_comparison(num_games=100):
     print(f"Number of games: {num_games}")
 
     # Load baseline VS config
-    config_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../gui/beam_config.json"))
+    config_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../native/resources/beam_config.json"))
     
     # Configure Player 1 (New AI with attack search & gaze enabled)
     p1_cfg = puyotan.load_vs_config(config_path)

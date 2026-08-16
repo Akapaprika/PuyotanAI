@@ -45,10 +45,7 @@ import puyotan_native as p
 from bot.firebase_client import FirebaseClient
 from bot.game_sync import GameState, cpp_action_to_js, js_action_to_cpp
 from bot.firebase_client import num_to_base64s
-
-_CONFIG_PATH = str(
-    Path(__file__).parent.parent / "native" / "resources" / "beam_config.json"
-)
+from gui.config import CONFIG_PATH
 
 
 class PuyotanBot:
@@ -495,7 +492,7 @@ class PuyotanBot:
 
         def worker():
             result = p.beam_search_action(
-                player, tsumo, _CONFIG_PATH,
+                player, tsumo, CONFIG_PATH,
                 self.beam_width, self.look_ahead,
                 is_solo,
                 is_enemy=is_enemy,

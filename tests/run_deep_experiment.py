@@ -9,7 +9,7 @@ def run_deep_search_experiment(beam_width=3000, look_ahead=10, num_games=20):
     print(f"=== Deep Search Experiment ===")
     print(f"Config: beam_width={beam_width}, look_ahead={look_ahead}, num_games={num_games}")
     
-    config_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../gui/beam_config.json"))
+    config_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../native/resources/beam_config.json"))
     
     p1_cfg = puyotan.load_vs_config(config_path)
     p1_cfg.enable_attack_search = True

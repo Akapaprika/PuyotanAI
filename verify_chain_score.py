@@ -3,7 +3,7 @@ import time
 from pathlib import Path
 
 # Add project paths
-PROJECT_ROOT = Path(r"c:\Users\FMV\Desktop\application\programming\project\PuyotanAI")
+PROJECT_ROOT = Path(__file__).parent
 sys.path.insert(0, str(PROJECT_ROOT / "native" / "dist"))
 sys.path.insert(0, str(PROJECT_ROOT))
 
