@@ -10,7 +10,6 @@
 #include <puyotan/search/beam_config_loader.hpp>
 #include <puyotan/search/beam_evaluator.hpp>
 #include <puyotan/search/beam_search.hpp>
-#include <puyotan/search/match_simulator.hpp>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -278,25 +277,5 @@ PYBIND11_MODULE(puyotan_native, m) {
         pybind11::arg("player"), pybind11::arg("tsumo"),
         pybind11::arg("cfg"), pybind11::arg("session") = nullptr,
         "Run VS beam search with a VsBeamConfig. Returns (RL action index, expected score).");
-
-    pybind11::class_<search::MatchResult>(m, "MatchResult")
-        .def(pybind11::init<>())
-        .def_readwrite("status", &search::MatchResult::status)
-        .def_readwrite("score_p1", &search::MatchResult::score_p1)
-        .def_readwrite("score_p2", &search::MatchResult::score_p2)
-        .def_readwrite("max_chain_p1", &search::MatchResult::max_chain_p1)
-        .def_readwrite("max_chain_p2", &search::MatchResult::max_chain_p2)
-        .def_readwrite("total_frames", &search::MatchResult::total_frames);
-
-    m.def("simulate_vs_match", &search::simulateVsMatch,
-          pybind11::arg("p1_cfg"), pybind11::arg("p2_cfg"), pybind11::arg("seed"), pybind11::arg("max_frames") = 15000,
-          "Simulate a single VS match entirely in C++ with beam search AI. "
-          "Returns MatchResult.");
-
-    m.def("simulate_vs_matches_parallel", &search::simulateVsMatchesParallel,
-          pybind11::arg("p1_cfg"), pybind11::arg("p2_cfg"), pybind11::arg("seeds"), pybind11::arg("max_frames") = 15000,
-          pybind11::call_guard<pybind11::gil_scoped_release>(),
-          "Simulate multiple VS matches in parallel using OpenMP. "
-          "Returns list of MatchResult.");
 }
 } // namespace puyotan
