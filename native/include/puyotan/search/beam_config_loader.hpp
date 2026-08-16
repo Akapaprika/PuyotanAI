@@ -123,13 +123,16 @@ class BeamConfigLoader {
         std::ofstream ofs(path);
         ofs << j.dump(2);
 
-        try {
-            s_cached_json = j;
-            s_last_write_time = std::filesystem::last_write_time(path);
-            s_cached_path = path;
-            s_has_cache = true;
-        } catch (...) {
-            s_has_cache = false;
+        {
+            std::lock_guard<std::mutex> lock(s_mutex);
+            try {
+                s_cached_json = j;
+                s_last_write_time = std::filesystem::last_write_time(path);
+                s_cached_path = path;
+                s_has_cache = true;
+            } catch (...) {
+                s_has_cache = false;
+            }
         }
     }
 
@@ -164,13 +167,16 @@ class BeamConfigLoader {
         std::ofstream ofs(path);
         ofs << j.dump(2);
 
-        try {
-            s_cached_json = j;
-            s_last_write_time = std::filesystem::last_write_time(path);
-            s_cached_path = path;
-            s_has_cache = true;
-        } catch (...) {
-            s_has_cache = false;
+        {
+            std::lock_guard<std::mutex> lock(s_mutex);
+            try {
+                s_cached_json = j;
+                s_last_write_time = std::filesystem::last_write_time(path);
+                s_cached_path = path;
+                s_has_cache = true;
+            } catch (...) {
+                s_has_cache = false;
+            }
         }
     }
 

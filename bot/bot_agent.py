@@ -42,6 +42,10 @@ if str(_DIST_PATH) not in sys.path:
 
 import puyotan_native as p
 
+# Ensure UTF-8 output on Windows regardless of the active code page.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 from ai import SoloBeamAgent, VsBeamAgent
 from bot.firebase_client import FirebaseClient, num_to_base64s
 from bot.game_sync import GameState, cpp_action_to_js, js_action_to_cpp
@@ -115,7 +119,7 @@ class PuyotanBot:
 
     def start(self) -> None:
         """部屋への着席・監視を開始する（ブロッキング）。"""
-        self._log(f"Bot起動: room={self.room_id}, mode={self._mode_label()}")
+        self._log(f"Bot起動: room={self.room_id}, mode={self.mode_label(self.bot_players)}")
         self._log(f"Bot UID: {self._bot_uid}")
 
         self._join_seats()
@@ -151,10 +155,11 @@ class PuyotanBot:
         self.client.close()
         self._log("退席・停止完了")
 
-    def _mode_label(self) -> str:
-        if self.bot_players == {0}:
+    @staticmethod
+    def mode_label(bot_players: set[int]) -> str:
+        if bot_players == {0}:
             return "1P Bot（P2は人間）"
-        elif self.bot_players == {1}:
+        elif bot_players == {1}:
             return "2P Bot（P1は人間）"
         else:
             return "Both / Solo（1P・2PともにBot）"
@@ -504,9 +509,4 @@ class PuyotanBot:
 
     def _log(self, msg: str) -> None:
         if self.verbose:
-            line = f"[Bot] {msg}\n"
-            try:
-                sys.stdout.buffer.write(line.encode("utf-8"))
-                sys.stdout.buffer.flush()
-            except Exception:
-                print(line, end="", flush=True)
+            print(f"[Bot] {msg}", flush=True)

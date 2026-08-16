@@ -105,4 +105,20 @@ inline constexpr auto kColPriorityCmp = [](const BeamAction& a, const BeamAction
     return v;
 }
 
+/**
+ * @brief Pack 6 column heights into a single 32-bit register.
+ *
+ * Bits [col*4 .. col*4+3] hold the height of column `col` (0-5).
+ * Used by beam_search.cpp and attack_finder.cpp to avoid repeated
+ * getColumnHeight() calls inside hot loops.
+ * Shared here to eliminate duplicated implementations across those files.
+ */
+[[nodiscard]] __forceinline uint32_t packHeights(const Board& field) noexcept {
+    uint32_t packed = 0;
+    for (int col = 0; col < config::Board::kWidth; ++col) {
+        packed |= (static_cast<uint32_t>(field.getColumnHeight(col)) << (col << 2));
+    }
+    return packed;
+}
+
 } // namespace puyotan::search

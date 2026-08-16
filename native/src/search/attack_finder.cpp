@@ -18,15 +18,7 @@ struct SearchState {
     int accum_turns;
 };
 
-// BeamAction, getPutActions(), and getZoroActions() are defined in action_table.hpp.
-
-__forceinline uint32_t packHeights(const Board& field) noexcept {
-    uint32_t packed = 0;
-    for (int col = 0; col < config::Board::kWidth; ++col) {
-        packed |= (static_cast<uint32_t>(field.getColumnHeight(col)) << (col << 2));
-    }
-    return packed;
-}
+// BeamAction, getPutActions(), getZoroActions(), and packHeights() are defined in action_table.hpp.
 
 } // anonymous namespace
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <vector>
+#include <array>
 #include <puyotan/search/eval_weights.hpp>
 
 namespace puyotan::search {
@@ -8,34 +8,45 @@ namespace puyotan::search {
 /**
  * @struct BeamSearchSession
  * @brief Tracks multi-turn search state (such as expected score history for stagnation detection).
+ *
+ * Uses a fixed-size ring buffer (std::array + head index) for O(1) update instead of
+ * the previous O(n) std::vector::erase(begin()) pattern.
  */
 struct BeamSearchSession {
-    std::vector<float> score_history;
-    int max_history_size = 10;
     int min_history_to_check = 4;
-    int total_puyos_threshold = 66;    // 6 cols × 11 rows: field is near-full; stagnation is dangerous
-    float growth_threshold = 0.5f;
+    int total_puyos_threshold = 66;    // 6 cols × 11 rows: field is near-full
+    float growth_threshold    = 0.5f;
 
-    void update(float expected_score) {
-        score_history.push_back(expected_score);
-        if (static_cast<int>(score_history.size()) > max_history_size) {
-            score_history.erase(score_history.begin());
-        }
+  private:
+    static constexpr int kMaxHistory = 10;
+    std::array<float, kMaxHistory> buf_{};
+    int head_ = 0;  ///< Index of the slot that will be written next
+    int size_ = 0;  ///< Number of valid entries currently stored
+
+  public:
+    void update(float expected_score) noexcept {
+        buf_[head_] = expected_score;
+        head_ = (head_ + 1) % kMaxHistory;
+        if (size_ < kMaxHistory) ++size_;
     }
 
     [[nodiscard]] bool isStagnated(int total_puyos) const noexcept {
-        if (total_puyos >= total_puyos_threshold &&
-            static_cast<int>(score_history.size()) >= min_history_to_check) {
-            const float growth = score_history.back() - score_history[score_history.size() - min_history_to_check];
-            return growth <= growth_threshold;
+        if (total_puyos >= total_puyos_threshold && size_ >= min_history_to_check) {
+            // newest entry  : buf_[(head_ - 1 + kMaxHistory) % kMaxHistory]
+            // entry min_history_to_check steps ago: buf_[(head_ - min_history_to_check + kMaxHistory) % kMaxHistory]
+            const float newest = buf_[(head_ - 1 + kMaxHistory) % kMaxHistory];
+            const float oldest = buf_[(head_ - min_history_to_check + kMaxHistory) % kMaxHistory];
+            return (newest - oldest) <= growth_threshold;
         }
         return false;
     }
 
     void reset() noexcept {
-        score_history.clear();
+        head_ = 0;
+        size_ = 0;
     }
 };
+
 
 /**
  * @struct SoloBeamConfig

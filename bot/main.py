@@ -23,6 +23,10 @@ import json
 import sys
 from pathlib import Path
 
+# Ensure UTF-8 output on Windows regardless of the active code page.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 from bot.firebase_client import FirebaseClient
 from bot.bot_agent import PuyotanBot
 
@@ -159,11 +163,7 @@ def main() -> None:
         parser.error(str(e))
         return
 
-    mode_label = {
-        frozenset({0}):    "1P Bot（P2は人間）",
-        frozenset({1}):    "2P Bot（P1は人間）",
-        frozenset({0, 1}): "Both / Solo（1P・2PともにAIが操作）",
-    }[frozenset(bot_players)]
+    mode_label = PuyotanBot.mode_label(bot_players)
 
     is_solo = (bot_players == {0, 1})
 
@@ -174,12 +174,7 @@ def main() -> None:
     try:
         client = FirebaseClient()
         if not quiet:
-            out = "[Bot] Firestore 接続成功\n"
-            try:
-                sys.stdout.buffer.write(out.encode("utf-8"))
-                sys.stdout.buffer.flush()
-            except Exception:
-                print(out, end="")
+            print("[Bot] Firestore 接続成功", flush=True)
     except Exception as e:
         print(f"[Bot] ERROR: Firestore 接続失敗: {e}", file=sys.stderr)
         sys.exit(1)

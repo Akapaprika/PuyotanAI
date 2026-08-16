@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <omp.h>
 #include <puyotan/common/types.hpp>
 #include <puyotan/core/chain.hpp>
 #include <puyotan/core/gravity.hpp>
@@ -22,7 +21,7 @@ struct BeamNode {
     int first_action; // RL action index chosen at depth 0
 };
 
-// BeamAction, getPutActions(), and getZoroActions() are defined in action_table.hpp.
+// BeamAction, getPutActions(), getZoroActions(), and packHeights() are defined in action_table.hpp.
 
 struct ScoreIdx {
     float score;
@@ -33,15 +32,6 @@ struct ScoreIdx {
 thread_local std::vector<ScoreIdx> tl_sort_buf;
 thread_local std::vector<BeamNode> tl_current_beam;
 thread_local std::vector<BeamNode> tl_next_beam;
-
-// Pack 6 column heights into a single 32-bit register to minimize memory spills and popcounts.
-__forceinline uint32_t packHeights(const Board& field) noexcept {
-    uint32_t packed = 0;
-    for (int col = 0; col < config::Board::kWidth; ++col) {
-        packed |= (static_cast<uint32_t>(field.getColumnHeight(col)) << (col << 2));
-    }
-    return packed;
-}
 
 // ---------------------------------------------------------------------------
 // Simulate placing one tsumo piece (axis + sub) onto the board.
