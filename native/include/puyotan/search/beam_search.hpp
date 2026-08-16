@@ -1,7 +1,6 @@
 #pragma once
 
 #include <utility>
-#include <vector>
 #include <puyotan/engine/match.hpp>
 #include <puyotan/search/beam_config.hpp>
 #include <puyotan/search/beam_evaluator.hpp>

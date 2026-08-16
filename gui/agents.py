@@ -191,14 +191,22 @@ class BeamSearchAgent(_AsyncSearchMixin, BasePlayerAgent):
         player_snap = player.clone()
         tsumo_snap  = tsumo.clone()
 
-        # Define thread worker (GIL is released inside C++ bindings.cpp)
-        def worker():
-            res = p.beam_search_action(
-                player_snap, tsumo_snap, config.CONFIG_PATH, width, depth,
-                self._is_solo,
-                dbs_max_similar=dbs, session=self._session
-            )
-            self._store_result(res)
+        if self._is_solo:
+            def worker():
+                cfg = p.load_solo_config(config.CONFIG_PATH)
+                if width > 0: cfg.beam_width      = width
+                if depth > 0: cfg.look_ahead      = depth
+                if dbs  >= 0: cfg.dbs_max_similar = dbs
+                res = p.solo_beam_search(player_snap, tsumo_snap, cfg, self._session)
+                self._store_result(res)
+        else:
+            def worker():
+                cfg = p.load_vs_config(config.CONFIG_PATH)
+                if width > 0: cfg.beam_width      = width
+                if depth > 0: cfg.look_ahead      = depth
+                if dbs  >= 0: cfg.dbs_max_similar = dbs
+                res = p.vs_beam_search(player_snap, tsumo_snap, cfg, self._session)
+                self._store_result(res)
 
         self._launch(worker)
         return None

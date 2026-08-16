@@ -254,8 +254,6 @@ PYBIND11_MODULE(puyotan_native, m) {
     m.def("load_vs_config", &search::BeamConfigLoader::loadVs, pybind11::arg("path"),
           "Load VsBeamConfig from JSON");
 
-    m.def("load_enemy_config", &search::BeamConfigLoader::loadEnemy, pybind11::arg("path"),
-          "Load VsBeamConfig (enemy) from JSON");
 
     // Pure Solo beam search
     m.def(
@@ -283,76 +281,6 @@ PYBIND11_MODULE(puyotan_native, m) {
         pybind11::arg("cfg"), pybind11::arg("session") = nullptr,
         "Run VS beam search with a VsBeamConfig. Returns (RL action index, expected score).");
 
-    // Top N VS candidate search
-    m.def(
-        "vs_beam_search_top_n",
-        [](const PuyotanPlayer& player, const Tsumo& tsumo,
-           const search::VsBeamConfig& cfg, int top_n) {
-            pybind11::gil_scoped_release release;
-            return search::vsBeamSearchTopN(player, tsumo, cfg, top_n);
-        },
-        pybind11::arg("player"), pybind11::arg("tsumo"),
-        pybind11::arg("cfg"), pybind11::arg("top_n") = 5,
-        "Run VS beam search returning top N unique actions with scores.");
-
-    // Backward-compatible unified search helper
-    m.def(
-        "beam_search_action",
-        [](const PuyotanPlayer& player, const Tsumo& tsumo,
-           const std::string& config_path, int beam_width, int look_ahead,
-           bool is_solo, bool is_stagnated,
-           const std::optional<search::VsBeamEvalWeights>& custom_weights,
-           int dbs_max_similar, bool is_enemy,
-           search::BeamSearchSession* session) {
-            pybind11::gil_scoped_release release;
-
-            if (is_solo) {
-                search::SoloBeamConfig cfg;
-                if (custom_weights.has_value()) {
-                    cfg.eval_weights.potential_score_scale = custom_weights.value().potential_score_scale;
-                } else {
-                    cfg = search::BeamConfigLoader::loadSolo(config_path);
-                }
-
-                if (beam_width > 0) { cfg.beam_width = beam_width; }
-                if (look_ahead > 0) { cfg.look_ahead = look_ahead; }
-                if (dbs_max_similar >= 0) { cfg.dbs_max_similar = dbs_max_similar; }
-
-                return search::soloBeamSearch(player, tsumo, cfg, session);
-            } else {
-                search::VsBeamConfig cfg;
-                if (custom_weights.has_value()) {
-                    cfg.eval_weights = custom_weights.value();
-                } else {
-                    if (is_enemy) {
-                        cfg = search::BeamConfigLoader::loadEnemy(config_path);
-                    } else {
-                        cfg = search::BeamConfigLoader::loadVs(config_path);
-                    }
-                }
-
-                if (beam_width > 0) { cfg.beam_width = beam_width; }
-                if (look_ahead > 0) { cfg.look_ahead = look_ahead; }
-                if (dbs_max_similar >= 0) { cfg.dbs_max_similar = dbs_max_similar; }
-
-                if (is_stagnated) {
-                    cfg.eval_weights.fire_bias = 0.97f;
-                    cfg.eval_weights.potential_score_scale = 0.0f;
-                }
-
-                return search::vsBeamSearch(player, tsumo, cfg, session);
-            }
-        },
-        pybind11::arg("player"), pybind11::arg("tsumo"),
-        pybind11::arg("config_path"), pybind11::arg("beam_width") = -1,
-        pybind11::arg("look_ahead") = -1, pybind11::arg("is_solo") = false,
-        pybind11::arg("is_stagnated") = false,
-        pybind11::arg("custom_weights") = std::nullopt,
-        pybind11::arg("dbs_max_similar") = -1,
-        pybind11::arg("is_enemy") = false,
-        pybind11::arg("session") = nullptr,
-        "Run beam search internally managing config loading. "
-        "Returns tuple of (RL action index, expected score).");
 
     // Negamax config struct
     pybind11::class_<search::NegamaxConfig>(m, "NegamaxConfig")
@@ -424,10 +352,6 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("best_eval",       &search::AbsResult::best_eval)
         .def_readwrite("candidate_evals", &search::AbsResult::candidate_evals);
 
-    m.def("load_abs_config", [](const std::string& path) {
-        search::AbsConfig cfg;
-        return cfg;
-    }, pybind11::arg("path"), "Load AbsConfig from JSON");
 
     m.def(
         "abs_search",

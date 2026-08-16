@@ -30,12 +30,12 @@ class SoloBeamEvaluator {
         {
             const uint64_t lo = board.getOccupied().lo;
             const uint64_t hi = board.getOccupied().hi;
-            heights[0] = static_cast<int>(_mm_popcnt_u64((lo >> 0) & 0xFFFFu));
-            heights[1] = static_cast<int>(_mm_popcnt_u64((lo >> 16) & 0xFFFFu));
-            heights[2] = static_cast<int>(_mm_popcnt_u64((lo >> 32) & 0xFFFFu));
-            heights[3] = static_cast<int>(_mm_popcnt_u64((lo >> 48) & 0xFFFFu));
-            heights[4] = static_cast<int>(_mm_popcnt_u64((hi >> 0) & 0xFFFFu));
-            heights[5] = static_cast<int>(_mm_popcnt_u64((hi >> 16) & 0xFFFFu));
+        heights[0] = static_cast<int>(_mm_popcnt_u64((lo >>  0) & config::Board::kColMask));
+            heights[1] = static_cast<int>(_mm_popcnt_u64((lo >> 16) & config::Board::kColMask));
+            heights[2] = static_cast<int>(_mm_popcnt_u64((lo >> 32) & config::Board::kColMask));
+            heights[3] = static_cast<int>(_mm_popcnt_u64((lo >> 48) & config::Board::kColMask));
+            heights[4] = static_cast<int>(_mm_popcnt_u64((hi >>  0) & config::Board::kColMask));
+            heights[5] = static_cast<int>(_mm_popcnt_u64((hi >> 16) & config::Board::kColMask));
         }
 
         // --- Potential chain score (shared implementation in potential_score.hpp) ---
@@ -66,12 +66,12 @@ class VsBeamEvaluator {
         {
             const uint64_t lo = board.getOccupied().lo;
             const uint64_t hi = board.getOccupied().hi;
-            heights[0] = static_cast<int>(_mm_popcnt_u64((lo >> 0) & 0xFFFFu));
-            heights[1] = static_cast<int>(_mm_popcnt_u64((lo >> 16) & 0xFFFFu));
-            heights[2] = static_cast<int>(_mm_popcnt_u64((lo >> 32) & 0xFFFFu));
-            heights[3] = static_cast<int>(_mm_popcnt_u64((lo >> 48) & 0xFFFFu));
-            heights[4] = static_cast<int>(_mm_popcnt_u64((hi >> 0) & 0xFFFFu));
-            heights[5] = static_cast<int>(_mm_popcnt_u64((hi >> 16) & 0xFFFFu));
+        heights[0] = static_cast<int>(_mm_popcnt_u64((lo >>  0) & config::Board::kColMask));
+            heights[1] = static_cast<int>(_mm_popcnt_u64((lo >> 16) & config::Board::kColMask));
+            heights[2] = static_cast<int>(_mm_popcnt_u64((lo >> 32) & config::Board::kColMask));
+            heights[3] = static_cast<int>(_mm_popcnt_u64((lo >> 48) & config::Board::kColMask));
+            heights[4] = static_cast<int>(_mm_popcnt_u64((hi >>  0) & config::Board::kColMask));
+            heights[5] = static_cast<int>(_mm_popcnt_u64((hi >> 16) & config::Board::kColMask));
         }
 
         // --- Board metrics (BitBoard-level, branchless) ---

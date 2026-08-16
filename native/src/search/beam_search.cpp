@@ -37,7 +37,7 @@ thread_local std::vector<BeamNode> tl_next_beam;
 // Pack 6 column heights into a single 32-bit register to minimize memory spills and popcounts.
 __forceinline uint32_t packHeights(const Board& field) noexcept {
     uint32_t packed = 0;
-    for (int col = 0; col < 6; ++col) {
+    for (int col = 0; col < config::Board::kWidth; ++col) {
         packed |= (static_cast<uint32_t>(field.getColumnHeight(col)) << (col << 2));
     }
     return packed;
@@ -288,7 +288,6 @@ std::vector<std::pair<int, float>> vsBeamSearchTopN(const PuyotanPlayer& player,
                                                     const Tsumo& tsumo_const,
                                                     const VsBeamConfig& cfg,
                                                     int top_n) noexcept {
-    // Basic top-N extraction fallback for Negamax candidate generation
     auto best = vsBeamSearch(player, tsumo_const, cfg);
     std::vector<std::pair<int, float>> res;
     res.push_back(best);

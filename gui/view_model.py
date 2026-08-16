@@ -43,15 +43,7 @@ class PuyotanViewModel(QObject):
         self.current_chain_scores = [0, 0]
         self.last_chain_scores = [0, 0]
         self.prev_actions = [p.ActionType.NONE, p.ActionType.NONE]
-        
-        self.p_colors = {
-            p.Cell.Red: config.COLORS["Red"],
-            p.Cell.Green: config.COLORS["Green"],
-            p.Cell.Blue: config.COLORS["Blue"],
-            p.Cell.Yellow: config.COLORS["Yellow"],
-            p.Cell.Ojama: config.COLORS["Ojama"],
-            p.Cell.Empty: config.COLORS["Empty"]
-        }
+        self.p_colors = config.get_cell_rgb()
         self.update_presentation()
 
     # ------------------------------------------------------------------

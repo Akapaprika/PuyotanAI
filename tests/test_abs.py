@@ -13,8 +13,7 @@ import puyotan_native as p
 
 def main():
     print("Testing ABS module import...")
-    cfg_path = str(Path(__file__).parent.parent / "native" / "resources" / "beam_config.json")
-    abs_cfg = p.load_abs_config(cfg_path)
+    abs_cfg = p.AbsConfig()
     abs_cfg.depth = 2  # 軽量探索に設定し高速テスト
     
     match = p.PuyotanMatch(100)

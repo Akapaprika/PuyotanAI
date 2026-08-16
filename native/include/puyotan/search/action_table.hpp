@@ -31,6 +31,21 @@ struct BeamAction {
 inline constexpr int kColPriority[6] = {0, 2, 4, 5, 3, 1};
 
 /**
+ * @brief Comparator: orders BeamActions by edge-first column priority.
+ *
+ * Shared by getPutActions() and getZoroActions() to eliminate duplicated
+ * sort logic. The key is packed as (min_priority << 3) | max_priority so
+ * that pairs closer to the board edges sort before pairs near the centre.
+ */
+inline constexpr auto kColPriorityCmp = [](const BeamAction& a, const BeamAction& b) noexcept {
+    const int pa = (std::min(kColPriority[a.ax], kColPriority[a.sx]) << 3)
+                 |  std::max(kColPriority[a.ax], kColPriority[a.sx]);
+    const int pb = (std::min(kColPriority[b.ax], kColPriority[b.sx]) << 3)
+                 |  std::max(kColPriority[b.ax], kColPriority[b.sx]);
+    return (pa != pb) ? (pa < pb) : (a.idx < b.idx);
+};
+
+/**
  * @brief Returns all Put actions (22 total), sorted edge-first by column priority.
  *
  * The result is lazily initialised once and reused across all searchers.
@@ -52,13 +67,7 @@ inline constexpr int kColPriority[6] = {0, 2, 4, 5, 3, 1};
             const int sub_dy  = kSubDySimple[rot];
             r.push_back({i, ax, sx, axis_dy, sub_dy});
         }
-        std::sort(r.begin(), r.end(), [](const BeamAction& a, const BeamAction& b) {
-            const int pa = (std::min(kColPriority[a.ax], kColPriority[a.sx]) << 3)
-                         |  std::max(kColPriority[a.ax], kColPriority[a.sx]);
-            const int pb = (std::min(kColPriority[b.ax], kColPriority[b.sx]) << 3)
-                         |  std::max(kColPriority[b.ax], kColPriority[b.sx]);
-            return (pa != pb) ? (pa < pb) : (a.idx < b.idx);
-        });
+        std::sort(r.begin(), r.end(), kColPriorityCmp);
         return r;
     }();
     return v;
@@ -90,13 +99,7 @@ inline constexpr int kColPriority[6] = {0, 2, 4, 5, 3, 1};
             const int sub_dy  = kSubDySimple[rot];
             r.push_back({i, ax, sx, axis_dy, sub_dy});
         }
-        std::sort(r.begin(), r.end(), [](const BeamAction& a, const BeamAction& b) {
-            const int pa = (std::min(kColPriority[a.ax], kColPriority[a.sx]) << 3)
-                         |  std::max(kColPriority[a.ax], kColPriority[a.sx]);
-            const int pb = (std::min(kColPriority[b.ax], kColPriority[b.sx]) << 3)
-                         |  std::max(kColPriority[b.ax], kColPriority[b.sx]);
-            return (pa != pb) ? (pa < pb) : (a.idx < b.idx);
-        });
+        std::sort(r.begin(), r.end(), kColPriorityCmp);
         return r;
     }();
     return v;

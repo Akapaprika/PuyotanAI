@@ -35,6 +35,18 @@ COLORS = {
     "GhostAlpha": 120
 }
 
+# Mapping from puyotan_native.Cell to RGB tuples
+def get_cell_rgb():
+    import puyotan_native as p
+    return {
+        p.Cell.Red: COLORS["Red"],
+        p.Cell.Green: COLORS["Green"],
+        p.Cell.Blue: COLORS["Blue"],
+        p.Cell.Yellow: COLORS["Yellow"],
+        p.Cell.Ojama: COLORS["Ojama"],
+        p.Cell.Empty: COLORS["Empty"],
+    }
+
 # Symbols for buttons
 BUTTON_SYMBOLS = {
     "left": "←",
