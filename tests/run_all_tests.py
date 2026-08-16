@@ -11,7 +11,12 @@ from pathlib import Path
 
 # パス設定
 _PROJECT_ROOT = Path(__file__).parent.parent
-_BENCHMARK_EXE = _PROJECT_ROOT / "native" / "build_Release" / "Release" / "beam_search_benchmark.exe"
+_CANDIDATE_PATHS = [
+    _PROJECT_ROOT / "native" / "dist" / "beam_search_benchmark.exe",
+    _PROJECT_ROOT / "native" / "build_Release" / "Release" / "beam_search_benchmark.exe",
+    _PROJECT_ROOT / "native" / "build_Release_clang" / "beam_search_benchmark.exe",
+]
+_BENCHMARK_EXE = next((p for p in _CANDIDATE_PATHS if p.exists()), _CANDIDATE_PATHS[0])
 
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))

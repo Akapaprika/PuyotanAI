@@ -52,7 +52,7 @@ jobs:
       - name: Run C++ Native Regression Executables
         shell: cmd
         run: |
-          cd native\build_Release\Release
+          cd native\dist
           engine_benchmark.exe --regression
           beam_search_benchmark.exe -r
 
