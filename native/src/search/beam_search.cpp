@@ -108,13 +108,13 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
     const int tsumo_base = player.active_next_pos;
 
     // -----------------------------------------------------------------------
-    // Fire scan: try all actions with the current tsumo and find the best
-    // immediate chain.  This is compared against the beam result at the end
-    // to decide whether firing now is better than continuing to build.
+    // Fire scan (VS mode only): try all actions with current tsumo to find the
+    // best immediate chain for fire-vs-build comparison.
+    // In Solo mode (HasFireBias=false), this entire block is eliminated at compile time.
     // -----------------------------------------------------------------------
     int fire_best_action = -1;
     float fire_best_score = 0.0f;
-    {
+    if constexpr (HasFireBias) {
         uint32_t packed_heights_root = packHeights(player.field);
         PuyoPiece piece0 = tsumo.get(tsumo_base + 0);
         const bool is_zoro0 = (piece0.axis == piece0.sub);
