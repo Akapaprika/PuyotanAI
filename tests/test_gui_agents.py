@@ -16,7 +16,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 import puyotan_native as p
-from gui.agents import BeamSearchAgent, VsBeamSearchAgent, NegamaxAgent
+from ai import BeamSearchAgent, VsBeamSearchAgent, NegamaxAgent
 
 class DummyGameModel:
     """GUI の ViewModel / GameModel のインターフェースをシミュレートするダミークラス"""

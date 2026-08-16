@@ -13,8 +13,8 @@ if str(_DIST_PATH) not in sys.path:
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from gui.agent_factory import AgentFactory
-from gui.agents import (
+from ai import (
+    AgentFactory,
     HumanPlayerAgent,
     EmptyPlayerAgent,
     BeamSearchAgent,

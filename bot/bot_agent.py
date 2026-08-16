@@ -42,10 +42,9 @@ if str(_DIST_PATH) not in sys.path:
 
 import puyotan_native as p
 
-from bot.firebase_client import FirebaseClient
+from ai import BeamSearchAgent, VsBeamSearchAgent
+from bot.firebase_client import FirebaseClient, num_to_base64s
 from bot.game_sync import GameState, cpp_action_to_js, js_action_to_cpp
-from bot.firebase_client import num_to_base64s
-from gui.config import CONFIG_PATH
 
 
 class PuyotanBot:
@@ -96,14 +95,17 @@ class PuyotanBot:
         # 送信済みフレームの追跡（プレイヤーIDごと）
         self._submitted: dict[int, set[int]] = {0: set(), 1: set()}
 
-        # 探索セッション管理（停滞判定などの履歴管理用）
-        self._sessions = {0: p.BeamSearchSession(), 1: p.BeamSearchSession()}
-
-        # ビームサーチの非同期実行管理
-        # ソロモードでは pid=0 のみ使用し、結果をP0・P1両方に送信する
-        self._search_thread: Optional[threading.Thread] = None
-        self._search_result: Optional[tuple[int, float]] = None
-        self._search_lock = threading.Lock()
+        # AI エージェントの初期化（ソロなら BeamSearchAgent、VSなら相手注視・反撃対応の VsBeamSearchAgent）
+        bw = beam_width if beam_width > 0 else None
+        la = look_ahead if look_ahead > 0 else None
+        if self.is_solo:
+            self._agents = {0: BeamSearchAgent(beam_width=bw, look_ahead=la)}
+            self._agents[0].on_mode_updated(is_solo=True)
+        else:
+            self._agents = {
+                pid: VsBeamSearchAgent(enable_attack_search=True, beam_width=bw, look_ahead=la)
+                for pid in self.bot_players
+            }
 
         self._should_stop = False
         self._last_logged_state: str = ""
@@ -381,29 +383,8 @@ class PuyotanBot:
 
     def _tick(self) -> None:
         """
-        0.3秒ごとに呼ばれる。探索結果の回収と新規探索の起動を行う。
-
-        【ソロモードの設計】
-          探索は1回のみ実行（pid=0として計算）。
-          結果が出たら P0・P1 に同時に送信する。
-          これにより P0→P1 の送信ラグがゼロになる。
-
-        【通常モード（1p/2p）の設計】
-          Bot担当のプレイヤーのみ探索・送信する。
+        0.3秒ごとに呼ばれる。探索結果の回収・送信と新規探索の起動を行う。
         """
-        # 探索結果の回収と送信
-        with self._search_lock:
-            result = self._search_result
-            if result is not None:
-                self._search_result = None
-                self._search_thread = None
-                action = p.get_rl_action(result[0])
-                score = result[1]
-                # ソロ: P0・P1に同時送信 / 通常: 担当プレイヤーのみ
-                targets = [0, 1] if self.is_solo else sorted(self.bot_players)
-                for pid in targets:
-                    self._submit_action(pid, action, score)
-
         with self._lock:
             state = self._state
             game_id = self._game_id
@@ -429,7 +410,7 @@ class PuyotanBot:
             return
 
         self._log_state(state)
-        self._try_start_search(state)
+        self._process_ai_turns(state)
 
     def _log_state(self, state: GameState) -> None:
         """状態変化があった時だけログを出す。"""
@@ -453,8 +434,8 @@ class PuyotanBot:
                 parts.append(f"P{pid+1}:待機")
         self._log(f"frame={frame} | {' | '.join(parts)}")
 
-    def _try_start_search(self, state: GameState) -> None:
-        """探索が必要なら非同期でビームサーチを開始する。"""
+    def _process_ai_turns(self, state: GameState) -> None:
+        """担当プレイヤーの AI 思考を進行させ、手が確定したら送信する。"""
         # ソロ（both）モード時の書き込みズレ（Syncズレ）修復
         if self.is_solo:
             frame = state.current_frame
@@ -469,70 +450,23 @@ class PuyotanBot:
                 self._submit_action(0, js_action_to_cpp(a1["x"], a1["dir"]), 0.0)
                 return
 
-        # 探索が必要なプレイヤーを探す（自分が担当し、かつ未送信のもの）
-        target_pid = None
-        for pid in sorted(self.bot_players):
-            if state.needs_action(pid) and (state.current_frame not in self._submitted[pid]):
-                target_pid = pid
-                break
-
-        if target_pid is None:
-            return
-
-        with self._search_lock:
-            if self._search_thread is not None and self._search_thread.is_alive():
-                return  # 既に探索中
-
-        player = state.get_player_state(target_pid)
-        tsumo = state.get_tsumo()
-        session = self._sessions[target_pid]
-
-        player_snap = player.clone()
-        tsumo_snap = tsumo.clone()
-
-        if self.is_solo:
-            cfg = p.load_solo_config(CONFIG_PATH)
-            if self.beam_width > 0:
-                cfg.beam_width = self.beam_width
-            if self.look_ahead > 0:
-                cfg.look_ahead = self.look_ahead
-
-            def worker():
-                result = p.solo_beam_search(player_snap, tsumo_snap, cfg, session)
-                with self._search_lock:
-                    self._search_result = result
+            # ソロモード: P0 エージェントで1回だけ思考し、両席に同時送信
+            if state.needs_action(0) and (state.current_frame not in self._submitted[0]):
+                agent = self._agents[0]
+                action = agent.get_action(state, 0)
+                if action is not None:
+                    score = agent.last_score
+                    self._submit_action(0, action, score)
+                    self._submit_action(1, action, score)
         else:
-            enemy_pid = 1 - target_pid
-            enemy = state.get_player_state(enemy_pid)
-
-            cfg = p.load_vs_config(CONFIG_PATH)
-            if self.beam_width > 0:
-                cfg.beam_width = self.beam_width
-            if self.look_ahead > 0:
-                cfg.look_ahead = self.look_ahead
-
-            # Populate VsEvalContext with enemy live state for optimal counter & attack timing
-            ctx = cfg.context
-            ctx.enemy_field = enemy.field
-            ctx.enemy_active_next_pos = enemy.active_next_pos
-            ctx.enemy_action_type = enemy.current_action.action.type
-            ctx.enemy_chain_count = enemy.chain_count
-            ctx.enemy_score = enemy.score
-            ctx.enemy_used_score = enemy.used_score
-            ctx.enemy_active_ojama = enemy.active_ojama
-            ctx.enemy_non_active_ojama = enemy.non_active_ojama
-            ctx.my_active_ojama = player.active_ojama
-            ctx.my_non_active_ojama = player.non_active_ojama
-            cfg.context = ctx
-
-            def worker():
-                result = p.vs_beam_search(player_snap, tsumo_snap, cfg, session)
-                with self._search_lock:
-                    self._search_result = result
-
-        with self._search_lock:
-            self._search_thread = threading.Thread(target=worker, daemon=True)
-            self._search_thread.start()
+            # VSモード: 担当プレイヤーごとに思考・送信
+            for pid in sorted(self.bot_players):
+                if state.needs_action(pid) and (state.current_frame not in self._submitted[pid]):
+                    agent = self._agents[pid]
+                    action = agent.get_action(state, pid)
+                    if action is not None:
+                        score = agent.last_score
+                        self._submit_action(pid, action, score)
 
     def _submit_action(self, pid: int, action: p.Action, score: float) -> None:
         with self._lock:

@@ -1,7 +1,7 @@
 import puyotan_native as p
 from PyQt6.QtCore import QObject, pyqtSignal, QElapsedTimer
+from ai import BasePlayerAgent, HumanPlayerAgent
 from . import config
-from .agents import BasePlayerAgent, HumanPlayerAgent
 
 class PlayerPresentationState:
     """State for a single player as seen by the UI."""

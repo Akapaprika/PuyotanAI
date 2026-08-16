@@ -83,7 +83,7 @@ def main():
     runner.run_module("5. Adversarial Beam Search (ABS) Engine", t_abs.main)
 
     import tests.test_gui_agents as t_gui
-    runner.run_module("6. GUI Agent Strategy Classes", t_gui.run_all)
+    runner.run_module("6. Unified AI Agent Strategy Classes", t_gui.run_all)
 
     import tests.test_agent_factory as t_factory
     runner.run_module("7. AgentFactory Mode & Instantiation", t_factory.run_all)
