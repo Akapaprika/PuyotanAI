@@ -11,8 +11,8 @@
     "_comment_min_beam_width_ratio": "最終手（look_ahead-1）時点でのビーム幅の到達比率 (1.0で減衰なし, 0.1で10%にテーパー縮小)",
     "min_beam_width_ratio": 0.01,
     "eval_weights": {
-      "_comment_potential_score_scale": "ポテンシャル連鎖スコアへの乗数。高いほど将来の連鎖を重視。",
-      "potential_score_scale": 1.0
+      "_comment_potential_score_scale": "ポテンシャル連鎖スコアへの整数乗数。1 = 素点そのままを使用。",
+      "potential_score_scale": 1
     }
   },
   "vs": {
@@ -23,15 +23,15 @@
     "_comment_dbs_max_similar": "同一高さプロファイル(packHeights)を持つ盤面の最大許容重複件数 (0でDBS無効, 1以上でDBS有効)",
     "dbs_max_similar": 6,
     "eval_weights": {
-      "_comment_potential_score_scale": "ポテンシャル連鎖スコアへの乗数。高いほど将来の連鎖を重視。",
-      "potential_score_scale": 1.0,
-      "_comment_connectivity_bonus": "同色隣接が2つ以上あるぷよ1個あたりのボーナス。",
-      "connectivity_bonus": 0.0,
-      "_comment_isolated_penalty": "同色隣接ゼロの孤立ぷよ1個あたりのペナルティ（負の値）。",
-      "isolated_penalty": -0.0,
-      "_comment_buried_penalty": "おじゃまの下に埋もれた色ぷよ1個あたりのペナルティ（負の値）。",
-      "buried_penalty": 0.0,
-      "_comment_fire_bias": "発火判断のバイアス係数。fire_bias × 発火スコア > ビームスコア のとき即時発火を選択。\n                                    > 1.0: 発火を積極的に選ぶ / == 1.0: 等価比較 / < 1.0: 継続を優先",
+      "_comment_potential_score_scale": "ポテンシャル連鎖スコアへの整数乗数。1 = 素点そのままを使用。",
+      "potential_score_scale": 1,
+      "_comment_connectivity_bonus": "同色隣接が2つ以上あるぷよ1個あたりのボーナス（整数, 点）。",
+      "connectivity_bonus": 20,
+      "_comment_isolated_penalty": "同色隣接ゼロの孤立ぷよ1個あたりのペナルティ（整数, 点, 負の値）。",
+      "isolated_penalty": -40,
+      "_comment_buried_penalty": "おじゃまの下に埋もれた色ぷよ1個あたりのペナルティ（整数, 点, 負の値）。",
+      "buried_penalty": -100,
+      "_comment_fire_bias": "発火判断のバイアス係数（小数）。fire_bias × 発火スコア > ビームスコア のとき即時発火を選択。\n                        > 1.0: 発火を積極的に選ぶ / == 1.0: 等価比較 / < 1.0: 継続を優先\n                        内部では *1000 して整数比較するため、切り捨て誤差あり（最大1/1000）。",
       "fire_bias": 0.97
     }
   },
@@ -43,15 +43,15 @@
     "_comment_dbs_max_similar": "同一高さプロファイル(packHeights)を持つ盤面の最大許容重複件数 (0でDBS無効, 1以上でDBS有効)",
     "dbs_max_similar": 6,
     "eval_weights": {
-      "_comment_potential_score_scale": "ポテンシャル連鎖スコアへの乗数。高いほど将来の連鎖を重視。",
-      "potential_score_scale": 1.0,
-      "_comment_connectivity_bonus": "同色隣接が2つ以上あるぷよ1個あたりのボーナス。",
-      "connectivity_bonus": 0.0,
-      "_comment_isolated_penalty": "同色隣接ゼロの孤立ぷよ1個あたりのペナルティ（負の値）。",
-      "isolated_penalty": -0.0,
-      "_comment_buried_penalty": "おじゃまの下に埋もれた色ぷよ1個あたりのペナルティ（負の値）。",
-      "buried_penalty": 0.0,
-      "_comment_fire_bias": "発火判断のバイアス係数。fire_bias × 発火スコア > ビームスコア のとき即時発火を選択。\n                                    > 1.0: 発火を積極的に選ぶ / == 1.0: 等価比較 / < 1.0: 継続を優先",
+      "_comment_potential_score_scale": "ポテンシャル連鎖スコアへの整数乗数。1 = 素点そのままを使用。",
+      "potential_score_scale": 1,
+      "_comment_connectivity_bonus": "同色隣接が2つ以上あるぷよ1個あたりのボーナス（整数, 点）。",
+      "connectivity_bonus": 20,
+      "_comment_isolated_penalty": "同色隣接ゼロの孤立ぷよ1個あたりのペナルティ（整数, 点, 負の値）。",
+      "isolated_penalty": -40,
+      "_comment_buried_penalty": "おじゃまの下に埋もれた色ぷよ1個あたりのペナルティ（整数, 点, 負の値）。",
+      "buried_penalty": -100,
+      "_comment_fire_bias": "発火判断のバイアス係数（小数）。fire_bias × 発火スコア > ビームスコア のとき即時発火を選択。\n                        > 1.0: 発火を積極的に選ぶ / == 1.0: 等価比較 / < 1.0: 継続を優先\n                        内部では *1000 して整数比較するため、切り捨て誤差あり（最大1/1000）。",
       "fire_bias": 0.97
     }
   },

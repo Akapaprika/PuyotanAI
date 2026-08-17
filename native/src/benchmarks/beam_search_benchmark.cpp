@@ -34,7 +34,7 @@ using namespace puyotan::search;
 
 struct SearchStats {
     int action = -1;
-    float expected_score = 0.0f;
+    int32_t expected_score = 0;
     double latency_ms = 0.0;
     bool valid = false;
 };
@@ -292,39 +292,39 @@ struct ExpectedBeamStats {
 /// Quick verification: runs a few games with fixed seeds and prints stats for
 /// regression testing. Returns true if all stats match expected values.
 bool runRegressionTest(
-    const SoloBeamConfig& /*cfg*/) { // 引数の cfg
-                                     // を無視するか、以下で上書きします
+    const SoloBeamConfig& /*cfg*/) {
     printf("\n=== REGRESSION TEST (Fixed Seeds) ===\n");
-    const ExpectedBeamStats expected[] = {
-        {1, 0, 40.00f},      {42, 0, 0.00f},      {123, 0, 0.00f},
-        {999, 8, 100.00f},   {12345, 6, 40.00f},  {424242, 1, 40.00f},
-        {111111, 1, 40.00f}, {999999, 8, 180.00f}};
+    struct ExpectedResult {
+        uint32_t seed;
+        int action;
+        int32_t score;
+    };
 
-    // 【修正箇所】テスト用の静的な設定（3手先読み、ビーム幅500）を強制します
-    // これにより、ベンチマークを10手や40手で回しても、テスト自体は常に同じ3手の基準で正しくパスします
+    const ExpectedResult expected[] = {
+        {1, 0, 40},      {42, 0, 0},          {123, 0, 0},
+        {999, 8, 100},   {12345, 6, 40},      {424242, 1, 40},
+        {111111, 1, 40}, {999999, 8, 180}};
+
     SoloBeamConfig test_cfg;
     test_cfg.beam_width = 500;
     test_cfg.look_ahead = 3;
-    test_cfg.eval_weights = SoloBeamEvalWeights{}; // デフォルトの重みを使用
+    test_cfg.eval_weights = SoloBeamEvalWeights{};
 
     bool all_ok = true;
     for (const auto& exp : expected) {
         PuyotanPlayer player = createTestPlayer(exp.seed);
         Tsumo tsumo(exp.seed);
 
-        // 修正：引数で渡された cfg ではなく、テスト専用의 test_cfg
-        // を使用して検索します
         SearchStats stats = runSingleSearch(player, tsumo, test_cfg);
         Action a = getRLAction(stats.action);
-        printf("Seed %7u: action=%3d (Put, rot=%d, x=%2d)  score=%.2f  "
+        printf("Seed %7u: action=%3d (Put, rot=%d, x=%2d)  score=%d  "
                "latency=%.3fms  valid=%d\n",
                exp.seed, stats.action, static_cast<int>(a.rotation), a.x,
-               stats.expected_score, stats.latency_ms, stats.valid);
+               (int32_t)stats.expected_score, stats.latency_ms, stats.valid);
 
-        if (stats.action != exp.action ||
-            std::abs(stats.expected_score - exp.score) > 1e-4) {
+        if (stats.action != exp.action || (int32_t)stats.expected_score != exp.score) {
             printf("  [ERROR] Regression mismatch for Seed %u!\n", exp.seed);
-            printf("          Expected: action=%d, score=%.2f\n", exp.action,
+            printf("          Expected: action=%d, score=%d\n", exp.action,
                    exp.score);
             all_ok = false;
         }

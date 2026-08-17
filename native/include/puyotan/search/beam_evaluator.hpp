@@ -21,10 +21,8 @@ class SoloBeamEvaluator {
     /**
      * @brief Evaluate a board state and return a heuristic score for Solo mode.
      */
-    static float evaluate(const Board& board,
-                          const SoloBeamEvalWeights& w) noexcept {
-        float r = 0.0f;
-
+    static int32_t evaluate(const Board& board,
+                            const SoloBeamEvalWeights& w) noexcept {
         // --- Precompute all column heights once ---
         int heights[config::Board::kWidth];
         {
@@ -39,10 +37,7 @@ class SoloBeamEvaluator {
         }
 
         // --- Potential chain score (shared implementation in potential_score.hpp) ---
-        r += static_cast<float>(computeMaxPotentialScore(board, heights))
-             * w.potential_score_scale;
-
-        return r;
+        return computeMaxPotentialScore(board, heights) * w.potential_score_scale;
     }
 };
 
@@ -56,10 +51,10 @@ class VsBeamEvaluator {
      * @brief Evaluate a board state and return a heuristic score for VS mode.
      */
     template <bool CalculatePotential = true>
-    static float evaluate(const Board& board,
-                          const VsBeamEvalWeights& w,
-                          const VsEvalContext* ctx = nullptr) noexcept {
-        float r = 0.0f;
+    static int32_t evaluate(const Board& board,
+                            const VsBeamEvalWeights& w,
+                            const VsEvalContext* ctx = nullptr) noexcept {
+        int32_t r = 0;
 
         // --- Precompute all column heights once ---
         int heights[config::Board::kWidth];
@@ -101,39 +96,34 @@ class VsBeamEvaluator {
                 iso += iso_bb.popcount();
             }
 
-            r += static_cast<float>(conn) * w.connectivity_bonus;
-            r += static_cast<float>(iso) * w.isolated_penalty;
+            r += conn * w.connectivity_bonus;
+            r += iso * w.isolated_penalty;
         }
 
         // --- Buried puyo count (colored puyos beneath any ojama shadow) ---
         {
             const BitBoard& oj = board.getBitboard(Cell::Ojama);
             if (!oj.empty()) {
-                // In-register SIMD downward shadow smearing (eliminates STLF stalls)
                 __m128i s_reg = oj.m128;
                 s_reg = _mm_or_si128(s_reg, _mm_srli_epi64(s_reg, 1));
                 s_reg = _mm_or_si128(s_reg, _mm_srli_epi64(s_reg, 2));
                 s_reg = _mm_or_si128(s_reg, _mm_srli_epi64(s_reg, 4));
                 s_reg = _mm_or_si128(s_reg, _mm_srli_epi64(s_reg, 8));
 
-                // Combine all colored boards using parallel register ANDNOT (Occupied & ~Ojama)
                 __m128i all_colored = _mm_andnot_si128(oj.m128, board.getOccupied().m128);
-
                 __m128i buried_reg = _mm_and_si128(all_colored, s_reg);
 
-                // Direct register extraction to avoid any memory-store penalties
                 uint64_t b_lo = _mm_cvtsi128_si64(buried_reg);
                 uint64_t b_hi = _mm_extract_epi64(buried_reg, 1);
                 int buried =
                     static_cast<int>(std::popcount(b_lo) + std::popcount(b_hi));
-                r += static_cast<float>(buried) * w.buried_penalty;
+                r += buried * w.buried_penalty;
             }
         }
 
         // --- Potential chain score (shared implementation in potential_score.hpp) ---
         if constexpr (CalculatePotential) {
-            r += static_cast<float>(computeMaxPotentialScore(board, heights))
-                 * w.potential_score_scale;
+            r += computeMaxPotentialScore(board, heights) * w.potential_score_scale;
         }
 
         return r;

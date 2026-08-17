@@ -12,19 +12,20 @@ namespace puyotan::search {
 namespace {
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // BeamNode: one candidate board state in the beam
 // ---------------------------------------------------------------------------
 struct BeamNode {
     Board field;
-    float score;
-    float accum_score;
+    int32_t score;
+    int32_t accum_score;
     int first_action; // RL action index chosen at depth 0
 };
 
 // BeamAction, getPutActions(), getZoroActions(), and packHeights() are defined in action_table.hpp.
 
 struct ScoreIdx {
-    float score;
+    int32_t score;
     int idx;
 };
 
@@ -101,9 +102,9 @@ PlaceResult simulatePlacement(const Board& src, PuyoPiece piece,
 } // anonymous namespace
 
 template <typename ConfigType, typename EvaluatorType, bool HasFireBias = false>
-std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
-                                     const Tsumo& tsumo_const,
-                                     const ConfigType& cfg) noexcept {
+std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
+                                       const Tsumo& tsumo_const,
+                                       const ConfigType& cfg) noexcept {
     const Tsumo& tsumo = tsumo_const;
     const int tsumo_base = player.active_next_pos;
 
@@ -113,7 +114,7 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
     // In Solo mode (HasFireBias=false), this entire block is eliminated at compile time.
     // -----------------------------------------------------------------------
     int fire_best_action = -1;
-    float fire_best_score = 0.0f;
+    int32_t fire_best_score = 0;
     if constexpr (HasFireBias) {
         uint32_t packed_heights_root = packHeights(player.field);
         PuyoPiece piece0 = tsumo.get(tsumo_base + 0);
@@ -123,7 +124,7 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
             PlaceResult pr = simulatePlacement(player.field, piece0, entry, packed_heights_root);
             if (pr.dead || pr.score == 0)
                 continue;
-            float s = static_cast<float>(pr.score);
+            int32_t s = static_cast<int32_t>(pr.score);
             if (s > fire_best_score) {
                 fire_best_score = s;
                 fire_best_action = entry.idx;
@@ -139,7 +140,7 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
     tl_next_beam.reserve(static_cast<std::size_t>(cfg.beam_width) * kNumRLActions);
 
     // Seed the beam with the current board state
-    tl_current_beam.emplace_back(player.field, 0.0f, 0.0f, -1);
+    tl_current_beam.emplace_back(player.field, 0, 0, -1);
 
     for (int depth = 0; depth < cfg.look_ahead; ++depth) {
         PuyoPiece piece = tsumo.get(tsumo_base + depth);
@@ -154,10 +155,10 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                 if (pr.dead)
                     continue;
 
-                float eval = EvaluatorType::evaluate(pr.field, cfg.eval_weights);
-                float next_accum =
-                    node.accum_score + static_cast<float>(pr.score);
-                float total_score =
+                int32_t eval = EvaluatorType::evaluate(pr.field, cfg.eval_weights);
+                int32_t next_accum =
+                    node.accum_score + static_cast<int32_t>(pr.score);
+                int32_t total_score =
                     next_accum * cfg.eval_weights.potential_score_scale + eval;
 
                 int first = (depth == 0) ? entry.idx : node.first_action;
@@ -237,8 +238,9 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
     // -----------------------------------------------------------------------
     if constexpr (HasFireBias) {
         if (fire_best_action >= 0 && !tl_current_beam.empty()) {
-            const float beam_score = tl_current_beam[0].score;
-            if (fire_best_score * cfg.eval_weights.fire_bias > beam_score) {
+            const int32_t beam_score = tl_current_beam[0].score;
+            const int64_t fire_val = (static_cast<int64_t>(fire_best_score) * cfg.eval_weights.fire_bias_permille) / 1000;
+            if (fire_val > beam_score) {
                 return {fire_best_action, fire_best_score};
             }
         }
@@ -249,13 +251,13 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
         return {tl_current_beam[0].first_action, tl_current_beam[0].score};
 
     // Fallback: return action 0 (Up, col 0) if search found nothing valid
-    return {0, -10000.0f};
+    return {0, -1000000000};
 }
 
-std::pair<int, float> soloBeamSearch(const PuyotanPlayer& player,
-                                     const Tsumo& tsumo_const,
-                                     const SoloBeamConfig& cfg,
-                                     BeamSearchSession* session) noexcept {
+std::pair<int, int32_t> soloBeamSearch(const PuyotanPlayer& player,
+                                       const Tsumo& tsumo_const,
+                                       const SoloBeamConfig& cfg,
+                                       BeamSearchSession* session) noexcept {
     auto res = beamSearchImpl<SoloBeamConfig, SoloBeamEvaluator, false>(player, tsumo_const, cfg);
     if (session) {
         session->update(res.second);
@@ -263,10 +265,10 @@ std::pair<int, float> soloBeamSearch(const PuyotanPlayer& player,
     return res;
 }
 
-std::pair<int, float> vsBeamSearch(const PuyotanPlayer& player,
-                                   const Tsumo& tsumo_const,
-                                   const VsBeamConfig& cfg,
-                                   BeamSearchSession* session) noexcept {
+std::pair<int, int32_t> vsBeamSearch(const PuyotanPlayer& player,
+                                     const Tsumo& tsumo_const,
+                                     const VsBeamConfig& cfg,
+                                     BeamSearchSession* session) noexcept {
     auto res = beamSearchImpl<VsBeamConfig, VsBeamEvaluator, true>(player, tsumo_const, cfg);
     if (session) {
         session->update(res.second);

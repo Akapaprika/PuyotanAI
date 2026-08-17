@@ -58,11 +58,11 @@ def run_50step_simulation(seed: int = 1, num_moves: int = 50):
             "act_idx": int(act_idx),
             "x": int(action.x),
             "rotation": int(action.rotation),
-            "score": round(float(score), 2)
+            "score": int(score)
         }
         records.append(record)
 
-        print(f"  Move {move:2d}/50: Action={act_idx:2d} (x={action.x}, rot={int(action.rotation)}) | EvalScore={score:.1f}")
+        print(f"  Move {move:2d}/50: Action={act_idx:2d} (x={action.x}, rot={int(action.rotation)}) | EvalScore={int(score)}")
 
         # Step match forward
         match.setAction(0, action)

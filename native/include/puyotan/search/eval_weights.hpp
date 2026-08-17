@@ -11,30 +11,30 @@ namespace puyotan::search {
  * @brief Tunable weights for the solo beam search evaluation function.
  */
 struct SoloBeamEvalWeights {
-    float potential_score_scale = 1.0f;
+    int32_t potential_score_scale = 1;
 };
 
 /**
  * @struct VsBeamEvalWeights
- * @brief Tunable weights for the VS beam search evaluation function.
+ * @brief Tunable weights for the VS beam search evaluation function (integer scale).
  */
 struct VsBeamEvalWeights {
-    float potential_score_scale = 1.0f;
-    float connectivity_bonus    = 0.4f;
-    float isolated_penalty      = -0.6f;
-    float buried_penalty        = -1.5f;
-    float fire_bias             = 1.0f;
-    float incoming_ojama_penalty = -2.0f;
+    int32_t potential_score_scale      = 1;
+    int32_t connectivity_bonus         = 20;     ///< Score per connected puyo pair (+20 pts)
+    int32_t isolated_penalty           = -40;    ///< Penalty per isolated puyo (-40 pts)
+    int32_t buried_penalty             = -100;   ///< Penalty per colored puyo buried under ojama (-100 pts)
+    int32_t fire_bias_permille         = 1000;   ///< Immediate fire multiplier permille (1000 = 1.0x)
+    int32_t incoming_ojama_penalty     = -140;   ///< Penalty per incoming ojama (-140 pts)
 
-    // --- Dynamic Attack Search Bias Multipliers ---
-    float incoming_threat_bias    = 1.5f;
-    float counter_attack_bias     = 1.4f;
-    float timing_advantage_bias   = 1.2f;
+    // --- Dynamic Attack Search Bias Multipliers (Permille: 1000 = 1.0x) ---
+    int32_t incoming_threat_bias_permille    = 1500;
+    int32_t counter_attack_bias_permille     = 1400;
+    int32_t timing_advantage_bias_permille   = 1200;
 
     // --- Dynamic Evaluation Parameters ---
-    float urgency_weight            = 0.8f;
-    float lethal_danger_scale       = 1.0f;
-    float effective_strike_multiplier = 1.5f;
+    int32_t urgency_weight_permille            = 800;
+    int32_t lethal_danger_scale                = 1;
+    int32_t effective_strike_multiplier_permille = 1500;
 };
 
 /**
