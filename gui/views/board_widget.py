@@ -16,20 +16,21 @@ from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QFont, QPainterPath
 from PyQt6.QtCore import Qt, QRect, QRectF, QSize
 
 
+from .. import config
+
 # ---------------------------------------------------------------------------
-# Colour mapping: engine Cell → Qt colour.
-# Lives here so the ViewModel has zero rendering knowledge.
+# Colour mapping: engine Cell → Qt colour derived from central config.COLORS
 # ---------------------------------------------------------------------------
 CELL_COLORS: dict[p.Cell, QColor] = {
-    p.Cell.Red:    QColor(255,  60,  60),
-    p.Cell.Green:  QColor( 60, 220,  80),
-    p.Cell.Blue:   QColor( 60, 120, 255),
-    p.Cell.Yellow: QColor(255, 230,  50),
-    p.Cell.Ojama:  QColor(170, 170, 170),
-    p.Cell.Empty:  QColor(  0,   0,   0, 0),
+    p.Cell.Red:    QColor(*config.COLORS["Red"]),
+    p.Cell.Green:  QColor(*config.COLORS["Green"]),
+    p.Cell.Blue:   QColor(*config.COLORS["Blue"]),
+    p.Cell.Yellow: QColor(*config.COLORS["Yellow"]),
+    p.Cell.Ojama:  QColor(*config.COLORS["Ojama"]),
+    p.Cell.Empty:  QColor(0, 0, 0, 0),
 }
 
-GHOST_ALPHA = 120          # alpha for the ghost (pending decision) piece
+GHOST_ALPHA = config.COLORS.get("GhostAlpha", 120)
 
 # ---------------------------------------------------------------------------
 # Plain data objects — no Qt, no engine types.

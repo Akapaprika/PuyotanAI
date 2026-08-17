@@ -77,7 +77,7 @@ jobs:
       - name: Run Regression Tests on PR Branch
         shell: bash
         run: |
-          cd pr-branch/native/build_Release/Release
+          cd pr-branch/native/dist
           ./engine_benchmark.exe --regression
           ./beam_search_benchmark.exe --regression
 
@@ -109,8 +109,8 @@ jobs:
         if: steps.restore-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          if [ -d "base-branch/native/build_Release/Release" ]; then
-            cd base-branch/native/build_Release/Release
+          if [ -d "base-branch/native/dist" ] && [ -f "base-branch/native/dist/engine_benchmark.exe" ]; then
+            cd base-branch/native/dist
             ./engine_benchmark.exe --regression
             ./beam_search_benchmark.exe --regression
           else
@@ -124,7 +124,7 @@ jobs:
           mkdir -p base-branch/tests/perf
           cp pr-branch/tests/perf/run_stat_bench.py base-branch/tests/perf/run_stat_bench.py
           
-          if [ -f "base-branch/native/build_Release/Release/engine_benchmark.exe" ]; then
+          if [ -f "base-branch/native/dist/engine_benchmark.exe" ] || [ -f "base-branch/native/build_Release/Release/engine_benchmark.exe" ]; then
             python base-branch/tests/perf/run_stat_bench.py --run --iterations 30 --duration 10 --output pr-branch/base_results.json
           else
             echo "Base branch does not have the benchmark executables yet. Copying PR results as baseline (0% change)."

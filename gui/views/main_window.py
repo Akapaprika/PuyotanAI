@@ -10,7 +10,7 @@ Restart / Game Over always returns to the Setup page.
 """
 from __future__ import annotations
 
-import puyotan_native as p
+
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
@@ -25,7 +25,7 @@ from .setup_widget import SetupWidget
 from .board_widget import (
     BoardSnapshot, PieceSpec, piece_spec_from_native, CELL_COLORS
 )
-from ..agents import HumanPlayerAgent
+
 from .. import config
 
 
@@ -144,10 +144,10 @@ class MainWindow(QMainWindow):
         self._frame_counter = QLabel("0")
         self._frame_counter.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._frame_counter.setStyleSheet(
-            "font-size: 24px; font-weight: bold; color: #6366f1;"
+            "font-size: 18pt; font-weight: bold; color: #6366f1;"
         )
         f_lbl = QLabel("FRAME")
-        f_lbl.setStyleSheet("font-size: 10px; color: #94a3b8;")
+        f_lbl.setStyleSheet("font-size: 8pt; color: #94a3b8;")
         f_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         center_col.addWidget(f_lbl)
         center_col.addWidget(self._frame_counter)
@@ -185,8 +185,7 @@ class MainWindow(QMainWindow):
         """Commit agent choices, configure panels, and begin the match."""
         for pid, agent in enumerate(agents):
             self.vm.set_agent(pid, agent)
-            is_human = isinstance(agent, HumanPlayerAgent)
-            self._panels[pid].set_human_controlled(is_human)
+            self._panels[pid].set_human_controlled(agent.is_human)
 
         self.vm.model.seed = seed
         self._status_bar.set_seed(seed)

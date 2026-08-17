@@ -1,4 +1,5 @@
 #include <puyotan/search/attack_finder.hpp>
+#include <puyotan/search/action_table.hpp>
 #include <puyotan/core/chain.hpp>
 #include <puyotan/core/gravity.hpp>
 #include <puyotan/engine/scorer.hpp>
@@ -17,62 +18,7 @@ struct SearchState {
     int accum_turns;
 };
 
-struct AttackAction {
-    int idx;
-    int ax;
-    int sx;
-    int axis_dy;
-    int sub_dy;
-};
-
-const std::vector<AttackAction>& getPutActions() noexcept {
-    static const auto v = []() {
-        std::vector<AttackAction> r;
-        for (int i = 0; i < kNumRLActions; ++i) {
-            Action a = getRLAction(i);
-            if (a.type == ActionType::Put) {
-                const int rot = static_cast<int>(a.rotation) & 3;
-                const int ax = a.x;
-                const int sx = ax + kSubDx[rot];
-                const int axis_dy = kAxisDy[rot];
-                const int sub_dy = kSubDySimple[rot];
-                r.emplace_back(i, ax, sx, axis_dy, sub_dy);
-            }
-        }
-        return r;
-    }();
-    return v;
-}
-
-const std::vector<AttackAction>& getZoroActions() noexcept {
-    static const auto v = []() {
-        std::vector<AttackAction> r;
-        for (int i = 0; i < kNumRLActions; ++i) {
-            Action a = getRLAction(i);
-            if (a.type != ActionType::Put)
-                continue;
-            if (a.rotation == Rotation::Down || a.rotation == Rotation::Left)
-                continue;
-
-            const int rot = static_cast<int>(a.rotation) & 3;
-            const int ax = a.x;
-            const int sx = ax + kSubDx[rot];
-            const int axis_dy = kAxisDy[rot];
-            const int sub_dy = kSubDySimple[rot];
-            r.emplace_back(i, ax, sx, axis_dy, sub_dy);
-        }
-        return r;
-    }();
-    return v;
-}
-
-__forceinline uint32_t packHeights(const Board& field) noexcept {
-    uint32_t packed = 0;
-    for (int col = 0; col < 6; ++col) {
-        packed |= (static_cast<uint32_t>(field.getColumnHeight(col)) << (col << 2));
-    }
-    return packed;
-}
+// BeamAction, getPutActions(), getZoroActions(), and packHeights() are defined in action_table.hpp.
 
 } // anonymous namespace
 

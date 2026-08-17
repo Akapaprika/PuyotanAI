@@ -1,9 +1,9 @@
 #include <algorithm>
-#include <omp.h>
 #include <puyotan/common/types.hpp>
 #include <puyotan/core/chain.hpp>
 #include <puyotan/core/gravity.hpp>
 #include <puyotan/engine/tsumo.hpp>
+#include <puyotan/search/action_table.hpp>
 #include <puyotan/search/beam_search.hpp>
 #include <vector>
 #include <unordered_map>
@@ -12,87 +12,20 @@ namespace puyotan::search {
 namespace {
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // BeamNode: one candidate board state in the beam
 // ---------------------------------------------------------------------------
 struct BeamNode {
     Board field;
-    float score;
-    float accum_score;
+    int32_t score;
+    int32_t accum_score;
     int first_action; // RL action index chosen at depth 0
 };
 
-struct BeamAction {
-    int idx;
-    int ax;
-    int sx;
-    int axis_dy;
-    int sub_dy;
-};
-
-// Returns all Put actions precomputed, ordered from edge columns to center
-const std::vector<BeamAction>& getPutActions() noexcept {
-    static const auto v = []() {
-        std::vector<BeamAction> r;
-        for (int i = 0; i < kNumRLActions; ++i) {
-            Action a = getRLAction(i);
-            if (a.type == ActionType::Put) {
-                const int rot = static_cast<int>(a.rotation) & 3;
-                const int ax = a.x;
-                const int sx = ax + kSubDx[rot];
-                const int axis_dy = kAxisDy[rot];
-                const int sub_dy = kSubDySimple[rot];
-                r.emplace_back(i, ax, sx, axis_dy, sub_dy);
-            }
-        }
-
-        // Priority for columns from edges to center: 0, 5, 1, 4, 2, 3
-        constexpr int col_prio[6] = {0, 2, 4, 5, 3, 1};
-        std::sort(r.begin(), r.end(), [&](const BeamAction& a, const BeamAction& b) {
-            int prio_a = (std::min(col_prio[a.ax], col_prio[a.sx]) << 3) | std::max(col_prio[a.ax], col_prio[a.sx]);
-            int prio_b = (std::min(col_prio[b.ax], col_prio[b.sx]) << 3) | std::max(col_prio[b.ax], col_prio[b.sx]);
-            if (prio_a != prio_b) return prio_a < prio_b;
-            return a.idx < b.idx;
-        });
-
-        return r;
-    }();
-    return v;
-}
-
-// Returns Zoro actions precomputed, ordered from edge columns to center
-const std::vector<BeamAction>& getZoroActions() noexcept {
-    static const auto v = []() {
-        std::vector<BeamAction> r;
-        for (int i = 0; i < kNumRLActions; ++i) {
-            Action a = getRLAction(i);
-            if (a.type != ActionType::Put)
-                continue;
-            if (a.rotation == Rotation::Down || a.rotation == Rotation::Left)
-                continue;
-
-            const int rot = static_cast<int>(a.rotation) & 3;
-            const int ax = a.x;
-            const int sx = ax + kSubDx[rot];
-            const int axis_dy = kAxisDy[rot];
-            const int sub_dy = kSubDySimple[rot];
-            r.emplace_back(i, ax, sx, axis_dy, sub_dy);
-        }
-
-        constexpr int col_prio[6] = {0, 2, 4, 5, 3, 1};
-        std::sort(r.begin(), r.end(), [&](const BeamAction& a, const BeamAction& b) {
-            int prio_a = (std::min(col_prio[a.ax], col_prio[a.sx]) << 3) | std::max(col_prio[a.ax], col_prio[a.sx]);
-            int prio_b = (std::min(col_prio[b.ax], col_prio[b.sx]) << 3) | std::max(col_prio[b.ax], col_prio[b.sx]);
-            if (prio_a != prio_b) return prio_a < prio_b;
-            return a.idx < b.idx;
-        });
-
-        return r;
-    }();
-    return v;
-}
+// BeamAction, getPutActions(), getZoroActions(), and packHeights() are defined in action_table.hpp.
 
 struct ScoreIdx {
-    float score;
+    int32_t score;
     int idx;
 };
 
@@ -100,15 +33,6 @@ struct ScoreIdx {
 thread_local std::vector<ScoreIdx> tl_sort_buf;
 thread_local std::vector<BeamNode> tl_current_beam;
 thread_local std::vector<BeamNode> tl_next_beam;
-
-// Pack 6 column heights into a single 32-bit register to minimize memory spills and popcounts.
-__forceinline uint32_t packHeights(const Board& field) noexcept {
-    uint32_t packed = 0;
-    for (int col = 0; col < 6; ++col) {
-        packed |= (static_cast<uint32_t>(field.getColumnHeight(col)) << (col << 2));
-    }
-    return packed;
-}
 
 // ---------------------------------------------------------------------------
 // Simulate placing one tsumo piece (axis + sub) onto the board.
@@ -178,20 +102,20 @@ PlaceResult simulatePlacement(const Board& src, PuyoPiece piece,
 } // anonymous namespace
 
 template <typename ConfigType, typename EvaluatorType, bool HasFireBias = false>
-std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
-                                     const Tsumo& tsumo_const,
-                                     const ConfigType& cfg) noexcept {
+std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
+                                       const Tsumo& tsumo_const,
+                                       const ConfigType& cfg) noexcept {
     const Tsumo& tsumo = tsumo_const;
     const int tsumo_base = player.active_next_pos;
 
     // -----------------------------------------------------------------------
-    // Fire scan: try all actions with the current tsumo and find the best
-    // immediate chain.  This is compared against the beam result at the end
-    // to decide whether firing now is better than continuing to build.
+    // Fire scan (VS mode only): try all actions with current tsumo to find the
+    // best immediate chain for fire-vs-build comparison.
+    // In Solo mode (HasFireBias=false), this entire block is eliminated at compile time.
     // -----------------------------------------------------------------------
     int fire_best_action = -1;
-    float fire_best_score = 0.0f;
-    {
+    int32_t fire_best_score = 0;
+    if constexpr (HasFireBias) {
         uint32_t packed_heights_root = packHeights(player.field);
         PuyoPiece piece0 = tsumo.get(tsumo_base + 0);
         const bool is_zoro0 = (piece0.axis == piece0.sub);
@@ -200,7 +124,7 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
             PlaceResult pr = simulatePlacement(player.field, piece0, entry, packed_heights_root);
             if (pr.dead || pr.score == 0)
                 continue;
-            float s = static_cast<float>(pr.score);
+            int32_t s = static_cast<int32_t>(pr.score);
             if (s > fire_best_score) {
                 fire_best_score = s;
                 fire_best_action = entry.idx;
@@ -216,7 +140,7 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
     tl_next_beam.reserve(static_cast<std::size_t>(cfg.beam_width) * kNumRLActions);
 
     // Seed the beam with the current board state
-    tl_current_beam.emplace_back(player.field, 0.0f, 0.0f, -1);
+    tl_current_beam.emplace_back(player.field, 0, 0, -1);
 
     for (int depth = 0; depth < cfg.look_ahead; ++depth) {
         PuyoPiece piece = tsumo.get(tsumo_base + depth);
@@ -231,10 +155,10 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
                 if (pr.dead)
                     continue;
 
-                float eval = EvaluatorType::evaluate(pr.field, cfg.eval_weights);
-                float next_accum =
-                    node.accum_score + static_cast<float>(pr.score);
-                float total_score =
+                int32_t eval = EvaluatorType::evaluate(pr.field, cfg.eval_weights);
+                int32_t next_accum =
+                    node.accum_score + static_cast<int32_t>(pr.score);
+                int32_t total_score =
                     next_accum * cfg.eval_weights.potential_score_scale + eval;
 
                 int first = (depth == 0) ? entry.idx : node.first_action;
@@ -314,8 +238,9 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
     // -----------------------------------------------------------------------
     if constexpr (HasFireBias) {
         if (fire_best_action >= 0 && !tl_current_beam.empty()) {
-            const float beam_score = tl_current_beam[0].score;
-            if (fire_best_score * cfg.eval_weights.fire_bias > beam_score) {
+            const int32_t beam_score = tl_current_beam[0].score;
+            const int64_t fire_val = (static_cast<int64_t>(fire_best_score) * cfg.eval_weights.fire_bias_permille) / 1000;
+            if (fire_val > beam_score) {
                 return {fire_best_action, fire_best_score};
             }
         }
@@ -326,13 +251,13 @@ std::pair<int, float> beamSearchImpl(const PuyotanPlayer& player,
         return {tl_current_beam[0].first_action, tl_current_beam[0].score};
 
     // Fallback: return action 0 (Up, col 0) if search found nothing valid
-    return {0, -10000.0f};
+    return {0, -1000000000};
 }
 
-std::pair<int, float> soloBeamSearch(const PuyotanPlayer& player,
-                                     const Tsumo& tsumo_const,
-                                     const SoloBeamConfig& cfg,
-                                     BeamSearchSession* session) noexcept {
+std::pair<int, int32_t> soloBeamSearch(const PuyotanPlayer& player,
+                                       const Tsumo& tsumo_const,
+                                       const SoloBeamConfig& cfg,
+                                       BeamSearchSession* session) noexcept {
     auto res = beamSearchImpl<SoloBeamConfig, SoloBeamEvaluator, false>(player, tsumo_const, cfg);
     if (session) {
         session->update(res.second);
@@ -340,25 +265,14 @@ std::pair<int, float> soloBeamSearch(const PuyotanPlayer& player,
     return res;
 }
 
-std::pair<int, float> vsBeamSearch(const PuyotanPlayer& player,
-                                   const Tsumo& tsumo_const,
-                                   const VsBeamConfig& cfg,
-                                   BeamSearchSession* session) noexcept {
+std::pair<int, int32_t> vsBeamSearch(const PuyotanPlayer& player,
+                                     const Tsumo& tsumo_const,
+                                     const VsBeamConfig& cfg,
+                                     BeamSearchSession* session) noexcept {
     auto res = beamSearchImpl<VsBeamConfig, VsBeamEvaluator, true>(player, tsumo_const, cfg);
     if (session) {
         session->update(res.second);
     }
-    return res;
-}
-
-std::vector<std::pair<int, float>> vsBeamSearchTopN(const PuyotanPlayer& player,
-                                                    const Tsumo& tsumo_const,
-                                                    const VsBeamConfig& cfg,
-                                                    int top_n) noexcept {
-    // Basic top-N extraction fallback for Negamax candidate generation
-    auto best = vsBeamSearch(player, tsumo_const, cfg);
-    std::vector<std::pair<int, float>> res;
-    res.push_back(best);
     return res;
 }
 

@@ -1,7 +1,7 @@
 import puyotan_native as p
 from PyQt6.QtCore import QObject, pyqtSignal, QElapsedTimer
+from ai import BasePlayerAgent, HumanPlayerAgent
 from . import config
-from .agents import BasePlayerAgent, HumanPlayerAgent
 
 class PlayerPresentationState:
     """State for a single player as seen by the UI."""
@@ -43,15 +43,7 @@ class PuyotanViewModel(QObject):
         self.current_chain_scores = [0, 0]
         self.last_chain_scores = [0, 0]
         self.prev_actions = [p.ActionType.NONE, p.ActionType.NONE]
-        
-        self.p_colors = {
-            p.Cell.Red: config.COLORS["Red"],
-            p.Cell.Green: config.COLORS["Green"],
-            p.Cell.Blue: config.COLORS["Blue"],
-            p.Cell.Yellow: config.COLORS["Yellow"],
-            p.Cell.Ojama: config.COLORS["Ojama"],
-            p.Cell.Empty: config.COLORS["Empty"]
-        }
+        self.p_colors = config.get_cell_rgb()
         self.update_presentation()
 
     # ------------------------------------------------------------------
@@ -96,13 +88,6 @@ class PuyotanViewModel(QObject):
             for pid in [0, 1]:
                 if not (mask & (1 << pid)):
                     continue
-
-                # Adjust evaluation weights dynamically if the agent supports adjust_for_mode
-                if hasattr(self.agents[pid], "adjust_for_mode"):
-                    from .agents import EmptyPlayerAgent
-                    other_agent = self.agents[1 - pid]
-                    is_solo = isinstance(other_agent, EmptyPlayerAgent)
-                    self.agents[pid].adjust_for_mode(is_solo)
 
                 action = self.agents[pid].get_action(self.model, pid, self.players[pid])
                 if action is not None:
@@ -237,6 +222,7 @@ class PuyotanViewModel(QObject):
         self.prev_actions = [p.ActionType.NONE, p.ActionType.NONE]
         for pid in [0, 1]:
             self.reset_player_input(pid)
+            self.agents[pid].reset()
         self.last_step_time = self.timer.elapsed()
         self.update_presentation()
 

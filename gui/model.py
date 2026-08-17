@@ -46,6 +46,14 @@ class GameModel:
 
 
 
+    def get_tsumo(self):
+        """Return the current Tsumo sequence (live reference, clone before passing to a thread)."""
+        return self.match.getTsumo()
+
+    def get_match_snapshot(self):
+        """Return a deep clone of the current match — safe to pass to a background thread."""
+        return self.match.clone()
+
     def step(self):
         """
         Advances the match by one frame if both inputs are ready.

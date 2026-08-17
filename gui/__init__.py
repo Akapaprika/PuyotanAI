@@ -1,8 +1,7 @@
 """
 gui/__init__.py
 
-Public surface of the gui package.
+PuyotanAI GUI Package.
 """
-from .main import main
 
-__all__ = ["main"]
+__all__ = []

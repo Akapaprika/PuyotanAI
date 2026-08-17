@@ -2,7 +2,7 @@
 
 namespace puyotan {
 namespace {
-static const alignas(16) uint64_t kBoundaryMaskData[2] = {
+alignas(16) static const uint64_t kBoundaryMaskData[2] = {
     config::Board::kLoMask, config::Board::kHiMask
 };
 } // anonymous namespace

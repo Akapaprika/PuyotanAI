@@ -1,0 +1,12 @@
+# PuyotanAI Python Dependencies
+
+# C++ Python Bindings & Testing
+pybind11>=2.10.0
+pytest>=7.0.0
+
+# GUI Presentation Layer
+PyQt6>=6.4.0
+
+# Web Bot & Firebase Integration
+google-cloud-firestore>=2.11.0
+google-auth>=2.20.0

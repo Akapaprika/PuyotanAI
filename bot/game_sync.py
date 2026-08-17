@@ -121,14 +121,6 @@ class GameState:
         mask = self.match.getDecisionMask()
         return bool(mask & (1 << player_id))
 
-    def is_solo_mode(self) -> bool:
-        """両プレイヤーをBotが担当するソロモード判定。"""
-        return self.bot_players == {0, 1}
-
-    def already_submitted(self, player_id: int) -> bool:
-        """指定プレイヤーの手がすでに現フレームに登録済みか。"""
-        return self.current_frame in self.action_maps[player_id]
-
     def get_player_state(self, player_id: int) -> p.PuyotanPlayer:
         return self.match.getPlayer(player_id)
 

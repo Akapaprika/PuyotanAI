@@ -1,0 +1,65 @@
+name: CI & Regression Test Suite
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'native/**'
+      - 'gui/**'
+      - 'bot/**'
+      - 'tests/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'native/**'
+      - 'gui/**'
+      - 'bot/**'
+      - 'tests/**'
+      - '.github/workflows/ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build & Run Full Test Suite
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build C++ Native (Release)
+        shell: cmd
+        run: |
+          cd native
+          call build.bat
+
+      - name: Run C++ Native Regression Executables
+        shell: cmd
+        run: |
+          cd native\dist
+          engine_benchmark.exe --regression
+          beam_search_benchmark.exe -r
+
+      - name: Run Master Verification Suite (run_all_tests.py)
+        run: |
+          python tests/run_all_tests.py
+
+      - name: Verify Bot Seed & Protocol Sync
+        run: |
+          python -m bot.verify_seed
