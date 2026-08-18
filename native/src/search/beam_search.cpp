@@ -12,7 +12,6 @@ namespace puyotan::search {
 namespace {
 
 // ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
 // BeamNode: one candidate board state in the beam
 // ---------------------------------------------------------------------------
 struct BeamNode {
@@ -69,10 +68,6 @@ PlaceResult simulatePlacement(const Board& src, PuyoPiece piece,
     res.field.dropPiecePairFast(ax, sx, y_axis, y_sub, piece.axis, piece.sub);
 
     // Resolve chain
-    // 【超強力最適化】
-    // 1ステップ目の連鎖判定のみ、新しく置いたぷよの色（最大2色）だけで接続判定を走らせます。
-    // これにより、連鎖が起きない約90%のノードにおいて、scanGroups
-    // の処理コストが 50%〜75% 削減されます。
     ErasureData ed;
     Chain::scanGroups(res.field, ed, piece.dirty_flag);
     while (ed.num_erased > 0) {
@@ -80,16 +75,10 @@ PlaceResult simulatePlacement(const Board& src, PuyoPiece piece,
         res.score += Scorer::calculateStepScore(ed, res.chain);
         Chain::applyErasure(res.field, ed);
 
-        // 2ステップ目（連鎖が継続したとき）以降は、おじゃまや他の色ぷよが連動して消える可能性があるため、
-        // 4色すべて（kAllColorsMask）をターゲットにして通常通り解決します。
         uint32_t fallen = Gravity::execute(res.field);
         Chain::scanGroups(res.field, ed, fallen);
     }
 
-    // Death check (deferred until after all chains resolve).
-    // Must be AFTER chain resolution: a chain can clear puyos from the death
-    // cell (col 2, row 11), allowing the player to survive a seemingly fatal
-    // placement.
     if (res.field.isOccupied(config::Rule::kDeathCol, config::Rule::kDeathRow))
         [[unlikely]] {
         res.dead = true;
@@ -108,11 +97,6 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
     const Tsumo& tsumo = tsumo_const;
     const int tsumo_base = player.active_next_pos;
 
-    // -----------------------------------------------------------------------
-    // Fire scan (VS mode only): try all actions with current tsumo to find the
-    // best immediate chain for fire-vs-build comparison.
-    // In Solo mode (HasFireBias=false), this entire block is eliminated at compile time.
-    // -----------------------------------------------------------------------
     int fire_best_action = -1;
     int32_t fire_best_score = 0;
     if constexpr (HasFireBias) {
@@ -169,7 +153,6 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
         if (tl_next_beam.empty())
             break;
 
-        // Calculate dynamic target beam width for current depth (tapered search)
         int target_beam_width = cfg.beam_width;
         if (cfg.min_beam_width_ratio < 1.0f && cfg.look_ahead > 1) {
             if (depth <= cfg.full_beam_depth) {
@@ -184,11 +167,13 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
             }
         }
 
-        // Sort descending by score and trim to target_beam_width using lightweight index sort
         int keep = std::min(static_cast<int>(tl_next_beam.size()), target_beam_width);
-        tl_sort_buf.resize(tl_next_beam.size());
+
+        // 【最適化 ①】resize によるゼロクリアを完全排除し、push_back で直接構築
+        tl_sort_buf.clear();
+        tl_sort_buf.reserve(tl_next_beam.size());
         for (std::size_t i = 0; i < tl_next_beam.size(); ++i) {
-            tl_sort_buf[i] = {tl_next_beam[i].score, static_cast<int>(i)};
+            tl_sort_buf.push_back({tl_next_beam[i].score, static_cast<int>(i)});
         }
 
         if (cfg.dbs_max_similar >= 1) {
@@ -215,27 +200,28 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
                 }
             }
         } else {
-            std::nth_element(tl_sort_buf.begin(), tl_sort_buf.begin() + keep,
-                             tl_sort_buf.end(),
-                             [](const ScoreIdx& a, const ScoreIdx& b) {
-                                 return a.score > b.score;
-                             });
+            // 【最適化 ③】keep < size の時だけ nth_element を実行
+            if (keep < static_cast<int>(tl_sort_buf.size())) {
+                std::nth_element(tl_sort_buf.begin(), tl_sort_buf.begin() + keep,
+                                 tl_sort_buf.end(),
+                                 [](const ScoreIdx& a, const ScoreIdx& b) {
+                                     return a.score > b.score;
+                                 });
+            }
 
             std::sort(tl_sort_buf.begin(), tl_sort_buf.begin() + keep,
                       [](const ScoreIdx& a, const ScoreIdx& b) {
                           return a.score > b.score;
                       });
 
-            tl_current_beam.resize(keep);
+            // 【最適化 ②】resize(keep) による 108B×keep 個のゼロクリアを完全排除
+            tl_current_beam.clear();
             for (int i = 0; i < keep; ++i) {
-                tl_current_beam[i] = std::move(tl_next_beam[tl_sort_buf[i].idx]);
+                tl_current_beam.push_back(std::move(tl_next_beam[tl_sort_buf[i].idx]));
             }
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Fire-vs-beam decision (VS mode only):
-    // -----------------------------------------------------------------------
     if constexpr (HasFireBias) {
         if (fire_best_action >= 0 && !tl_current_beam.empty()) {
             const int32_t beam_score = tl_current_beam[0].score;
@@ -246,11 +232,9 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
         }
     }
 
-    // Return the action and its expected score from the best surviving leaf
     if (!tl_current_beam.empty() && tl_current_beam[0].first_action >= 0)
         return {tl_current_beam[0].first_action, tl_current_beam[0].score};
 
-    // Fallback: return action 0 (Up, col 0) if search found nothing valid
     return {0, -1000000000};
 }
 
