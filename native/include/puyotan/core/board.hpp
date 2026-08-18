@@ -23,9 +23,6 @@ static constexpr uint64_t kPdepLut[16] = {
     0x0001000100000000ULL, 0x0001000100000001ULL, 0x0001000100010000ULL,
     0x0001000100010001ULL};
 
-/**
- * @struct BitBoard
- */
 struct alignas(16) BitBoard {
     union {
         __m128i m128;
@@ -33,7 +30,7 @@ struct alignas(16) BitBoard {
             uint64_t lo;
             uint64_t hi;
         };
-        uint16_t cols[8]; ///< 16-bit lane per column (Cols 0-5 active, 6-7 padding)
+        uint16_t cols[8];
     };
 
     BitBoard() noexcept : m128(_mm_setzero_si128()) {}
@@ -77,7 +74,6 @@ struct alignas(16) BitBoard {
         return _mm_testz_si128(m128, m128) != 0;
     }
 
-    // Direct 16-bit lane access (No 64-bit shift math needed)
     [[nodiscard]] __forceinline bool get(int x, int y) const noexcept {
         assert(x >= 0 && x < config::Board::kWidth);
         assert(y >= 0 && y < config::Board::kHeight + 1);
@@ -103,17 +99,11 @@ struct alignas(16) BitBoard {
         return static_cast<int>(std::popcount(lo) + std::popcount(hi));
     }
 
-    /**
-     * @brief 高速SIMD版 LSB抽出 (4命令版)
-     * lo & -lo は lo == 0 のとき元から 0 となるため、下位レーンは無加工のままで良い。
-     * 上位レーンのみ (lo == 0) のときだけ通過させるマスクを punpcklqdq で作成して AND する。
-     */
     [[nodiscard]] __forceinline BitBoard extractLSB() const noexcept {
         const __m128i zero = _mm_setzero_si128();
         const __m128i neg  = _mm_sub_epi64(zero, m128);
         const __m128i lsb  = _mm_and_si128(m128, neg);
         const __m128i cmp  = _mm_cmpeq_epi64(m128, zero);
-        // mask: lower 64-bit = all 1s (0xFFFFFFFFFFFFFFFF), upper 64-bit = (lo == 0 ? ~0 : 0)
         const __m128i mask = _mm_unpacklo_epi64(_mm_set1_epi32(-1), cmp);
         return _mm_and_si128(lsb, mask);
     }
@@ -130,38 +120,45 @@ struct alignas(16) BitBoard {
     [[nodiscard]] __forceinline BitBoard shiftLeftRaw() const noexcept {
         return _mm_srli_si128(m128, 2);
     }
-    [[nodiscard]] __forceinline BitBoard shiftUp() const noexcept {
-        return _mm_and_si128(
-            shiftUpRaw().m128,
-            _mm_set_epi64x(config::Board::kHiMask, config::Board::kLoMask));
-    }
-    [[nodiscard]] __forceinline BitBoard shiftDown() const noexcept {
-        return _mm_and_si128(
-            shiftDownRaw().m128,
-            _mm_set_epi64x(config::Board::kHiMask, config::Board::kLoMask));
-    }
-    [[nodiscard]] __forceinline BitBoard shiftRight() const noexcept {
-        return _mm_and_si128(
-            shiftRightRaw().m128,
-            _mm_set_epi64x(config::Board::kHiMask, config::Board::kLoMask));
-    }
-    [[nodiscard]] __forceinline BitBoard shiftLeft() const noexcept {
-        return _mm_and_si128(
-            shiftLeftRaw().m128,
-            _mm_set_epi64x(config::Board::kHiMask, config::Board::kLoMask));
-    }
 };
 
-/**
- * @class Board
- */
 class Board {
   public:
     Board() noexcept = default;
 
-    Cell get(int x, int y) const noexcept;
-    void set(int x, int y, Cell color) noexcept;
-    void clear(int x, int y) noexcept;
+    [[nodiscard]] __forceinline Cell get(int x, int y) const noexcept {
+        assert(x >= 0 && x < config::Board::kWidth);
+        assert(y >= 0 && y < config::Board::kHeight + 1);
+        const int b1  = (boards_[1].cols[x] >> y) & 1;
+        const int b2  = (boards_[2].cols[x] >> y) & 1;
+        const int b3  = (boards_[3].cols[x] >> y) & 1;
+        const int b4  = (boards_[4].cols[x] >> y) & 1;
+        const int occ = (occupancy_.cols[x] >> y) & 1;
+        return static_cast<Cell>(b1 + (b2 * 2) + (b3 * 3) + (b4 * 4) + (5 * (1 - occ)));
+    }
+
+    __forceinline void set(int x, int y, Cell color) noexcept {
+        assert(color != Cell::Empty);
+        assert(x >= 0 && x < config::Board::kWidth);
+        assert(y >= 0 && y < config::Board::kHeight + 1);
+        const uint16_t bit = static_cast<uint16_t>(1U << y);
+        const uint16_t clear_mask = static_cast<uint16_t>(~bit);
+        for (auto& bb : boards_) {
+            bb.cols[x] &= clear_mask;
+        }
+        boards_[toIndex(color)].cols[x] |= bit;
+        occupancy_.cols[x] |= bit;
+    }
+
+    __forceinline void clear(int x, int y) noexcept {
+        assert(x >= 0 && x < config::Board::kWidth);
+        assert(y >= 0 && y < config::Board::kHeight + 1);
+        const uint16_t clear_mask = static_cast<uint16_t>(~(1U << y));
+        for (auto& bb : boards_) {
+            bb.cols[x] &= clear_mask;
+        }
+        occupancy_.cols[x] &= clear_mask;
+    }
 
     void setRowMask(int y, Cell cell, uint32_t cols_mask) noexcept {
         const uint64_t target_lo = kPdepLut[cols_mask & 0x0Fu] << y;
@@ -172,17 +169,18 @@ class Board {
         occupancy_.hi |= target_hi;
     }
 
-    void placePiece(int col, Cell color) noexcept;
+    /// ★ 完全インライン化: 発生行(13)への配置を 1命令の 16bit OR にコンパイル
+    __forceinline void placePiece(int col, Cell color) noexcept {
+        assert(col >= 0 && col < config::Board::kWidth);
+        set(col, config::Board::kSpawnRow, color);
+    }
 
-    /**
-     * @brief 単一の 16-bit ロード + POPCNT のみで実行 (2命令)
-     */
-    inline int getColumnHeight(int x) const noexcept {
+    [[nodiscard]] __forceinline int getColumnHeight(int x) const noexcept {
         assert(x >= 0 && x < config::Board::kWidth);
         return static_cast<int>(_mm_popcnt_u32(occupancy_.cols[x]));
     }
 
-    inline void dropNewPiece(int x, int y, Cell color) noexcept {
+    __forceinline void dropNewPiece(int x, int y, Cell color) noexcept {
         assert(x >= 0 && x < config::Board::kWidth);
         assert(toIndex(color) >= 0 && toIndex(color) < config::Board::kNumColors);
         const uint16_t bit = static_cast<uint16_t>((1U << y) & config::Board::kVisibleColMask);
@@ -190,10 +188,7 @@ class Board {
         occupancy_.cols[x] |= bit;
     }
 
-    /**
-     * @brief 高速ペア落下 (BMI1 _blsi + 16bit直接アクセス版)
-     */
-    inline void dropPiecePair(int col, Rotation r, Cell color_axis, Cell color_sub, int& out_h_axis, int& out_h_sub) noexcept {
+    __forceinline void dropPiecePair(int col, Rotation r, Cell color_axis, Cell color_sub, int& out_h_axis, int& out_h_sub) noexcept {
         const int r_idx = static_cast<int>(r);
         const int x_axis = col;
         const int x_sub = col + kSubDx[r_idx];
@@ -201,7 +196,6 @@ class Board {
         const uint32_t lane_axis = occupancy_.cols[x_axis];
         const uint32_t lane_sub  = occupancy_.cols[x_sub];
 
-        // 1番目の空きビット: BMI1 _blsi_u32 (~lane)
         const uint32_t bit1_axis = _blsi_u32(~lane_axis);
         const uint32_t bit1_sub  = _blsi_u32(~lane_sub);
 
@@ -222,10 +216,7 @@ class Board {
         occupancy_.cols[x_sub]  |= bit_sub;
     }
 
-    /**
-     * @brief 高速ペア落下 (事前計算済み高さ版 / 分岐レス)
-     */
-    inline void dropPiecePairFast(int ax, int sx, int y_axis, int y_sub, Cell color_axis, Cell color_sub) noexcept {
+    __forceinline void dropPiecePairFast(int ax, int sx, int y_axis, int y_sub, Cell color_axis, Cell color_sub) noexcept {
         const uint16_t bit_axis = static_cast<uint16_t>((1U << y_axis) & config::Board::kVisibleColMask);
         const uint16_t bit_sub  = static_cast<uint16_t>((1U << y_sub)  & config::Board::kVisibleColMask);
 
@@ -236,7 +227,7 @@ class Board {
         occupancy_.cols[sx] |= bit_sub;
     }
 
-    [[nodiscard]] inline const BitBoard& getBitboard(Cell color) const noexcept {
+    [[nodiscard]] __forceinline const BitBoard& getBitboard(Cell color) const noexcept {
         return boards_[static_cast<int>(color)];
     }
 
@@ -245,12 +236,19 @@ class Board {
         return (occupancy_.cols[x] >> y) & 1;
     }
 
-    void setBitboard(Cell color, const BitBoard& bb) noexcept;
-    void updateOccupancyFromBoards() noexcept;
+    void setBitboard(Cell color, const BitBoard& bb) noexcept {
+        boards_[toIndex(color)] = bb;
+    }
+    void updateOccupancyFromBoards() noexcept {
+        const __m128i or01   = _mm_or_si128(boards_[0].m128, boards_[1].m128);
+        const __m128i or23   = _mm_or_si128(boards_[2].m128, boards_[3].m128);
+        const __m128i or0123 = _mm_or_si128(or01, or23);
+        occupancy_.m128      = _mm_or_si128(or0123, boards_[4].m128);
+    }
     void updateOccupancy(const BitBoard& bb) noexcept {
         occupancy_ = bb;
     }
-    const BitBoard& getOccupied() const noexcept {
+    [[nodiscard]] const BitBoard& getOccupied() const noexcept {
         return occupancy_;
     }
 

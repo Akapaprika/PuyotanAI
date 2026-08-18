@@ -3,28 +3,22 @@
 #include <puyotan/core/board.hpp>
 
 namespace puyotan {
-/**
- * @class Gravity
- * @brief Utility class for processing world-class bitwise gravity.
- *
- * Provides static methods to simulate vertical puyo falling.
- */
+
 class Gravity {
   public:
-    /**
-     * @brief Drops all puyos until they hit the bottom or another puyo.
-     * @param board The board to process.
-     * @return A bitmask of all colors that actually moved during this step.
-     * @note Performance: O(Columns) using SIMD/SWAR-PEXT compaction.
-     */
     static uint32_t execute(Board& board) noexcept;
 
-    /**
-     * @brief Fast-check if any puyos are currently in a floating state.
-     * @param board The board to check.
-     * @return True if at least one puyo can fall.
-     * @note Performance: O(1) using SIMD bit-shifting.
-     */
-    static bool canFall(const Board& board) noexcept;
+    /// ★ ヘッダーインライン化: わずか 5命令の SIMD 判定を直接埋め込み
+    [[nodiscard]] static __forceinline bool canFall(const Board& board) noexcept {
+        const __m128i occ = board.getOccupied().m128;
+        const __m128i shifted = _mm_srli_epi64(occ, 1);
+        const __m128i boundary = _mm_set1_epi64x(0x8000800080008000ULL);
+
+        const __m128i can_fall_bits =
+            _mm_andnot_si128(occ, _mm_andnot_si128(boundary, shifted));
+
+        return !_mm_testz_si128(can_fall_bits, can_fall_bits);
+    }
 };
+
 } // namespace puyotan

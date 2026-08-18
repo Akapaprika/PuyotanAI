@@ -83,16 +83,4 @@ uint32_t Gravity::execute(Board& board) noexcept {
     return fallen_mask;
 }
 
-bool Gravity::canFall(const Board& board) noexcept {
-    const __m128i occ = board.getOccupied().m128;
-    const __m128i shifted = _mm_srli_epi64(occ, 1);
-    const __m128i boundary = _mm_set1_epi64x(0x8000800080008000ULL);
-
-    // shifted & ~boundary & ~occ
-    const __m128i can_fall_bits =
-        _mm_andnot_si128(occ, _mm_andnot_si128(boundary, shifted));
-
-    return !_mm_testz_si128(can_fall_bits, can_fall_bits);
-}
-
 } // namespace puyotan
