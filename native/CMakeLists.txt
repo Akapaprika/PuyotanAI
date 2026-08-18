@@ -15,7 +15,6 @@ set(PYBIND11_FINDPYTHON ON)
 find_package(Python REQUIRED COMPONENTS Interpreter Development)
 find_package(pybind11 CONFIG REQUIRED)
 
-
 # ---------------------------------------------------------
 # Targets Definitions
 # ---------------------------------------------------------
@@ -53,9 +52,10 @@ set(ALL_TARGETS
 )
 
 if (MSVC)
-    # Clear default exception handling flag (/EHsc) to avoid D9025 command-line override warnings
+    # Clear default flags to avoid warnings
     string(REPLACE "/EHsc" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
     string(REPLACE "/EHsc" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
+    string(REPLACE "/Ob2" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
 
     foreach(T IN LISTS ALL_TARGETS)
         set_property(TARGET ${T} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
@@ -66,7 +66,7 @@ if (MSVC)
         
         if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
             # -------------------------------------------------------------
-            # Clang-CL (LLVM) Optimization Flags
+            # Clang-CL (LLVM) Peak Optimization Flags
             # -------------------------------------------------------------
             target_compile_options(${T} PRIVATE
                 $<$<CONFIG:Debug>: /Od /Zi /RTC1 -Wno-everything >
@@ -74,9 +74,14 @@ if (MSVC)
                     /O2 /arch:AVX2 /fp:fast /DNDEBUG /FS
                     /clang:-O3
                     /clang:-march=znver1
+                    /clang:-flto=thin
+                    /clang:-fomit-frame-pointer
+                    /clang:-fstrict-aliasing
+                    /clang:-fno-math-errno
                     /clang:-funroll-loops
                     /clang:-fvectorize
                     /clang:-ffast-math
+                    /clang:-mllvm /clang:-inline-threshold=600
                     -Wno-everything
                 >
             )
@@ -106,7 +111,7 @@ if (MSVC)
     # Re-enable Exception Handling for pybind11 module target
     target_compile_options(puyotan_native PRIVATE $<$<CONFIG:Release>: /EHsc >)
 
-    # Linker Options
+    # Linker Options (lld-link 用にクリーン化)
     set(LINK_TARGETS puyotan_native engine_benchmark beam_search_benchmark)
     foreach(LT IN LISTS LINK_TARGETS)
         target_link_options(${LT} PRIVATE
@@ -126,7 +131,7 @@ else()
         set_property(TARGET ${T} PROPERTY INTERPROCEDURAL_OPTIMIZATION $<$<CONFIG:Release>:TRUE>)
         target_precompile_headers(${T} PRIVATE include/puyotan/pch.hpp)
         target_compile_options(${T} PRIVATE
-            $<$<CONFIG:Release>: -O3 -flto -march=native -ffast-math -funroll-loops -DNDEBUG >
+            $<$<CONFIG:Release>: -O3 -flto=thin -march=native -ffast-math -funroll-loops -fomit-frame-pointer -DNDEBUG >
         )
     endforeach()
 endif()
