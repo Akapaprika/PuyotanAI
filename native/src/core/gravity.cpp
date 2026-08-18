@@ -53,28 +53,22 @@ uint32_t Gravity::execute(Board& board) noexcept {
         const uint32_t mask_hi = (occ_lane >> 8) & 0xFFu;
         const int shift_hi     = static_cast<int>(_mm_popcnt_u32(mask_lo));
         const int total_cnt    = shift_hi + static_cast<int>(_mm_popcnt_u32(mask_hi));
+        const uint16_t new_occ = static_cast<uint16_t>((1u << total_cnt) - 1u);
 
-        const uint16_t new_occ = static_cast<uint16_t>((1u << total_cnt) - 1u) & config::Board::kVisibleColMask;
-
-        // ★ 完全ループレス: 8-bit Split PEXT-LUT により各色を一撃で落下
         for (int i = 0; i < config::Board::kNumColors; ++i) {
             const uint16_t lane = board.boards_[i].cols[col];
-            if (lane == 0) {
-                continue;
-            }
+            if (lane == 0) continue;
 
             const uint32_t val_lo = lane & 0xFFu;
             const uint32_t val_hi = (lane >> 8) & 0xFFu;
 
-            // テーブル参照 2回 + シフト 1回 + OR 1回 で落下完了！
             const uint16_t compacted = static_cast<uint16_t>(
                 kPext8.data[mask_lo][val_lo] | (kPext8.data[mask_hi][val_hi] << shift_hi)
             );
 
-            if (compacted != lane) {
-                fallen_mask |= (1u << i);
-                board.boards_[i].cols[col] = compacted;
-            }
+            // ブランチレス: 無条件代入 + フラグ更新
+            fallen_mask |= static_cast<uint32_t>(compacted != lane) << i;
+            board.boards_[i].cols[col] = compacted;
         }
 
         board.occupancy_.cols[col] = new_occ;

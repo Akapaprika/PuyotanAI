@@ -42,9 +42,9 @@ void Chain::scanGroups(const Board& board, ErasureData& erasure_data,
         const BitBoard deg_ge2 =
             color_board & (ud_and | lr_and | (ud_or & lr_or));
 
-        const BitBoard d2_ud = deg_ge2.shiftUpRaw() | deg_ge2.shiftDownRaw();
-        const BitBoard d2_lr = deg_ge2.shiftLeftRaw() | deg_ge2.shiftRightRaw();
-        const BitBoard d2_adjacent = deg_ge2 & (d2_ud | d2_lr);
+        // ★ 上と左の 2シフトのみで判定 (下・右シフトと余計なORを完全排除)
+        const BitBoard d2_adjacent =
+            deg_ge2 & (deg_ge2.shiftUpRaw() | deg_ge2.shiftLeftRaw());
 
         BitBoard true_seeds = deg_ge3 | d2_adjacent;
         if (true_seeds.empty()) {
@@ -112,7 +112,7 @@ void Chain::scanGroups(const Board& board, ErasureData& erasure_data,
     erasure_data.num_colors =
         static_cast<int>(_mm_popcnt_u32(erased_color_bits));
 
-    // おじゃまぷよ消去（完全分岐レスに戻して分岐予測ミスを排除）
+    // おじゃまぷよ消去（完全分岐レス）
     if (erasure_data.num_erased > 0) {
         const BitBoard ojama = board.getBitboard(Cell::Ojama);
         if (!ojama.empty()) {
@@ -132,14 +132,12 @@ void Chain::scanGroups(const Board& board, ErasureData& erasure_data,
             const __m128i adj = _mm_and_si128(combined, boundary_mask);
             const __m128i oj_erased = _mm_and_si128(ojama.m128, adj);
 
-            // 分岐なしでそのままOR
             erasure_data.total_erased.m128 =
                 _mm_or_si128(erasure_data.total_erased.m128, oj_erased);
         }
     }
 }
 
-/// ★ 完全アンロール (分岐0個・ストレートライン SIMD)
 void Chain::applyErasure(Board& board, const ErasureData& data) noexcept {
     for (int i = 0; i < config::Board::kNumColors; ++i) {
         board.boards_[i].andNot(data.total_erased);

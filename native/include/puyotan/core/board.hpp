@@ -196,18 +196,20 @@ class Board {
         const uint32_t lane_axis = occupancy_.cols[x_axis];
         const uint32_t lane_sub  = occupancy_.cols[x_sub];
 
+        // 各列の 1番目の空きマス（着地ビット）を取得
         const uint32_t bit1_axis = _blsi_u32(~lane_axis);
         const uint32_t bit1_sub  = _blsi_u32(~lane_sub);
 
         out_h_axis = std::countr_zero(bit1_axis);
         out_h_sub  = std::countr_zero(bit1_sub);
 
-        const bool is_same_col = (x_axis == x_sub);
-        const int use_2nd_axis = static_cast<int>(is_same_col && (r == Rotation::Down));
-        const int use_2nd_sub  = static_cast<int>(is_same_col && (r == Rotation::Up));
+        // ★ 上に乗る側だけシフト量を 1 (1段上)、下側や横置きは 0 (空きマスそのまま)
+        const int use_2nd_axis = static_cast<int>(r == Rotation::Down);
+        const int use_2nd_sub  = static_cast<int>(r == Rotation::Up);
 
+        // シフトを適用し、表示領域（0〜12行）マスクをかける
         const uint16_t bit_axis = static_cast<uint16_t>((bit1_axis << use_2nd_axis) & config::Board::kVisibleColMask);
-        const uint16_t bit_sub  = static_cast<uint16_t>((bit1_sub << use_2nd_sub) & config::Board::kVisibleColMask);
+        const uint16_t bit_sub  = static_cast<uint16_t>((bit1_sub  << use_2nd_sub)  & config::Board::kVisibleColMask);
 
         boards_[static_cast<int>(color_axis)].cols[x_axis] |= bit_axis;
         boards_[static_cast<int>(color_sub)].cols[x_sub]   |= bit_sub;
