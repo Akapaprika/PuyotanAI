@@ -38,7 +38,7 @@ class Chain {
     static void applyErasure(Board& board, const ErasureData& data) noexcept;
 
     [[nodiscard]] static __forceinline bool canFire(const Board& board,
-                                                    uint32_t color_mask = kAllColorsMask) noexcept {
+                                                uint32_t color_mask = kAllColorsMask) noexcept {
         const __m128i chainable_mask = _mm_set_epi64x(
             config::Board::kChainableHiMask, config::Board::kChainableLoMask);
 
@@ -60,15 +60,14 @@ class Chain {
             const BitBoard D = color_board.shiftDownRaw();
             const BitBoard R = color_board.shiftRightRaw();
 
-            const BitBoard ud_and = U & D;
-            const BitBoard ud_or  = U | D;
-            const BitBoard lr_and = L & R;
-            const BitBoard lr_or  = L | R;
+            // ★ ブール束因数分解: 共通項 X と Y を計算
+            const BitBoard X = (U & D) | (L & R); // 3連の中心 (縦または横)
+            const BitBoard Y = (U | D) & (L | R); // L字の角 (縦かつ横)
 
-            const BitBoard deg_ge3 =
-                color_board & ((ud_and & lr_or) | (lr_and & ud_or));
-            const BitBoard deg_ge2 =
-                color_board & (ud_and | lr_and | (ud_or & lr_or));
+            // deg_ge3 = X & Y, deg_ge2 = X | Y (わずか 2本の命令で両方完成！)
+            const BitBoard deg_ge3 = color_board & (X & Y);
+            const BitBoard deg_ge2 = color_board & (X | Y);
+
             const BitBoard d2_adjacent =
                 deg_ge2 & (deg_ge2.shiftUpRaw() | deg_ge2.shiftLeftRaw());
 
