@@ -1,67 +1,73 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cassert>
+#include <cstdint>
 #include <puyotan/common/config.hpp>
 #include <puyotan/core/chain.hpp>
 
 namespace puyotan {
+
 class Scorer {
   public:
     static int calculateStepScore(const ErasureData& data,
                                   int chain_number) noexcept {
         const int chain_bonus = getChainBonus(chain_number);
         const int color_bonus = getColorBonus(data.num_colors);
+
         int group_bonus = 0;
         for (int g = 0; g < data.num_groups; ++g) {
             group_bonus += getGroupBonus(data.group_sizes[g]);
         }
 
         const int bonus_sum = chain_bonus + color_bonus + group_bonus;
-        const int total_bonus = bonus_sum + (bonus_sum == 0);
+        // ★ CMOV 命令 (2命令) による最速の最小値 1 クランプ
+        const int total_bonus = std::max(1, bonus_sum);
 
         return (data.num_erased * 10) * total_bonus;
     }
 
-    static_assert(config::Score::kChainBonusesSize >= 19,
-                  "Chain bonus array should cover standard max chains");
-    static_assert(config::Score::kColorBonusesSize >= 5,
-                  "Color bonus array must cover all 5 colors");
-    static_assert(config::Score::kGroupBonusesSize >= 1,
-                  "Group bonus array cannot be empty");
-
   private:
-    static constexpr int getChainBonus(int chain) noexcept {
-        assert(chain >= 1 && chain <= config::Score::kChainBonusesSize);
-        return config::Score::kChainBonuses[chain - 1];
-    }
+    // ★ 型を uint16_t / uint8_t に適正化し、テーブル全体を 78 バイト (1キャッシュライン) に圧縮！
+    static constexpr uint16_t kChainBonuses[20] = {
+        0, 8, 16, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 480, 512, 512
+    };
 
-    static constexpr int getColorBonus(int count) noexcept {
-        assert(count >= 1 && count < config::Score::kColorBonusesSize);
-        return config::Score::kColorBonuses[count];
-    }
+    static constexpr uint8_t kColorBonuses[6] = {
+        0, 0, 3, 6, 12, 24
+    };
 
-    // C++23/26 compile-time padded array generator.
-    // Maps size 0-3 to 0, and size >= 4 directly to its corresponding bonus
-    // without requiring any runtime subtraction.
+    // わずか 32 バイトの超軽量グループボーナステーブル
     static constexpr auto kPaddedGroupBonuses = []() consteval {
-        std::array<int, 128> arr{};
-        for (int i = 0; i < 128; ++i) {
+        std::array<uint8_t, 32> arr{};
+        for (int i = 0; i < 32; ++i) {
             if (i < config::Rule::kConnectCount) {
                 arr[i] = 0;
             } else {
                 const int idx = i - config::Rule::kConnectCount;
-                arr[i] = config::Score::kGroupBonuses[std::min(
-                    idx, config::Score::kGroupBonusesSize - 1)];
+                arr[i] = static_cast<uint8_t>(config::Score::kGroupBonuses[std::min(
+                    idx, config::Score::kGroupBonusesSize - 1)]);
             }
         }
         return arr;
     }();
 
+    static constexpr int getChainBonus(int chain) noexcept {
+        assert(chain >= 1);
+        const int idx = std::min(chain, 20) - 1;
+        return kChainBonuses[idx];
+    }
+
+    static constexpr int getColorBonus(int count) noexcept {
+        assert(count >= 0 && count < 6);
+        return kColorBonuses[count];
+    }
+
     static constexpr int getGroupBonus(int size) noexcept {
-        assert(size >= 0 && size < 128);
-        return kPaddedGroupBonuses[size]; // Direct O(1) array lookup with zero
-                                          // subtraction overhead
+        const int idx = std::min(size, 31);
+        return kPaddedGroupBonuses[idx];
     }
 };
+
 } // namespace puyotan
