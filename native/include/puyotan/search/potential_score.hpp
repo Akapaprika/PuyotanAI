@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <immintrin.h>
 #include <puyotan/common/config.hpp>
 #include <puyotan/core/board.hpp>
@@ -36,8 +37,14 @@ namespace puyotan::search {
             if (!neighbor.get(x, h))
                 continue;
 
-            BitBoard probed_bb = chainable_bb;
-            probed_bb.cols[x] |= static_cast<uint16_t>(1U << h);
+            // =========================================================
+            // ★ 128ビット一括合成 (Store-to-Load Forwarding Stall ゼロ)
+            // =========================================================
+            const __m128i point_mask = (x < 4)
+                ? _mm_set_epi64x(0, 1ULL << ((x << 4) + h))
+                : _mm_set_epi64x(1ULL << (((x - 4) << 4) + h), 0);
+
+            const BitBoard probed_bb = _mm_or_si128(chainable_bb.m128, point_mask);
 
             const BitBoard U = probed_bb.shiftUpRaw();
             const BitBoard L = probed_bb.shiftLeftRaw();
@@ -74,8 +81,7 @@ namespace puyotan::search {
                 Chain::scanGroups(temp, ed, fallen);
             }
 
-            if (pot_score > max_pot_score)
-                max_pot_score = pot_score;
+            max_pot_score = std::max(max_pot_score, pot_score);
         }
     }
 
