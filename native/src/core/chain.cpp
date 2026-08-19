@@ -17,11 +17,10 @@ void Chain::scanGroups(const Board& board, ErasureData& erasure_data,
         const int i = std::countr_zero(temp_mask);
         const Cell c = static_cast<Cell>(i);
 
-        // 1. 純粋な SIMD (GPR往復なし) でマスク
         const BitBoard color_board =
             _mm_and_si128(board.getBitboard(c).m128, chainable_mask);
 
-        // 2. 2連結チェック (上と左の2シフトのみ・最速のSIMD早期判定)
+        // 2連結チェック (上・左の2シフトのみ)
         const BitBoard U = color_board.shiftUpRaw();
         const BitBoard L = color_board.shiftLeftRaw();
         if ((color_board & (U | L)).empty()) {
@@ -32,17 +31,13 @@ void Chain::scanGroups(const Board& board, ErasureData& erasure_data,
         const BitBoard D = color_board.shiftDownRaw();
         const BitBoard R = color_board.shiftRightRaw();
 
-        const BitBoard ud_and = U & D;
-        const BitBoard ud_or  = U | D;
-        const BitBoard lr_and = L & R;
-        const BitBoard lr_or  = L | R;
+        // ★ ブール代数の因数分解による最速シード抽出 (8命令 → 6命令)
+        const BitBoard X = (U & D) | (L & R); // 縦または横の3連中心
+        const BitBoard Y = (U | D) & (L | R); // 縦かつ横の直交隣接
 
-        const BitBoard deg_ge3 =
-            color_board & ((ud_and & lr_or) | (lr_and & ud_or));
-        const BitBoard deg_ge2 =
-            color_board & (ud_and | lr_and | (ud_or & lr_or));
+        const BitBoard deg_ge3 = color_board & (X & Y); // T字・十字
+        const BitBoard deg_ge2 = color_board & (X | Y); // 2個以上の隣接
 
-        // ★ 上と左の 2シフトのみで判定 (下・右シフトと余計なORを完全排除)
         const BitBoard d2_adjacent =
             deg_ge2 & (deg_ge2.shiftUpRaw() | deg_ge2.shiftLeftRaw());
 
@@ -54,7 +49,7 @@ void Chain::scanGroups(const Board& board, ErasureData& erasure_data,
 
         const __m128i cb_mask = color_board.m128;
 
-        // ★ 全シード並列一括拡張 (複数シードから同時に Flood Fill)
+        // 全シード並列一括拡張
         BitBoard group = true_seeds;
         BitBoard prev;
         do {
@@ -70,39 +65,31 @@ void Chain::scanGroups(const Board& board, ErasureData& erasure_data,
 
         const int sz = group.popcount();
 
-        // ★ 定理: 7個以下なら 100% 単一グループ確定 (4+4=8 のため)
-        // 98% 以上のケースで LSB ループをスキップ
+        // ★ 1. 共通処理を一括確定 (if/else の重複を完全撤廃)
+        erasure_data.total_erased |= group;
+        erasure_data.num_erased   += sz;
+        erased_color_bits         |= (1u << i);
+
+        // ★ 2. グループサイズの記録
         if (sz < 8) {
-            erasure_data.group_sizes[erasure_data.num_groups++] =
-                static_cast<uint8_t>(sz);
-            erasure_data.num_erased += sz;
-            erasure_data.total_erased |= group;
-            erased_color_bits |= (1u << i);
+            erasure_data.group_sizes[erasure_data.num_groups++] = static_cast<uint8_t>(sz);
         } else {
-            // レアケース (8個以上 / 同色複数グループ) のみ分離
-            BitBoard remaining = true_seeds;
-            while (!remaining.empty()) {
-                BitBoard g = remaining.extractLSB();
+            // 探索対象を group 自体に絞って各成分のサイズを記録
+            BitBoard rem = group;
+            while (!rem.empty()) {
+                BitBoard g = rem.extractLSB();
                 BitBoard p;
                 do {
                     p = g;
                     const __m128i v = g.m128;
-                    const __m128i ud =
-                        _mm_or_si128(_mm_slli_epi64(v, 1), _mm_srli_epi64(v, 1));
-                    const __m128i lr =
-                        _mm_or_si128(_mm_slli_si128(v, 2), _mm_srli_si128(v, 2));
-                    g.m128 = _mm_and_si128(
-                        _mm_or_si128(v, _mm_or_si128(ud, lr)), cb_mask);
+                    const __m128i ud = _mm_or_si128(_mm_slli_epi64(v, 1), _mm_srli_epi64(v, 1));
+                    const __m128i lr = _mm_or_si128(_mm_slli_si128(v, 2), _mm_srli_si128(v, 2));
+                    g.m128 = _mm_and_si128(_mm_or_si128(v, _mm_or_si128(ud, lr)), group.m128);
                 } while (g != p);
 
                 const int single_sz = g.popcount();
-                erasure_data.group_sizes[erasure_data.num_groups++] =
-                    static_cast<uint8_t>(single_sz);
-                erasure_data.num_erased += single_sz;
-                erasure_data.total_erased |= g;
-                erased_color_bits |= (1u << i);
-
-                remaining.andNot(g);
+                erasure_data.group_sizes[erasure_data.num_groups++] = static_cast<uint8_t>(single_sz);
+                rem.andNot(g);
             }
         }
 
@@ -112,7 +99,7 @@ void Chain::scanGroups(const Board& board, ErasureData& erasure_data,
     erasure_data.num_colors =
         static_cast<int>(_mm_popcnt_u32(erased_color_bits));
 
-    // おじゃまぷよ消去（完全分岐レス）
+    // おじゃまぷよ消去
     if (erasure_data.num_erased > 0) {
         const BitBoard ojama = board.getBitboard(Cell::Ojama);
         if (!ojama.empty()) {
