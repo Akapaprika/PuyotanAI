@@ -36,10 +36,9 @@ static_assert(sizeof(CandidateNode) == 16, "CandidateNode must be exactly 16 byt
 // DynamicFlatCountTable: beam_width に応じて安全に拡張するフラットハッシュ
 // ---------------------------------------------------------------------------
 struct DynamicFlatCountTable {
-    struct Entry {
+    struct alignas(8) Entry {
         uint32_t key;
-        int count;
-        uint32_t gen;
+        uint32_t meta; // 下位16bit: count, 上位16bit: gen
     };
     std::vector<Entry> table;
     uint32_t mask = 0;
@@ -51,30 +50,38 @@ struct DynamicFlatCountTable {
             cap <<= 1;
         }
         if (table.size() != cap) {
-            table.assign(cap, Entry{0, 0, 0});
+            table.assign(cap, Entry{0, 0});
             mask = static_cast<uint32_t>(cap - 1);
             current_gen = 1;
         }
     }
 
     void clear() noexcept {
-        if (++current_gen == 0) [[unlikely]] {
+        if (++current_gen >= 65535) [[unlikely]] {
             std::memset(table.data(), 0, table.size() * sizeof(Entry));
             current_gen = 1;
         }
     }
 
-    int get_and_inc(uint32_t key) noexcept {
-        // フィボナッチハッシュで全スロットに均等分散
+    __forceinline int get_and_inc(uint32_t key) noexcept {
         std::size_t idx = (static_cast<uint64_t>(key) * 0x9E3779B97F4A7C15ULL) >> 32 & mask;
-        while (table[idx].gen == current_gen) {
-            if (table[idx].key == key) {
-                return table[idx].count++;
+        const uint32_t target_gen = current_gen << 16;
+        while (true) {
+            const uint32_t m = table[idx].meta;
+            if ((m & 0xFFFF0000u) == target_gen) {
+                if (table[idx].key == key) {
+                    const int c = m & 0xFFFFu;
+                    table[idx].meta = m + 1; // count部分のみインクリメント
+                    return c;
+                }
+            } else {
+                // 空き、または古い世代のセルを上書き
+                table[idx].key = key;
+                table[idx].meta = target_gen | 1u;
+                return 0;
             }
             idx = (idx + 1) & mask;
         }
-        table[idx] = {key, 1, current_gen};
-        return 0;
     }
 };
 
