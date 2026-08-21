@@ -26,9 +26,11 @@ struct alignas(16) CandidateNode {
     int32_t score;
     int32_t accum_score;
     uint32_t packed_heights;
-    int16_t parent_idx;
-    uint8_t action_idx;
-    uint8_t is_zoro;
+    
+    // ★ 4バイト(32bit)の空間をビット単位で分割し、16バイト境界を死守する
+    uint32_t parent_idx : 24; // 最大 16,777,215 まで許容 (40000でも全く問題なし)
+    uint32_t action_idx : 7;  // 0〜127 (必要なのは0〜21)
+    uint32_t is_zoro    : 1;  // 0〜1 (フラグ)
 };
 static_assert(sizeof(CandidateNode) == 16, "CandidateNode must be exactly 16 bytes");
 
@@ -202,9 +204,9 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
                     total_score,
                     next_accum,
                     next_packed_h,
-                    static_cast<int16_t>(p_idx),
+                    static_cast<uint32_t>(p_idx),
                     a_idx,
-                    static_cast<uint8_t>(is_zoro)
+                    static_cast<uint32_t>(is_zoro)
                 });
             }
         }
