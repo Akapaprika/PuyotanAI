@@ -21,16 +21,11 @@ struct BeamNode {
     uint32_t packed_heights;
 };
 
-// 16バイトに収まる軽量候補記述子 (AMD 3020e の L2 キャッシュ 512KB に余裕で収まる)
-struct alignas(16) CandidateNode {
+struct ScoreIdx {
     int32_t score;
-    int32_t accum_score;
     uint32_t packed_heights;
-    int16_t parent_idx;
-    uint8_t action_idx;
-    uint8_t is_zoro;
+    int idx;
 };
-static_assert(sizeof(CandidateNode) == 16, "CandidateNode must be exactly 16 bytes");
 
 // ---------------------------------------------------------------------------
 // DynamicFlatCountTable: beam_width に応じて安全に拡張するフラットハッシュ
@@ -85,10 +80,10 @@ struct DynamicFlatCountTable {
     }
 };
 
-thread_local std::vector<CandidateNode> tl_candidates;
-thread_local std::vector<BeamNode>      tl_current_beam;
-thread_local std::vector<BeamNode>      tl_prev_beam;
-thread_local DynamicFlatCountTable      tl_dbs_table;
+thread_local std::vector<ScoreIdx>    tl_sort_buf;
+thread_local std::vector<BeamNode>    tl_current_beam;
+thread_local std::vector<BeamNode>    tl_next_beam;
+thread_local DynamicFlatCountTable    tl_dbs_table;
 
 struct PlaceResult {
     Board field;
@@ -109,6 +104,7 @@ PlaceResult simulatePlacement(const Board& src, PuyoPiece piece,
     const int y_axis = h_axis + action.axis_dy;
     const int y_sub  = h_sub + action.sub_dy;
 
+    // 【修正】正しい境界チェック（元の判定に完全復元）
     if (y_axis >= config::Board::kTotalRows || y_sub >= config::Board::kTotalRows) [[unlikely]] {
         return {Board{}, 0, 0, true};
     }
@@ -168,11 +164,11 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
     tl_current_beam.clear();
     tl_current_beam.reserve(static_cast<std::size_t>(cfg.beam_width));
 
-    tl_prev_beam.clear();
-    tl_prev_beam.reserve(static_cast<std::size_t>(cfg.beam_width));
+    tl_next_beam.clear();
+    tl_next_beam.reserve(static_cast<std::size_t>(cfg.beam_width) * kNumRLActions);
 
-    tl_candidates.clear();
-    tl_candidates.reserve(static_cast<std::size_t>(cfg.beam_width) * kNumRLActions);
+    tl_sort_buf.clear();
+    tl_sort_buf.reserve(static_cast<std::size_t>(cfg.beam_width) * kNumRLActions);
 
     if (cfg.dbs_max_similar >= 1) {
         tl_dbs_table.ensure_capacity(static_cast<std::size_t>(cfg.beam_width));
@@ -184,18 +180,14 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
         PuyoPiece piece = tsumo.get(tsumo_base + depth);
         const bool is_zoro = (piece.axis == piece.sub);
         
-        tl_candidates.clear();
+        tl_next_beam.clear();
+        tl_sort_buf.clear();
 
-        const auto actions = is_zoro ? getZoroActions() : getPutActions();
-        const int current_size = static_cast<int>(tl_current_beam.size());
-
-        // Phase 1: 候補の生成と評価（盤面は保存せず 16B の候補記述子のみ収集）
-        for (int p_idx = 0; p_idx < current_size; ++p_idx) {
-            const BeamNode& node = tl_current_beam[p_idx];
+        const auto& actions = is_zoro ? getZoroActions() : getPutActions();
+        for (const BeamNode& node : tl_current_beam) {
             const uint32_t cur_heights = node.packed_heights;
 
-            for (uint8_t a_idx = 0; a_idx < static_cast<uint8_t>(actions.size()); ++a_idx) {
-                const auto& entry = actions[a_idx];
+            for (const auto& entry : actions) {
                 PlaceResult pr = simulatePlacement(node.field, piece, entry, cur_heights);
                 if (pr.dead)
                     continue;
@@ -203,20 +195,17 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
                 int32_t eval = EvaluatorType::evaluate(pr.field, cfg.eval_weights);
                 int32_t next_accum = node.accum_score + static_cast<int32_t>(pr.score);
                 int32_t total_score = next_accum * cfg.eval_weights.potential_score_scale + eval;
-                uint32_t next_packed_h = packHeights(pr.field);
+                int first = (depth == 0) ? entry.idx : node.first_action;
 
-                tl_candidates.push_back(CandidateNode{
-                    total_score,
-                    next_accum,
-                    next_packed_h,
-                    static_cast<int16_t>(p_idx),
-                    a_idx,
-                    static_cast<uint8_t>(is_zoro)
-                });
+                uint32_t next_packed_h = packHeights(pr.field);
+                int next_idx = static_cast<int>(tl_next_beam.size());
+
+                tl_next_beam.emplace_back(pr.field, total_score, next_accum, first, next_packed_h);
+                tl_sort_buf.push_back({total_score, next_packed_h, next_idx});
             }
         }
 
-        if (tl_candidates.empty())
+        if (tl_next_beam.empty())
             break;
 
         int target_beam_width = cfg.beam_width;
@@ -233,62 +222,42 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
             }
         }
 
-        const int keep = std::min(static_cast<int>(tl_candidates.size()), target_beam_width);
+        const int keep = std::min(static_cast<int>(tl_next_beam.size()), target_beam_width);
 
-        // Phase 2: 上位候補の選別と、勝ち残った盤面のみの実体化
         if (cfg.dbs_max_similar >= 1) {
-            std::sort(tl_candidates.begin(), tl_candidates.end(),
-                      [](const CandidateNode& a, const CandidateNode& b) noexcept {
+            std::sort(tl_sort_buf.begin(), tl_sort_buf.end(),
+                      [](const ScoreIdx& a, const ScoreIdx& b) noexcept {
                           return a.score > b.score;
                       });
 
             tl_dbs_table.clear();
 
-            tl_prev_beam.swap(tl_current_beam);
             tl_current_beam.clear();
-
-            for (const auto& item : tl_candidates) {
+            for (const auto& item : tl_sort_buf) {
                 if (tl_dbs_table.get_and_inc(item.packed_heights) < cfg.dbs_max_similar) {
-                    const auto& parent = tl_prev_beam[item.parent_idx];
-                    const auto act_list = item.is_zoro ? getZoroActions() : getPutActions();
-                    const auto& act = act_list[item.action_idx];
-                    
-                    PlaceResult pr = simulatePlacement(parent.field, piece, act, parent.packed_heights);
-                    int first = (depth == 0) ? act.idx : parent.first_action;
-                    
-                    tl_current_beam.emplace_back(pr.field, item.score, item.accum_score, first, item.packed_heights);
+                    tl_current_beam.push_back(std::move(tl_next_beam[item.idx]));
                     if (static_cast<int>(tl_current_beam.size()) == keep) {
                         break;
                     }
                 }
             }
         } else {
-            if (keep < static_cast<int>(tl_candidates.size())) {
-                std::nth_element(tl_candidates.begin(), tl_candidates.begin() + keep,
-                                 tl_candidates.end(),
-                                 [](const CandidateNode& a, const CandidateNode& b) noexcept {
+            if (keep < static_cast<int>(tl_sort_buf.size())) {
+                std::nth_element(tl_sort_buf.begin(), tl_sort_buf.begin() + keep,
+                                 tl_sort_buf.end(),
+                                 [](const ScoreIdx& a, const ScoreIdx& b) noexcept {
                                      return a.score > b.score;
                                  });
             }
 
-            std::sort(tl_candidates.begin(), tl_candidates.begin() + keep,
-                      [](const CandidateNode& a, const CandidateNode& b) noexcept {
+            std::sort(tl_sort_buf.begin(), tl_sort_buf.begin() + keep,
+                      [](const ScoreIdx& a, const ScoreIdx& b) noexcept {
                           return a.score > b.score;
                       });
 
-            tl_prev_beam.swap(tl_current_beam);
             tl_current_beam.clear();
-
             for (int i = 0; i < keep; ++i) {
-                const auto& item = tl_candidates[i];
-                const auto& parent = tl_prev_beam[item.parent_idx];
-                const auto act_list = item.is_zoro ? getZoroActions() : getPutActions();
-                const auto& act = act_list[item.action_idx];
-                
-                PlaceResult pr = simulatePlacement(parent.field, piece, act, parent.packed_heights);
-                int first = (depth == 0) ? act.idx : parent.first_action;
-                
-                tl_current_beam.emplace_back(pr.field, item.score, item.accum_score, first, item.packed_heights);
+                tl_current_beam.push_back(std::move(tl_next_beam[tl_sort_buf[i].idx]));
             }
         }
     }
