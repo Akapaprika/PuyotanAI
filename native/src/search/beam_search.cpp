@@ -21,14 +21,15 @@ struct BeamNode {
     uint32_t packed_heights;
 };
 
-// 16バイトに収まる軽量候補記述子 (AMD 3020e の L2 キャッシュ 512KB に余裕で収まる)
+// 16バイトに収まる軽量候補記述子
+// ビットフィールドにより parent_idx を 24bit (最大 16,777,215) まで拡張
 struct alignas(16) CandidateNode {
     int32_t score;
     int32_t accum_score;
     uint32_t packed_heights;
-    int16_t parent_idx;
-    uint8_t action_idx;
-    uint8_t is_zoro;
+    uint32_t parent_idx : 24; // 24bit (最大 16,777,215 まで安全に格納可能)
+    uint32_t action_idx : 7;  // 7bit  (0〜127, アクション数最大22に対して十分)
+    uint32_t is_zoro    : 1;  // 1bit  (0 or 1)
 };
 static_assert(sizeof(CandidateNode) == 16, "CandidateNode must be exactly 16 bytes");
 
@@ -47,6 +48,7 @@ struct DynamicFlatCountTable {
 
     void ensure_capacity(std::size_t required_capacity) {
         std::size_t cap = 2048;
+        // 負荷率を抑えて無限ループ・衝突多発を防ぐため 2倍以上の2冪を確保
         while (cap < required_capacity * 2) {
             cap <<= 1;
         }
@@ -168,7 +170,8 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
     tl_candidates.reserve(static_cast<std::size_t>(cfg.beam_width) * kNumRLActions);
 
     if (cfg.dbs_max_similar >= 1) {
-        tl_dbs_table.ensure_capacity(static_cast<std::size_t>(cfg.beam_width));
+        // 全候補数 (beam_width * kNumRLActions) が入っても破綻しない容量を確保
+        tl_dbs_table.ensure_capacity(static_cast<std::size_t>(cfg.beam_width) * kNumRLActions);
     }
 
     tl_current_beam.emplace_back(player.field, 0, 0, -1, packed_heights_root);
@@ -182,7 +185,7 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
         const auto actions = is_zoro ? getZoroActions() : getPutActions();
         const int current_size = static_cast<int>(tl_current_beam.size());
 
-        // Phase 1: 候補の生成と評価（盤面は保存せず 16B の候補記述子のみ収集）
+        // Phase 1: 候補の生成と評価
         for (int p_idx = 0; p_idx < current_size; ++p_idx) {
             const BeamNode& node = tl_current_beam[p_idx];
             const uint32_t cur_heights = node.packed_heights;
@@ -202,9 +205,9 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
                     total_score,
                     next_accum,
                     next_packed_h,
-                    static_cast<int16_t>(p_idx),
+                    static_cast<uint32_t>(p_idx),
                     a_idx,
-                    static_cast<uint8_t>(is_zoro)
+                    static_cast<uint32_t>(is_zoro ? 1 : 0)
                 });
             }
         }
