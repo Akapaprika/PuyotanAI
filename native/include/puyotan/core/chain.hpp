@@ -205,7 +205,12 @@ class Chain {
         }
     }
 
-    static void applyErasure(Board& board, const ErasureData& data) noexcept;
+    static __forceinline void applyErasure(Board& board, const ErasureData& data) noexcept {
+        for (int i = 0; i < config::Board::kNumColors; ++i) {
+            board.boards_[i].andNot(data.total_erased);
+        }
+        board.occupancy_.andNot(data.total_erased);
+    }
 
     [[nodiscard]] static __forceinline bool canFire(const Board& board,
                                                 uint32_t color_mask = kAllColorsMask) noexcept {

@@ -83,6 +83,37 @@ void PuyotanMatch::start() noexcept {
     status_ = MatchStatus::Playing;
 }
 
+bool PuyotanMatch::setAction(int player_id, Action action) noexcept {
+    assert(status_ == MatchStatus::Playing &&
+           "Cannot set action to match not in PLAYING status");
+    auto& p = players_[player_id];
+    assert(p.current_action.action.type == ActionType::None &&
+           "Action already set for this player in this turn");
+    switch (action.type) {
+        case ActionType::Pass:
+            p.current_action = {action, 0};
+            return true;
+        case ActionType::Put:
+            p.current_action = {action, 1};
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool PuyotanMatch::canStepNextFrame() const noexcept {
+    const int playing = static_cast<int>(status_ == MatchStatus::Playing);
+    const int p0_ready = static_cast<int>(players_[0].current_action.action.type != ActionType::None);
+    const int p1_ready = static_cast<int>(players_[1].current_action.action.type != ActionType::None);
+
+    return (playing & p0_ready & p1_ready) != 0;
+}
+
+PuyoPiece PuyotanMatch::getPiece(int player_id, int index_offset) const noexcept {
+    int32_t idx = players_[player_id].active_next_pos + index_offset;
+    return tsumo_.get(idx);
+}
+
 void PuyotanMatch::stepNextFrame() noexcept {
     if (!canStepNextFrame())
         return;
@@ -265,48 +296,7 @@ int PuyotanMatch::stepUntilDecision() noexcept {
     return 0;
 }
 
-int64_t PuyotanMatch::runBatch(int num_games, uint32_t seed) noexcept {
-    int64_t total_frames = 0;
-    // 6 at col 5, 6 at 4, 6 at 3, etc.
-    const int move_plan[] = {5, 5, 5, 5, 5, 5, 4, 4, 4,
-                             4, 4, 4, 3, 3, 3, 3, 3, 3};
-    const int num_moves = sizeof(move_plan) / sizeof(move_plan[0]);
 
-    for (int i = 0; i < num_games; ++i) {
-        PuyotanMatch match(seed + static_cast<uint32_t>(i));
-        match.start();
-        int p_move = 0;
-
-        while (match.getStatus() == MatchStatus::Playing) {
-            bool action_set = false;
-
-            if (match.players_[0].current_action.action.type ==
-                ActionType::None) {
-                int col = (p_move < num_moves) ? move_plan[p_move] : 2;
-                Action act{ActionType::Put, static_cast<int8_t>(col),
-                           Rotation::Up};
-
-                if (match.setAction(0, act) && match.setAction(1, act)) {
-                    ++p_move;
-                    action_set = true;
-                }
-            }
-
-            if (match.canStepNextFrame()) {
-                match.stepNextFrame();
-                ++total_frames;
-            } else if (!action_set) {
-                // デッドロック防止
-                break;
-            }
-
-            // Failsafe
-            if (match.frame_ > 3000)
-                break;
-        }
-    }
-    return total_frames;
-}
 
 inline int fast_modulo(uint32_t val, int max) noexcept {
     struct Magic {
