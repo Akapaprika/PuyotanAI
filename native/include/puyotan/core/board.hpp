@@ -21,7 +21,7 @@ struct alignas(16) BitBoard {
         uint16_t cols[8];
     };
 
-    BitBoard() noexcept : m128(_mm_setzero_si128()) {}
+    constexpr BitBoard() noexcept : lo(0), hi(0) {}
     constexpr BitBoard(uint64_t l, uint64_t h) noexcept : lo(l), hi(h) {}
     BitBoard(__m128i m) noexcept : m128(m) {}
 

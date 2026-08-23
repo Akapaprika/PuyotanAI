@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <immintrin.h>
 #include <puyotan/common/config.hpp>
 #include <puyotan/core/board.hpp>
@@ -9,6 +10,25 @@
 #include <puyotan/engine/scorer.hpp>
 
 namespace puyotan::search {
+
+namespace detail {
+// 6列 x 16行 = 96エントリ (1.5KB, L1Dキャッシュに完全常駐)
+constexpr auto makePointMasks() {
+    std::array<std::array<BitBoard, 16>, config::Board::kWidth> masks{};
+    for (int x = 0; x < config::Board::kWidth; ++x) {
+        for (int h = 0; h < 16; ++h) {
+            if (x < 4) {
+                masks[x][h] = BitBoard(1ULL << ((x << 4) + h), 0);
+            } else {
+                masks[x][h] = BitBoard(0, 1ULL << (((x - 4) << 4) + h));
+            }
+        }
+    }
+    return masks;
+}
+} // namespace detail
+
+inline constexpr auto kPointMasks = detail::makePointMasks();
 
 [[nodiscard]] inline int computeMaxPotentialScore(
     const Board& board,
@@ -37,12 +57,8 @@ namespace puyotan::search {
             if (!neighbor.get(x, h))
                 continue;
 
-            // =========================================================
-            // ★ 128ビット一括合成 (Store-to-Load Forwarding Stall ゼロ)
-            // =========================================================
-            const __m128i point_mask = (x < 4)
-                ? _mm_set_epi64x(0, 1ULL << ((x << 4) + h))
-                : _mm_set_epi64x(1ULL << (((x - 4) << 4) + h), 0);
+            // ★ 動的計算を撤廃し、定数テーブルから 1 命令で直接ロード
+            const __m128i point_mask = kPointMasks[x][h].m128;
 
             const BitBoard probed_bb = _mm_or_si128(chainable_bb.m128, point_mask);
 
