@@ -61,7 +61,7 @@ class BeamConfigLoader {
             cfg.look_ahead = section["look_ahead"].get<int>();
 
         if (section.contains("dbs_max_similar") && section["dbs_max_similar"].is_number_integer())
-            cfg.dbs_max_similar = section["dbs_max_similar"].get<int>();
+            cfg.dbs_max_similar = std::clamp(section["dbs_max_similar"].get<int>(), 0, 65535);
 
         if (section.contains("full_beam_depth") && section["full_beam_depth"].is_number_integer())
             cfg.full_beam_depth = section["full_beam_depth"].get<int>();
@@ -72,6 +72,7 @@ class BeamConfigLoader {
         if (section.contains("eval_weights") && section["eval_weights"].is_object())
             applyPatch(cfg.eval_weights, section["eval_weights"]);
 
+        cfg.recompute_beam_widths();
         return cfg;
     }
 
@@ -89,7 +90,7 @@ class BeamConfigLoader {
             cfg.look_ahead = section["look_ahead"].get<int>();
 
         if (section.contains("dbs_max_similar") && section["dbs_max_similar"].is_number_integer())
-            cfg.dbs_max_similar = section["dbs_max_similar"].get<int>();
+            cfg.dbs_max_similar = std::clamp(section["dbs_max_similar"].get<int>(), 0, 65535);
 
         if (section.contains("full_beam_depth") && section["full_beam_depth"].is_number_integer())
             cfg.full_beam_depth = section["full_beam_depth"].get<int>();
@@ -100,6 +101,7 @@ class BeamConfigLoader {
         if (section.contains("eval_weights") && section["eval_weights"].is_object())
             applyPatch(cfg.eval_weights, section["eval_weights"]);
 
+        cfg.recompute_beam_widths();
         return cfg;
     }
 

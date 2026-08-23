@@ -58,6 +58,30 @@ struct SoloBeamConfig {
     int   full_beam_depth      = 2;
     float min_beam_width_ratio = 1.0f;
     SoloBeamEvalWeights eval_weights;
+    std::array<int, 64> target_beam_widths{};
+
+    SoloBeamConfig() noexcept { recompute_beam_widths(); }
+
+    void recompute_beam_widths() noexcept {
+        look_ahead = std::clamp(look_ahead, 1, 64);
+        dbs_max_similar = std::clamp(dbs_max_similar, 0, 65535);
+        const int max_lookahead = look_ahead;
+        if (min_beam_width_ratio < 1.0f && look_ahead > 1) {
+            const float max_decay_steps = static_cast<float>(look_ahead - 1 - full_beam_depth);
+            const float inv_decay = (max_decay_steps > 0.0f) ? (1.0f / max_decay_steps) : 0.0f;
+            for (int d = 0; d < max_lookahead; ++d) {
+                if (d <= full_beam_depth) {
+                    target_beam_widths[d] = beam_width;
+                } else {
+                    const float progress = static_cast<float>(d - full_beam_depth) * inv_decay;
+                    const float ratio = 1.0f - (1.0f - min_beam_width_ratio) * progress;
+                    target_beam_widths[d] = std::max(1, static_cast<int>(beam_width * ratio));
+                }
+            }
+        } else {
+            target_beam_widths.fill(beam_width);
+        }
+    }
 };
 
 /**
@@ -73,6 +97,30 @@ struct VsBeamConfig {
     bool  enable_attack_search = true;
     VsBeamEvalWeights eval_weights;
     VsEvalContext     context;
+    std::array<int, 64> target_beam_widths{};
+
+    VsBeamConfig() noexcept { recompute_beam_widths(); }
+
+    void recompute_beam_widths() noexcept {
+        look_ahead = std::clamp(look_ahead, 1, 64);
+        dbs_max_similar = std::clamp(dbs_max_similar, 0, 65535);
+        const int max_lookahead = look_ahead;
+        if (min_beam_width_ratio < 1.0f && look_ahead > 1) {
+            const float max_decay_steps = static_cast<float>(look_ahead - 1 - full_beam_depth);
+            const float inv_decay = (max_decay_steps > 0.0f) ? (1.0f / max_decay_steps) : 0.0f;
+            for (int d = 0; d < max_lookahead; ++d) {
+                if (d <= full_beam_depth) {
+                    target_beam_widths[d] = beam_width;
+                } else {
+                    const float progress = static_cast<float>(d - full_beam_depth) * inv_decay;
+                    const float ratio = 1.0f - (1.0f - min_beam_width_ratio) * progress;
+                    target_beam_widths[d] = std::max(1, static_cast<int>(beam_width * ratio));
+                }
+            }
+        } else {
+            target_beam_widths.fill(beam_width);
+        }
+    }
 };
 
 } // namespace puyotan::search

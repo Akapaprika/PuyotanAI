@@ -212,7 +212,8 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("dbs_max_similar",       &search::SoloBeamConfig::dbs_max_similar)
         .def_readwrite("full_beam_depth",       &search::SoloBeamConfig::full_beam_depth)
         .def_readwrite("min_beam_width_ratio",   &search::SoloBeamConfig::min_beam_width_ratio)
-        .def_readwrite("eval_weights",          &search::SoloBeamConfig::eval_weights);
+        .def_readwrite("eval_weights",          &search::SoloBeamConfig::eval_weights)
+        .def("recompute_beam_widths",           &search::SoloBeamConfig::recompute_beam_widths);
 
     pybind11::class_<search::VsBeamConfig>(m, "VsBeamConfig")
         .def(pybind11::init<>())
@@ -223,7 +224,8 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("min_beam_width_ratio",   &search::VsBeamConfig::min_beam_width_ratio)
         .def_readwrite("enable_attack_search",  &search::VsBeamConfig::enable_attack_search)
         .def_readwrite("eval_weights",          &search::VsBeamConfig::eval_weights)
-        .def_readwrite("context",               &search::VsBeamConfig::context);
+        .def_readwrite("context",               &search::VsBeamConfig::context)
+        .def("recompute_beam_widths",           &search::VsBeamConfig::recompute_beam_widths);
 
     m.def("load_solo_config", &search::BeamConfigLoader::loadSolo, pybind11::arg("path"),
           "Load SoloBeamConfig from JSON");

@@ -55,6 +55,8 @@ class _BaseBeamAgent(_AsyncSearchMixin, BasePlayerAgent):
             cfg.look_ahead = self._look_ahead
         if self._dbs_max_similar is not None and self._dbs_max_similar >= 0:
             cfg.dbs_max_similar = self._dbs_max_similar
+        if hasattr(cfg, 'recompute_beam_widths'):
+            cfg.recompute_beam_widths()
 
     def reset(self) -> None:
         self.reset_search()

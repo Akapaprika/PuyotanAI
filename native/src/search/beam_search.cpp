@@ -38,14 +38,17 @@ static_assert(sizeof(CandidateNode) == 16, "CandidateNode must be exactly 16 byt
 // DynamicFlatCountTable: beam_width に応じて安全に拡張するフラットハッシュ
 // ---------------------------------------------------------------------------
 struct DynamicFlatCountTable {
-    struct Entry {
+    // 1エントリをジャスト 8 バイト (64bit) に圧縮し、キャッシュヒット率を向上
+    struct alignas(8) Entry {
         uint32_t key;
-        int count;
-        uint32_t gen;
+        uint16_t count;
+        uint16_t gen;
     };
+    static_assert(sizeof(Entry) == 8, "Entry must be exactly 8 bytes");
+
     std::vector<Entry> table;
     uint32_t mask = 0;
-    uint32_t current_gen = 1;
+    uint16_t current_gen = 1;
 
     void ensure_capacity(std::size_t required_capacity) {
         std::size_t cap = 2048;
@@ -72,6 +75,7 @@ struct DynamicFlatCountTable {
         std::size_t idx = (static_cast<uint64_t>(key) * 0x9E3779B97F4A7C15ULL) >> 32 & mask;
         while (table[idx].gen == current_gen) {
             if (table[idx].key == key) {
+                assert(table[idx].count < 65535);
                 return table[idx].count++;
             }
             idx = (idx + 1) & mask;
@@ -138,6 +142,8 @@ template <typename ConfigType, typename EvaluatorType, bool HasFireBias = false>
 std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
                                        const Tsumo& tsumo_const,
                                        const ConfigType& cfg) noexcept {
+    assert(cfg.dbs_max_similar <= 65535 && "dbs_max_similar must not exceed 65535");
+
     const Tsumo& tsumo = tsumo_const;
     const int tsumo_base = player.active_next_pos;
 
@@ -172,7 +178,7 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
     tl_candidates.reserve(static_cast<std::size_t>(cfg.beam_width) * kNumRLActions);
 
     if (cfg.dbs_max_similar >= 1) {
-        tl_dbs_table.ensure_capacity(static_cast<std::size_t>(cfg.beam_width) * kNumRLActions);
+        tl_dbs_table.ensure_capacity(static_cast<std::size_t>(cfg.beam_width));
     }
 
     tl_current_beam.emplace_back(player.field, 0, 0, -1, packed_heights_root);
@@ -222,20 +228,7 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
         if (tl_candidates.empty())
             break;
 
-        int target_beam_width = cfg.beam_width;
-        if (cfg.min_beam_width_ratio < 1.0f && cfg.look_ahead > 1) {
-            if (depth <= cfg.full_beam_depth) {
-                target_beam_width = cfg.beam_width;
-            } else {
-                const float max_decay_steps = static_cast<float>(cfg.look_ahead - 1 - cfg.full_beam_depth);
-                if (max_decay_steps > 0.0f) {
-                    const float progress = static_cast<float>(depth - cfg.full_beam_depth) / max_decay_steps;
-                    const float ratio = 1.0f - (1.0f - cfg.min_beam_width_ratio) * progress;
-                    target_beam_width = std::max(1, static_cast<int>(cfg.beam_width * ratio));
-                }
-            }
-        }
-
+        const int target_beam_width = cfg.target_beam_widths[depth];
         const int keep = std::min(static_cast<int>(tl_candidates.size()), target_beam_width);
 
         // Phase 2: 上位候補の選別と実体化
