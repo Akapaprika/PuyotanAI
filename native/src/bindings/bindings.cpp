@@ -70,11 +70,7 @@ PYBIND11_MODULE(puyotan_native, m) {
             "erased", [](const ErasureData& d) { return d.num_erased > 0; })
         .def_readwrite("num_erased", &ErasureData::num_erased)
         .def_readwrite("num_colors", &ErasureData::num_colors)
-        .def_readwrite("num_groups", &ErasureData::num_groups)
-        .def_property_readonly("group_sizes", [](const ErasureData& d) {
-            return std::vector<int>(d.group_sizes.begin(),
-                                    d.group_sizes.begin() + d.num_groups);
-        });
+        .def_readwrite("group_bonus", &ErasureData::group_bonus);
 
     pybind11::class_<Gravity>(m, "Gravity")
         .def_static("execute", &Gravity::execute);

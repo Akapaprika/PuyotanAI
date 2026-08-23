@@ -11,17 +11,11 @@ namespace puyotan {
 
 class Scorer {
   public:
-    static int calculateStepScore(const ErasureData& data,
+    static __forceinline int calculateStepScore(const ErasureData& data,
                                   int chain_number) noexcept {
         const int chain_bonus = getChainBonus(chain_number);
         const int color_bonus = getColorBonus(data.num_colors);
-
-        int group_bonus = 0;
-        for (int g = 0; g < data.num_groups; ++g) {
-            group_bonus += getGroupBonus(data.group_sizes[g]);
-        }
-
-        const int bonus_sum = chain_bonus + color_bonus + group_bonus;
+        const int bonus_sum = chain_bonus + color_bonus + data.group_bonus;
         // ★ CMOV 命令 (2命令) による最速の最小値 1 クランプ
         const int total_bonus = std::max(1, bonus_sum);
 

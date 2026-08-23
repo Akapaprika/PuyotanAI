@@ -8,18 +8,15 @@
 
 namespace puyotan {
 
-struct ErasureData {
+struct alignas(16) ErasureData {
     BitBoard total_erased;
-    std::array<uint8_t, config::Rule::kMaxErasureGroups> group_sizes;
-    int num_erased = 0;
-    int num_colors = 0;
-    int num_groups = 0;
+    uint8_t num_erased = 0;
+    uint8_t num_colors = 0;
+    uint8_t group_bonus = 0;
 
     __forceinline void clear() noexcept {
-        total_erased = BitBoard();
-        num_erased = 0;
-        num_colors = 0;
-        num_groups = 0;
+        total_erased.m128 = _mm_setzero_si128();
+        *reinterpret_cast<uint32_t*>(&num_erased) = 0;
     }
 };
 
@@ -27,6 +24,10 @@ class Chain {
   public:
     static constexpr uint32_t kAllColorsMask =
         (1u << config::Rule::kColors) - 1u;
+
+    static constexpr uint8_t kGroupBonusLut[16] = {
+        0, 0, 0, 0, 0, 2, 3, 4, 5, 6, 7, 10, 10, 10, 10, 10
+    };
 
     static ErasureData execute(Board& board,
                                uint32_t color_mask = kAllColorsMask) noexcept;
@@ -98,12 +99,12 @@ class Chain {
 
             // ★ 1. 共通処理を一括確定 (if/else の重複を完全撤廃)
             erasure_data.total_erased |= group;
-            erasure_data.num_erased   += sz;
+            erasure_data.num_erased   += static_cast<uint8_t>(sz);
             erased_color_bits         |= (1u << i);
 
-            // ★ 2. グループサイズの記録
+            // ★ 2. ボーナスの直接加算
             if (sz < 8) {
-                erasure_data.group_sizes[erasure_data.num_groups++] = static_cast<uint8_t>(sz);
+                erasure_data.group_bonus += kGroupBonusLut[std::min(sz, 15)];
             } else {
                 // 探索対象を group 自体に絞って各成分のサイズを記録
                 BitBoard rem = group;
@@ -119,7 +120,7 @@ class Chain {
                     } while (g != p);
 
                     const int single_sz = g.popcount();
-                    erasure_data.group_sizes[erasure_data.num_groups++] = static_cast<uint8_t>(single_sz);
+                    erasure_data.group_bonus += kGroupBonusLut[std::min(single_sz, 15)];
                     rem.andNot(g);
                 }
             }
