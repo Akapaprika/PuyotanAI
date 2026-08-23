@@ -126,11 +126,7 @@ void PuyotanMatch::stepNextFrame() noexcept {
             prev_types[0] != ActionType::Ojama) {
             players_[0].current_action = {Action{ActionType::Ojama}, 0};
         } else if (prev_types[0] != ActionType::Pass) {
-            if (players_[0].active_next_pos == 999) [[unlikely]] {
-                players_[0].active_next_pos = 0;
-            } else {
-                ++(players_[0].active_next_pos);
-            }
+            ++players_[0].active_next_pos;
         }
     }
     // プレイヤー1
@@ -139,11 +135,7 @@ void PuyotanMatch::stepNextFrame() noexcept {
             prev_types[1] != ActionType::Ojama) {
             players_[1].current_action = {Action{ActionType::Ojama}, 0};
         } else if (prev_types[1] != ActionType::Pass) {
-            if (players_[1].active_next_pos == 999) [[unlikely]] {
-                players_[1].active_next_pos = 0;
-            } else {
-                ++(players_[1].active_next_pos);
-            }
+            ++players_[1].active_next_pos;
         }
     }
 

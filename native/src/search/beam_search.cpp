@@ -145,7 +145,8 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
     int fire_best_action = -1;
     int32_t fire_best_score = 0;
     if constexpr (HasFireBias) {
-        PuyoPiece piece0 = tsumo.get(tsumo_base + 0);
+        int32_t piece0_idx = tsumo_base;
+        PuyoPiece piece0 = tsumo.get(piece0_idx);
         const bool is_zoro0 = (piece0.axis == piece0.sub);
         const auto& actions0 = is_zoro0 ? getZoroActions() : getPutActions();
         for (const auto& entry : actions0) {
@@ -177,7 +178,8 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
     tl_current_beam.emplace_back(player.field, 0, 0, -1, packed_heights_root);
 
     for (int depth = 0; depth < cfg.look_ahead; ++depth) {
-        PuyoPiece piece = tsumo.get(tsumo_base + depth);
+        int32_t piece_idx = tsumo_base + depth;
+        PuyoPiece piece = tsumo.get(piece_idx);
         const bool is_zoro = (piece.axis == piece.sub);
         
         tl_candidates.clear();

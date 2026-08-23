@@ -104,4 +104,18 @@ void Tsumo::expandTo(uint32_t target_idx) const noexcept {
     generated_count_ = new_count;
 }
 
+PuyoPiece Tsumo::getSlow(int32_t& index) const noexcept {
+    // ラップアラウンド: index を [0, kTsumoPoolSize) に正規化して書き戻す
+    // これにより呼び出し元（match.cpp の active_next_pos）が自動的に更新される
+    if (static_cast<uint32_t>(index) >= config::Rule::kTsumoPoolSize) {
+        index -= static_cast<int32_t>(config::Rule::kTsumoPoolSize);
+    }
+    const uint32_t idx = static_cast<uint32_t>(index);
+    // 未生成部分の拡張処理
+    if (idx >= generated_count_) {
+        expandTo(idx);
+    }
+    return pool_[idx];
+}
+
 } // namespace puyotan
