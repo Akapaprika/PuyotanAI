@@ -1,12 +1,8 @@
 #pragma once
 
-#include <cmath>
 #include <immintrin.h>
 #include <puyotan/common/config.hpp>
 #include <puyotan/core/board.hpp>
-#include <puyotan/core/chain.hpp>
-#include <puyotan/core/gravity.hpp>
-#include <puyotan/engine/scorer.hpp>
 #include <puyotan/search/eval_weights.hpp>
 #include <puyotan/search/potential_score.hpp>
 

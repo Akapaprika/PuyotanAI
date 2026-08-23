@@ -1,4 +1,3 @@
-#include <immintrin.h>
 #include <puyotan/core/chain.hpp>
 
 namespace puyotan {

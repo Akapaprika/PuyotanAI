@@ -6,7 +6,6 @@
 #include <puyotan/core/board.hpp>
 #include <puyotan/core/chain.hpp>
 #include <puyotan/engine/tsumo.hpp>
-#include <string>
 namespace puyotan {
 /**
  * @struct PuyotanPlayer

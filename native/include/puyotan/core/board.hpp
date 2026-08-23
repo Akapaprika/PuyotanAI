@@ -7,11 +7,6 @@
 #include <puyotan/common/config.hpp>
 #include <puyotan/common/types.hpp>
 
-#if defined(_MSC_VER)
-#include <intrin.h>
-#else
-#include <x86intrin.h>
-#endif
 #include <immintrin.h>
 
 namespace puyotan {

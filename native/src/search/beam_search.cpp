@@ -1,13 +1,14 @@
 #include <algorithm>
 #include <cstdint>
-#include <cstring>
 #include <vector>
 
 #include <puyotan/common/types.hpp>
 #include <puyotan/core/chain.hpp>
 #include <puyotan/core/gravity.hpp>
+#include <puyotan/engine/scorer.hpp>
 #include <puyotan/engine/tsumo.hpp>
 #include <puyotan/search/action_table.hpp>
+#include <puyotan/search/beam_evaluator.hpp>
 #include <puyotan/search/beam_search.hpp>
 
 namespace puyotan::search {

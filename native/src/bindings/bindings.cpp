@@ -1,4 +1,3 @@
-#include <optional>
 #include <puyotan/common/config.hpp>
 #include <puyotan/common/types.hpp>
 #include <puyotan/core/board.hpp>
