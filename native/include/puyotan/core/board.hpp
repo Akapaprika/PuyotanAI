@@ -15,14 +15,6 @@
 
 namespace puyotan {
 
-static constexpr uint64_t kPdepLut[16] = {
-    0x0000000000000000ULL, 0x0000000000000001ULL, 0x0000000000010000ULL,
-    0x0000000000010001ULL, 0x0000000100000000ULL, 0x0000000100000001ULL,
-    0x0000000100010000ULL, 0x0000000100010001ULL, 0x0001000000000000ULL,
-    0x0001000000000001ULL, 0x0001000000010000ULL, 0x0001000000010001ULL,
-    0x0001000100000000ULL, 0x0001000100000001ULL, 0x0001000100010000ULL,
-    0x0001000100010001ULL};
-
 struct alignas(16) BitBoard {
     union {
         __m128i m128;
@@ -90,11 +82,6 @@ struct alignas(16) BitBoard {
         cols[x] &= static_cast<uint16_t>(~(1U << y));
     }
 
-    [[nodiscard]] static __forceinline BitBoard fromColumnMask(uint32_t cols) noexcept {
-        const uint64_t mask_lo = kPdepLut[cols & 0x0Fu] * 0xFFFFULL;
-        const uint64_t mask_hi = kPdepLut[(cols >> 4) & 0x03u] * 0xFFFFULL;
-        return {mask_lo, mask_hi};
-    }
     [[nodiscard]] __forceinline int popcount() const noexcept {
         return static_cast<int>(std::popcount(lo) + std::popcount(hi));
     }
@@ -160,21 +147,6 @@ class Board {
         occupancy_.cols[x] &= clear_mask;
     }
 
-    void setRowMask(int y, Cell cell, uint32_t cols_mask) noexcept {
-        const uint64_t target_lo = kPdepLut[cols_mask & 0x0Fu] << y;
-        const uint64_t target_hi = kPdepLut[(cols_mask >> 4) & 0x03u] << y;
-        boards_[static_cast<int>(cell)].lo |= target_lo;
-        boards_[static_cast<int>(cell)].hi |= target_hi;
-        occupancy_.lo |= target_lo;
-        occupancy_.hi |= target_hi;
-    }
-
-    /// ★ 完全インライン化: 発生行(13)への配置を 1命令の 16bit OR にコンパイル
-    __forceinline void placePiece(int col, Cell color) noexcept {
-        assert(col >= 0 && col < config::Board::kWidth);
-        set(col, config::Board::kSpawnRow, color);
-    }
-
     [[nodiscard]] __forceinline int getColumnHeight(int x) const noexcept {
         assert(x >= 0 && x < config::Board::kWidth);
         return static_cast<int>(_mm_popcnt_u32(occupancy_.cols[x]));
@@ -238,18 +210,6 @@ class Board {
         return (occupancy_.cols[x] >> y) & 1;
     }
 
-    void setBitboard(Cell color, const BitBoard& bb) noexcept {
-        boards_[toIndex(color)] = bb;
-    }
-    void updateOccupancyFromBoards() noexcept {
-        const __m128i or01   = _mm_or_si128(boards_[0].m128, boards_[1].m128);
-        const __m128i or23   = _mm_or_si128(boards_[2].m128, boards_[3].m128);
-        const __m128i or0123 = _mm_or_si128(or01, or23);
-        occupancy_.m128      = _mm_or_si128(or0123, boards_[4].m128);
-    }
-    void updateOccupancy(const BitBoard& bb) noexcept {
-        occupancy_ = bb;
-    }
     [[nodiscard]] const BitBoard& getOccupied() const noexcept {
         return occupancy_;
     }
