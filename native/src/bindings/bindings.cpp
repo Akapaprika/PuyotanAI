@@ -52,11 +52,18 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("empty", &BitBoard::empty)
         .def("popcount", &BitBoard::popcount);
 
+    pybind11::class_<Board::ActivePuyo>(m, "ActivePuyo")
+        .def_readonly("x", &Board::ActivePuyo::x)
+        .def_readonly("y", &Board::ActivePuyo::y)
+        .def_readonly("color", &Board::ActivePuyo::color);
+
     pybind11::class_<Board>(m, "Board")
         .def(pybind11::init<>())
         .def("get", &Board::get)
         .def("set", &Board::set)
         .def("clear", &Board::clear)
+        .def("getActivePuyos", &Board::getActivePuyos)
+        .def("get_active_puyos", &Board::getActivePuyos)
         .def("getBitboard", &Board::getBitboard)
         .def("getOccupied", &Board::getOccupied);
 

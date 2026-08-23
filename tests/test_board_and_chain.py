@@ -24,6 +24,26 @@ def test_board_and_gravity():
     board.set(0, 0, p.Cell.Red)
     assert board.get(0, 0) == p.Cell.Red
 
+def test_get_active_puyos():
+    board = p.Board()
+    # 5色それぞれセット
+    board.set(0, 0, p.Cell.Red)
+    board.set(1, 2, p.Cell.Green)
+    board.set(2, 4, p.Cell.Blue)
+    board.set(3, 6, p.Cell.Yellow)
+    board.set(5, 12, p.Cell.Ojama)
+
+    active = board.get_active_puyos()
+    assert len(active) == 5
+
+    # 辞書化して全色・全座標が一致するか確認
+    active_map = {(puyo.x, puyo.y): puyo.color for puyo in active}
+    assert active_map[(0, 0)] == p.Cell.Red
+    assert active_map[(1, 2)] == p.Cell.Green
+    assert active_map[(2, 4)] == p.Cell.Blue
+    assert active_map[(3, 6)] == p.Cell.Yellow
+    assert active_map[(5, 12)] == p.Cell.Ojama
+
 def test_actions():
     a = p.Action(p.ActionType.PUT, 2, p.Rotation.Right)
     assert a.type == p.ActionType.PUT
@@ -47,6 +67,7 @@ def run_all():
     print("Running test_board_and_chain...")
     test_bitboard()
     test_board_and_gravity()
+    test_get_active_puyos()
     test_actions()
     test_chain_erasure()
     print("  [PASS] test_board_and_chain")

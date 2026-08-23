@@ -3,6 +3,7 @@
 #include <bit>
 #include <cassert>
 #include <cstdint>
+#include <vector>
 #include <puyotan/common/config.hpp>
 #include <puyotan/common/types.hpp>
 
@@ -111,42 +112,21 @@ struct alignas(16) BitBoard {
 
 class Board {
   public:
+    struct ActivePuyo {
+        int x;
+        int y;
+        Cell color;
+    };
+
     Board() noexcept = default;
 
-    [[nodiscard]] __forceinline Cell get(int x, int y) const noexcept {
-        assert(x >= 0 && x < config::Board::kWidth);
-        assert(y >= 0 && y < config::Board::kHeight + 1);
-        const int b1  = (boards_[1].cols[x] >> y) & 1;
-        const int b2  = (boards_[2].cols[x] >> y) & 1;
-        const int b3  = (boards_[3].cols[x] >> y) & 1;
-        const int b4  = (boards_[4].cols[x] >> y) & 1;
-        const int occ = (occupancy_.cols[x] >> y) & 1;
-        return static_cast<Cell>(b1 + (b2 * 2) + (b3 * 3) + (b4 * 4) + (5 * (1 - occ)));
-    }
+    // Python / GUI / テスト用（実体は board.cpp）
+    [[nodiscard]] std::vector<ActivePuyo> getActivePuyos() const noexcept;
+    [[nodiscard]] Cell get(int x, int y) const noexcept;
+    void set(int x, int y, Cell color) noexcept;
+    void clear(int x, int y) noexcept;
 
-    __forceinline void set(int x, int y, Cell color) noexcept {
-        assert(color != Cell::Empty);
-        assert(x >= 0 && x < config::Board::kWidth);
-        assert(y >= 0 && y < config::Board::kHeight + 1);
-        const uint16_t bit = static_cast<uint16_t>(1U << y);
-        const uint16_t clear_mask = static_cast<uint16_t>(~bit);
-        for (auto& bb : boards_) {
-            bb.cols[x] &= clear_mask;
-        }
-        boards_[toIndex(color)].cols[x] |= bit;
-        occupancy_.cols[x] |= bit;
-    }
-
-    __forceinline void clear(int x, int y) noexcept {
-        assert(x >= 0 && x < config::Board::kWidth);
-        assert(y >= 0 && y < config::Board::kHeight + 1);
-        const uint16_t clear_mask = static_cast<uint16_t>(~(1U << y));
-        for (auto& bb : boards_) {
-            bb.cols[x] &= clear_mask;
-        }
-        occupancy_.cols[x] &= clear_mask;
-    }
-
+    // C++ ホットパス用（インライン）
     [[nodiscard]] __forceinline int getColumnHeight(int x) const noexcept {
         assert(x >= 0 && x < config::Board::kWidth);
         return static_cast<int>(_mm_popcnt_u32(occupancy_.cols[x]));
