@@ -172,7 +172,6 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
     tl_candidates.reserve(static_cast<std::size_t>(cfg.beam_width) * kNumRLActions);
 
     if (cfg.dbs_max_similar >= 1) {
-        // 全候補数 (beam_width * kNumRLActions) が入っても破綻しない容量を確保
         tl_dbs_table.ensure_capacity(static_cast<std::size_t>(cfg.beam_width) * kNumRLActions);
     }
 
@@ -202,7 +201,12 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
                 int32_t eval = EvaluatorType::evaluate(pr.field, cfg.eval_weights);
                 int32_t next_accum = node.accum_score + static_cast<int32_t>(pr.score);
                 int32_t total_score = next_accum * cfg.eval_weights.potential_score_scale + eval;
-                uint32_t next_packed_h = packHeights(pr.field);
+
+                // ★【完全ブランチレス】縦横判定 if を排除し、1命令加算で高さを一撃計算
+                uint32_t next_packed_h = cur_heights + (1u << (entry.ax << 2)) + (1u << (entry.sx << 2));
+                if (__builtin_expect(pr.chain > 0, 0)) {
+                    next_packed_h = packHeights(pr.field);
+                }
 
                 tl_candidates.push_back(CandidateNode{
                     total_score,
@@ -234,7 +238,21 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
 
         const int keep = std::min(static_cast<int>(tl_candidates.size()), target_beam_width);
 
-        // Phase 2: 上位候補の選別と、勝ち残った盤面のみの実体化
+        // Phase 2: 上位候補の選別と実体化
+        tl_prev_beam.swap(tl_current_beam);
+        tl_current_beam.clear();
+
+        // ★ 重複していたノード実体化処理を 1 本化 (ゼロオーバーヘッドでインライン化)
+        auto instantiate_node = [&](const CandidateNode& item) {
+            const auto& parent = tl_prev_beam[item.parent_idx];
+            const auto& act = actions[item.action_idx];
+            
+            PlaceResult pr = simulatePlacement(parent.field, piece, act, parent.packed_heights);
+            int first = (depth == 0) ? act.idx : parent.first_action;
+            
+            tl_current_beam.emplace_back(pr.field, item.score, item.accum_score, first, item.packed_heights);
+        };
+
         if (cfg.dbs_max_similar >= 1) {
             std::sort(tl_candidates.begin(), tl_candidates.end(),
                       [](const CandidateNode& a, const CandidateNode& b) noexcept {
@@ -242,20 +260,9 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
                       });
 
             tl_dbs_table.clear();
-
-            tl_prev_beam.swap(tl_current_beam);
-            tl_current_beam.clear();
-
             for (const auto& item : tl_candidates) {
                 if (tl_dbs_table.get_and_inc(item.packed_heights) < cfg.dbs_max_similar) {
-                    const auto& parent = tl_prev_beam[item.parent_idx];
-                    const auto act_list = item.is_zoro ? getZoroActions() : getPutActions();
-                    const auto& act = act_list[item.action_idx];
-                    
-                    PlaceResult pr = simulatePlacement(parent.field, piece, act, parent.packed_heights);
-                    int first = (depth == 0) ? act.idx : parent.first_action;
-                    
-                    tl_current_beam.emplace_back(pr.field, item.score, item.accum_score, first, item.packed_heights);
+                    instantiate_node(item);
                     if (static_cast<int>(tl_current_beam.size()) == keep) {
                         break;
                     }
@@ -275,19 +282,8 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
                           return a.score > b.score;
                       });
 
-            tl_prev_beam.swap(tl_current_beam);
-            tl_current_beam.clear();
-
             for (int i = 0; i < keep; ++i) {
-                const auto& item = tl_candidates[i];
-                const auto& parent = tl_prev_beam[item.parent_idx];
-                const auto act_list = item.is_zoro ? getZoroActions() : getPutActions();
-                const auto& act = act_list[item.action_idx];
-                
-                PlaceResult pr = simulatePlacement(parent.field, piece, act, parent.packed_heights);
-                int first = (depth == 0) ? act.idx : parent.first_action;
-                
-                tl_current_beam.emplace_back(pr.field, item.score, item.accum_score, first, item.packed_heights);
+                instantiate_node(tl_candidates[i]);
             }
         }
     }
