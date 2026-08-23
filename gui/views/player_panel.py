@@ -86,21 +86,34 @@ class PlayerPanel(QFrame):
         container.setMinimumHeight(80)
         container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
-        specs = [
-            ("←",  "left",  0, 0),
-            ("↓",  "drop",  0, 1),
-            ("→",  "right", 0, 2),
-            ("↺",  "rot_l", 1, 0),
-            ("↻",  "rot_r", 1, 2),
-        ]
+        if self.player_id == 0:
+            # 1P (左側): WASD + Q
+            specs = [
+                ("← (A)", "left",  0, 0, "左移動 [A]"),
+                ("↓ (S)", "drop",  0, 1, "設置 [S]"),
+                ("→ (D)", "right", 0, 2, "右移動 [D]"),
+                ("↺ (Q)", "rot_l", 1, 0, "左回転 [Q]"),
+                ("↻ (W)", "rot_r", 1, 2, "右回転 [W]"),
+            ]
+        else:
+            # 2P (右側): 矢印キー + ? / _
+            specs = [
+                ("← (←)", "left",  0, 0, "左移動 [←]"),
+                ("↓ (↓)", "drop",  0, 1, "設置 [↓]"),
+                ("→ (→)", "right", 0, 2, "右移動 [→]"),
+                ("↺ (?)", "rot_l", 1, 0, "左回転 [?]"),
+                ("↻ (_)", "rot_r", 1, 2, "右回転 [_]"),
+            ]
+
         buttons = []
-        for label, action, row, col in specs:
+        for label, action, row, col, tip in specs:
             btn = QPushButton(label)
             btn.setObjectName("ActionBtn")
-            btn.setMinimumWidth(40)
+            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            btn.setMinimumWidth(50)
             btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-            btn.setStyleSheet("padding: 4px 0px; font-weight: bold; font-size: 14px;")
-            btn.setToolTip(action)
+            btn.setStyleSheet("padding: 4px 2px; font-weight: bold; font-size: 12px;")
+            btn.setToolTip(tip)
             btn.clicked.connect(lambda _, a=action: self.action_requested.emit(self.player_id, a))
             grid.addWidget(btn, row, col)
             buttons.append(btn)

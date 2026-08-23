@@ -44,8 +44,6 @@ class GameModel:
         """
         return self.match.setAction(player_id, action)
 
-
-
     def get_tsumo(self):
         """Return the current Tsumo sequence (live reference, clone before passing to a thread)."""
         return self.match.getTsumo()

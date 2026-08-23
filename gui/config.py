@@ -1,18 +1,12 @@
 from pathlib import Path
 from ai.config import CONFIG_PATH
 
-# Screen Dimensions
+# Screen Dimensions & Timing
 WINDOW_WIDTH = 750
 WINDOW_HEIGHT = 700
 FPS = 60
 VIRTUAL_FRAME_INTERVAL_MS = 100
 RANDOM_SEED = 1
-
-# Grid / Board Dimensions
-CELL_SIZE = 26
-BOARD_WIDTH = 6
-BOARD_HEIGHT = 14  # Visible is 13, but include hidden row
-VISIBLE_HEIGHT = 13
 
 # Standardized Color Palette (RGB tuples)
 COLORS = {
@@ -28,7 +22,7 @@ COLORS = {
     "Button": (70, 70, 90),
     "ButtonHover": (80, 80, 80),
     "ButtonText": (255, 255, 255),
-    "GhostAlpha": 120
+    "GhostAlpha": 120,
 }
 
 # Mapping from puyotan_native.Cell to RGB tuples
@@ -43,11 +37,3 @@ def get_cell_rgb():
         p.Cell.Empty: COLORS["Empty"],
     }
 
-# Symbols for buttons
-BUTTON_SYMBOLS = {
-    "left": "←",
-    "right": "→",
-    "rot_r": "↻",
-    "rot_l": "↺",
-    "drop": "↓"
-}
