@@ -49,64 +49,62 @@ class Chain {
             const int i = std::countr_zero(temp_mask);
             const Cell c = static_cast<Cell>(i);
 
-            const BitBoard color_board =
-                _mm_and_si128(board.getBitboard(c).m128, chainable_mask);
+            const __m128i cb = _mm_and_si128(board.getBitboard(c).m128, chainable_mask);
 
-            // 2連結チェック (上・左の2シフトのみ)
-            const BitBoard U = color_board.shiftUpRaw();
-            const BitBoard L = color_board.shiftLeftRaw();
-            if ((color_board & (U | L)).empty()) {
+            // 1. 2連結チェック (U | L) と cb の積を PTEST で直接判定 (AND命令を削減)
+            const __m128i U = _mm_slli_epi64(cb, 1);
+            const __m128i L = _mm_srli_si128(cb, 2);
+            if (_mm_testz_si128(cb, _mm_or_si128(U, L))) {
                 temp_mask &= (temp_mask - 1);
                 continue;
             }
 
-            const BitBoard D = color_board.shiftDownRaw();
-            const BitBoard R = color_board.shiftRightRaw();
+            const __m128i D = _mm_srli_epi64(cb, 1);
+            const __m128i R = _mm_slli_si128(cb, 2);
 
-            // ★ ブール代数の因数分解による最速シード抽出 (8命令 → 6命令)
-            const BitBoard X = (U & D) | (L & R); // 縦または横の3連中心
-            const BitBoard Y = (U | D) & (L | R); // 縦かつ横の直交隣接
+            // 2. ブール束因数分解による次数判定
+            const __m128i X = _mm_or_si128(_mm_and_si128(U, D), _mm_and_si128(L, R));
+            const __m128i Y = _mm_and_si128(_mm_or_si128(U, D), _mm_or_si128(L, R));
 
-            const BitBoard deg_ge3 = color_board & (X & Y); // T字・十字
-            const BitBoard deg_ge2 = color_board & (X | Y); // 2個以上の隣接
+            const __m128i deg_ge3 = _mm_and_si128(cb, _mm_and_si128(X, Y));
+            const __m128i deg_ge2 = _mm_and_si128(cb, _mm_or_si128(X, Y));
 
-            const BitBoard d2_adjacent =
-                deg_ge2 & (deg_ge2.shiftUpRaw() | deg_ge2.shiftLeftRaw());
+            // 3. 対称シード (Symmetric Seeds) の抽出
+            const __m128i u_d2 = _mm_slli_epi64(deg_ge2, 1);
+            const __m128i d_d2 = _mm_srli_epi64(deg_ge2, 1);
+            const __m128i l_d2 = _mm_srli_si128(deg_ge2, 2);
+            const __m128i r_d2 = _mm_slli_si128(deg_ge2, 2);
+            const __m128i adj_d2 = _mm_or_si128(_mm_or_si128(u_d2, d_d2), _mm_or_si128(l_d2, r_d2));
 
-            BitBoard true_seeds = deg_ge3 | d2_adjacent;
-            if (true_seeds.empty()) {
+            const __m128i seeds = _mm_or_si128(deg_ge3, _mm_and_si128(deg_ge2, adj_d2));
+
+            if (_mm_testz_si128(seeds, seeds)) {
                 temp_mask &= (temp_mask - 1);
                 continue;
             }
 
-            const __m128i cb_mask = color_board.m128;
+            // 4. 【ループ完全撤廃】1ステップ Dilation (4連結グループ全体を一括抽出)
+            const __m128i u_s = _mm_slli_epi64(seeds, 1);
+            const __m128i d_s = _mm_srli_epi64(seeds, 1);
+            const __m128i l_s = _mm_srli_si128(seeds, 2);
+            const __m128i r_s = _mm_slli_si128(seeds, 2);
+            const __m128i adj_s = _mm_or_si128(_mm_or_si128(u_s, d_s), _mm_or_si128(l_s, r_s));
 
-            // 全シード並列一括拡張
-            BitBoard group = true_seeds;
-            BitBoard prev;
-            do {
-                prev = group;
-                const __m128i v = group.m128;
-                const __m128i ud =
-                    _mm_or_si128(_mm_slli_epi64(v, 1), _mm_srli_epi64(v, 1));
-                const __m128i lr =
-                    _mm_or_si128(_mm_slli_si128(v, 2), _mm_srli_si128(v, 2));
-                group.m128 = _mm_and_si128(
-                    _mm_or_si128(v, _mm_or_si128(ud, lr)), cb_mask);
-            } while (group != prev);
+            BitBoard group;
+            group.m128 = _mm_and_si128(_mm_or_si128(seeds, adj_s), cb);
 
             const int sz = group.popcount();
 
-            // ★ 1. 共通処理を一括確定 (if/else の重複を完全撤廃)
-            erasure_data.total_erased |= group;
+            erasure_data.total_erased.m128 =
+                _mm_or_si128(erasure_data.total_erased.m128, group.m128);
             erasure_data.num_erased   += static_cast<uint8_t>(sz);
             erased_color_bits         |= (1u << i);
 
-            // ★ 2. ボーナスの直接加算
-            if (sz < 8) {
-                erasure_data.group_bonus += kGroupBonusLut[std::min(sz, 15)];
+            // 5. ボーナス加算 (sz < 8 は単一連結成分確定)
+            if (__builtin_expect(sz < 8, 1)) {
+                erasure_data.group_bonus += kGroupBonusLut[sz];
             } else {
-                // 探索対象を group 自体に絞って各成分のサイズを記録
+                // 同色で別々の4個グループが同時消去されるレアケースのみ個別分離
                 BitBoard rem = group;
                 while (!rem.empty()) {
                     BitBoard g = rem.extractLSB();
@@ -129,28 +127,25 @@ class Chain {
         }
 
         erasure_data.num_colors =
-            static_cast<int>(_mm_popcnt_u32(erased_color_bits));
+            static_cast<uint8_t>(_mm_popcnt_u32(erased_color_bits));
 
-        // おじゃまぷよ消去
+        // 6. おじゃまぷよ消去 (boundary_mask の不要なANDを削除)
         if (erasure_data.num_erased > 0) {
             const BitBoard ojama = board.getBitboard(Cell::Ojama);
             if (!ojama.empty()) {
-                const BitBoard& t = erasure_data.total_erased;
+                const __m128i t = erasure_data.total_erased.m128;
 
-                const __m128i raw_up    = _mm_slli_epi64(t.m128, 1);
-                const __m128i raw_down  = _mm_srli_epi64(t.m128, 1);
-                const __m128i raw_right = _mm_slli_si128(t.m128, 2);
-                const __m128i raw_left  = _mm_srli_si128(t.m128, 2);
+                const __m128i raw_up    = _mm_slli_epi64(t, 1);
+                const __m128i raw_down  = _mm_srli_epi64(t, 1);
+                const __m128i raw_right = _mm_slli_si128(t, 2);
+                const __m128i raw_left  = _mm_srli_si128(t, 2);
 
                 const __m128i combined = _mm_or_si128(
                     _mm_or_si128(raw_up, raw_down),
                     _mm_or_si128(raw_right, raw_left));
 
-                const __m128i boundary_mask = _mm_set_epi64x(
-                    config::Board::kHiMask, config::Board::kLoMask);
-                const __m128i adj = _mm_and_si128(combined, boundary_mask);
-                const __m128i oj_erased = _mm_and_si128(ojama.m128, adj);
-
+                // ojama 自体が盤面外ビットを持たないため boundary_mask は不要
+                const __m128i oj_erased = _mm_and_si128(ojama.m128, combined);
                 erasure_data.total_erased.m128 =
                     _mm_or_si128(erasure_data.total_erased.m128, oj_erased);
             }
@@ -169,31 +164,32 @@ class Chain {
             const int i = std::countr_zero(temp_mask);
             const Cell c = static_cast<Cell>(i);
 
-            const BitBoard color_board =
-                _mm_and_si128(board.getBitboard(c).m128, chainable_mask);
+            const __m128i cb = _mm_and_si128(board.getBitboard(c).m128, chainable_mask);
 
-            const BitBoard U = color_board.shiftUpRaw();
-            const BitBoard L = color_board.shiftLeftRaw();
-            if ((color_board & (U | L)).empty()) {
+            const __m128i U = _mm_slli_epi64(cb, 1);
+            const __m128i L = _mm_srli_si128(cb, 2);
+            if (_mm_testz_si128(cb, _mm_or_si128(U, L))) {
                 temp_mask &= (temp_mask - 1);
                 continue;
             }
 
-            const BitBoard D = color_board.shiftDownRaw();
-            const BitBoard R = color_board.shiftRightRaw();
+            const __m128i D = _mm_srli_epi64(cb, 1);
+            const __m128i R = _mm_slli_si128(cb, 2);
 
-            // ★ ブール束因数分解: 共通項 X と Y を計算
-            const BitBoard X = (U & D) | (L & R); // 3連の中心 (縦または横)
-            const BitBoard Y = (U | D) & (L | R); // L字の角 (縦かつ横)
+            const __m128i X = _mm_or_si128(_mm_and_si128(U, D), _mm_and_si128(L, R));
+            const __m128i Y = _mm_and_si128(_mm_or_si128(U, D), _mm_or_si128(L, R));
 
-            // deg_ge3 = X & Y, deg_ge2 = X | Y (わずか 2本の命令で両方完成！)
-            const BitBoard deg_ge3 = color_board & (X & Y);
-            const BitBoard deg_ge2 = color_board & (X | Y);
+            const __m128i deg_ge3 = _mm_and_si128(cb, _mm_and_si128(X, Y));
+            const __m128i deg_ge2 = _mm_and_si128(cb, _mm_or_si128(X, Y));
 
-            const BitBoard d2_adjacent =
-                deg_ge2 & (deg_ge2.shiftUpRaw() | deg_ge2.shiftLeftRaw());
+            // canFire は非対称（U/L のみ）で必要十分
+            const __m128i u_d2 = _mm_slli_epi64(deg_ge2, 1);
+            const __m128i l_d2 = _mm_srli_si128(deg_ge2, 2);
+            const __m128i d2_adj = _mm_and_si128(deg_ge2, _mm_or_si128(u_d2, l_d2));
 
-            if (!(deg_ge3 | d2_adjacent).empty()) {
+            const __m128i seeds = _mm_or_si128(deg_ge3, d2_adj);
+
+            if (!_mm_testz_si128(seeds, seeds)) {
                 return true;
             }
 
