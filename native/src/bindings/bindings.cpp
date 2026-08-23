@@ -3,9 +3,7 @@
 #include <puyotan/common/types.hpp>
 #include <puyotan/core/board.hpp>
 #include <puyotan/core/chain.hpp>
-#include <puyotan/core/gravity.hpp>
 #include <puyotan/engine/match.hpp>
-#include <puyotan/engine/scorer.hpp>
 #include <puyotan/engine/tsumo.hpp>
 #include <puyotan/search/beam_config_loader.hpp>
 #include <puyotan/search/beam_evaluator.hpp>
@@ -48,8 +46,6 @@ PYBIND11_MODULE(puyotan_native, m) {
     pybind11::class_<BitBoard>(m, "BitBoard")
         .def(pybind11::init<>())
         .def(pybind11::init<uint64_t, uint64_t>())
-        .def_readwrite("lo", &BitBoard::lo)
-        .def_readwrite("hi", &BitBoard::hi)
         .def("get", &BitBoard::get)
         .def("set", &BitBoard::set)
         .def("clear", &BitBoard::clear)
@@ -61,7 +57,6 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("get", &Board::get)
         .def("set", &Board::set)
         .def("clear", &Board::clear)
-        .def("placePiece", &Board::placePiece)
         .def("getBitboard", &Board::getBitboard)
         .def("getOccupied", &Board::getOccupied);
 
@@ -72,9 +67,6 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("num_colors", &ErasureData::num_colors)
         .def_readwrite("group_bonus", &ErasureData::group_bonus);
 
-    pybind11::class_<Gravity>(m, "Gravity")
-        .def_static("execute", &Gravity::execute);
-
     pybind11::class_<Chain>(m, "Chain")
         .def_static("execute", [](Board &board) {
             return Chain::execute(board);
@@ -83,13 +75,9 @@ PYBIND11_MODULE(puyotan_native, m) {
     // =========================================================================
     // Engine
     // =========================================================================
-    pybind11::class_<Scorer>(m, "Scorer")
-        .def_static("calculateStepScore", &Scorer::calculateStepScore);
-
     pybind11::class_<Tsumo>(m, "Tsumo")
         .def(pybind11::init<uint32_t>(), pybind11::arg("seed") = 0)
         .def("get", &Tsumo::get)
-        .def("setSeed", &Tsumo::setSeed)
         .def_property_readonly("seed", &Tsumo::getSeed)
         .def("clone", [](const Tsumo& t) { return Tsumo(t); });
 
@@ -136,9 +124,6 @@ PYBIND11_MODULE(puyotan_native, m) {
     pybind11::class_<PuyotanMatch>(m, "PuyotanMatch")
         .def(pybind11::init<uint32_t>(), pybind11::arg("seed") = 0)
         .def("clone", [](const PuyotanMatch& m) { return PuyotanMatch(m); })
-        .def_static("runBatch", &PuyotanMatch::runBatch,
-                    pybind11::arg("num_games"), pybind11::arg("seed") = 1,
-                    pybind11::call_guard<pybind11::gil_scoped_release>())
         .def("start", &PuyotanMatch::start)
         .def("setAction", &PuyotanMatch::setAction)
         .def("canStepNextFrame", &PuyotanMatch::canStepNextFrame)
@@ -165,14 +150,6 @@ PYBIND11_MODULE(puyotan_native, m) {
     m.def("get_rl_action", &getRLAction, pybind11::arg("idx"),
           "Convert a flat RL action index to an Action (col, rotation). "
           "Returns Pass action for out-of-range indices.");
-
-    // -- Rule & Score Constants (Single Source of Truth) --
-    m.attr("kRuleColors")       = config::Rule::kColors;
-    m.attr("kRuleConnectCount") = config::Rule::kConnectCount;
-    m.attr("kDeathCol")         = config::Rule::kDeathCol;
-    m.attr("kDeathRow")         = config::Rule::kDeathRow;
-    m.attr("kTargetScore")      = config::Score::kTargetScore;
-    m.attr("kAllClearBonus")    = config::Score::kAllClearBonus;
 
     // =========================================================================
     // Beam Search

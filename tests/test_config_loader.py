@@ -25,14 +25,6 @@ def test_load_vs_config():
     assert cfg.beam_width > 0
     assert cfg.look_ahead > 0
 
-def test_rule_constants():
-    assert p.kRuleColors == 4
-    assert p.kRuleConnectCount == 4
-    assert p.kDeathCol == 2
-    assert p.kDeathRow == 11
-    assert p.kTargetScore == 70
-    assert p.kAllClearBonus == 2100
-
 def test_pure_search_apis():
     match = p.PuyotanMatch(12345)
     match.start()
@@ -55,7 +47,6 @@ def run_all():
     print("Running test_config_loader...")
     test_load_solo_config()
     test_load_vs_config()
-    test_rule_constants()
     test_pure_search_apis()
     print("  [PASS] test_config_loader")
 
