@@ -40,7 +40,8 @@ inline constexpr auto kPointMasks = detail::makePointMasks();
 
     for (int c = 0; c < config::Rule::kColors; ++c) {
         const BitBoard& bb = board.getBitboard(static_cast<Cell>(c));
-        if (bb.empty())
+        // ★ 盤面に 2個以下なら、どこに 1個落としても 4連結発火しないため色ごと即スキップ
+        if (bb.popcount() < 3)
             continue;
 
         const BitBoard chainable_bb = _mm_and_si128(bb.m128, chainable_mask);
