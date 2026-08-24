@@ -121,7 +121,7 @@ def collect_data(iterations, duration_engine, duration_light, duration_heavy, co
         # 2. Beam search (Light) benchmark
         combined = {**engine_metrics}
         if duration_light > 0:
-            beam_light_args = ["--duration", str(duration_light), "--beam-width", "500", "--look-ahead", "3", "--dbs", "0"]
+            beam_light_args = ["--duration", str(duration_light), "--beam-width", "500", "--look-ahead", "10", "--dbs", "0"]
             beam_light_out = run_benchmark_once(beam_path, beam_light_args)
             beam_light_metrics = parse_beam_output(beam_light_out, prefix="beam_light")
             combined.update(beam_light_metrics)
@@ -232,6 +232,13 @@ def perform_statistical_test(base_results, pr_results):
     return comparison
 
 
+def format_stat_value(val, std):
+    if abs(val) < 10.0 and abs(val) > 0.0:
+        return f"{val:.4f} (±{std:.4f})"
+    else:
+        return f"{val:.2f} (±{std:.2f})"
+
+
 def generate_markdown_report(comparison, iterations):
     md = []
     md.append("# PuyotanAI Performance Benchmark Report")
@@ -259,7 +266,10 @@ def generate_markdown_report(comparison, iterations):
             
         p_val_str = f"{data['p_value']:.4f}" if data["p_value"] >= 0.0001 else "< 0.0001"
         
-        md.append(f"| {metric_name} | {data['base_mean']:.2f} (±{data['base_std']:.2f}) | {data['pr_mean']:.2f} (±{data['pr_std']:.2f}) | {change_str} | {p_val_str} | {sig_str} | {status} |")
+        base_str = format_stat_value(data['base_mean'], data['base_std'])
+        pr_str = format_stat_value(data['pr_mean'], data['pr_std'])
+        
+        md.append(f"| {metric_name} | {base_str} | {pr_str} | {change_str} | {p_val_str} | {sig_str} | {status} |")
         
     md.append("")
     md.append("> *Note: Significance threshold is set at $p < 0.05$. For latency metrics, lower values are better. For throughput metrics (FPS, Searches/sec, Nodes/sec), higher values are better.*")

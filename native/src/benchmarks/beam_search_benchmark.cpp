@@ -135,7 +135,8 @@ BenchmarkResult runBenchmark(double duration_seconds, const SoloBeamConfig& cfg,
     const int max_moves_per_game =
         100; // Cap at 100 placements to stay safely within Tsumo bounds
 
-    while (true) {
+    bool time_up = false;
+    while (!time_up) {
         auto now = std::chrono::high_resolution_clock::now();
         double elapsed =
             std::chrono::duration<double>(now - start_time).count();
@@ -151,6 +152,13 @@ BenchmarkResult runBenchmark(double duration_seconds, const SoloBeamConfig& cfg,
         // Match progression loop
         while (match.getStatus() == MatchStatus::Playing &&
                game_moves < max_moves_per_game) {
+
+            // Check timeout per move to avoid overrunning benchmark duration in deep/heavy searches
+            auto current_now = std::chrono::high_resolution_clock::now();
+            if (std::chrono::duration<double>(current_now - start_time).count() >= duration_seconds) {
+                time_up = true;
+                break;
+            }
 
             bool action_set = false;
             int decision_mask = match.getDecisionMask();
@@ -256,9 +264,9 @@ void printBenchmarkResult(const BenchmarkResult& r, const SoloBeamConfig& cfg) {
     printf("Total Searches:  %llu\n", r.total_searches);
     printf("Est. Total Nodes:%llu\n", r.total_nodes);
     printf("\n--- Throughput ---\n");
-    printf("FPS (frames/s):  %.2f\n", r.fps);
-    printf("Placements/sec:  %.2f (Moves/s)\n", r.moves_per_sec);
-    printf("Searches/sec:    %.2f\n", r.searches_per_sec);
+    printf("FPS (frames/s):  %.4f\n", r.fps);
+    printf("Placements/sec:  %.4f (Moves/s)\n", r.moves_per_sec);
+    printf("Searches/sec:    %.4f\n", r.searches_per_sec);
     printf("Nodes/sec:       %.2f (%.2f M)\n", r.nodes_per_sec,
            r.nodes_per_sec / 1e6);
     printf("\n--- Latency (Under Solo-Game Workload) ---\n");
