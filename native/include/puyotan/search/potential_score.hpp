@@ -58,30 +58,38 @@ inline constexpr auto kPointMasks = detail::makePointMasks();
             if (!neighbor.get(x, h))
                 continue;
 
-            // ★ 動的計算を撤廃し、定数テーブルから 1 命令で直接ロード
+            // ★ 定数テーブルから 1 命令で直接ロード
             const __m128i point_mask = kPointMasks[x][h].m128;
+            const __m128i probed_bb = _mm_or_si128(chainable_bb.m128, point_mask);
 
-            const BitBoard probed_bb = _mm_or_si128(chainable_bb.m128, point_mask);
+            // ★ core と同一の __m128i 直接レジスタ演算
+            const __m128i U = _mm_slli_epi64(probed_bb, 1);
+            const __m128i D = _mm_srli_epi64(probed_bb, 1);
+            const __m128i L = _mm_srli_si128(probed_bb, 2);
+            const __m128i R = _mm_slli_si128(probed_bb, 2);
 
-            const BitBoard U = probed_bb.shiftUpRaw();
-            const BitBoard L = probed_bb.shiftLeftRaw();
-            const BitBoard D = probed_bb.shiftDownRaw();
-            const BitBoard R = probed_bb.shiftRightRaw();
+            const __m128i UD_and = _mm_and_si128(U, D);
+            const __m128i LR_and = _mm_and_si128(L, R);
+            const __m128i UD_or  = _mm_or_si128(U, D);
+            const __m128i LR_or  = _mm_or_si128(L, R);
 
-            // ★ 因数分解による O(1) 発火プローブ
-            const BitBoard X = (U & D) | (L & R);
-            const BitBoard Y = (U | D) & (L | R);
+            const __m128i X = _mm_or_si128(UD_and, LR_and);
+            const __m128i Y = _mm_and_si128(UD_or, LR_or);
 
-            const BitBoard deg_ge3 = probed_bb & (X & Y);
-            const BitBoard deg_ge2 = probed_bb & (X | Y);
-            const BitBoard d2_adjacent =
-                deg_ge2 & (deg_ge2.shiftUpRaw() | deg_ge2.shiftLeftRaw());
+            const __m128i deg_ge3 = _mm_and_si128(probed_bb, _mm_and_si128(X, Y));
+            const __m128i deg_ge2 = _mm_and_si128(probed_bb, _mm_or_si128(X, Y));
 
-            if ((deg_ge3 | d2_adjacent).empty())
+            const __m128i u_d2 = _mm_slli_epi64(deg_ge2, 1);
+            const __m128i l_d2 = _mm_srli_si128(deg_ge2, 2);
+            const __m128i d2_adj = _mm_and_si128(deg_ge2, _mm_or_si128(u_d2, l_d2));
+
+            const __m128i seeds = _mm_or_si128(deg_ge3, d2_adj);
+            if (_mm_testz_si128(seeds, seeds))
                 continue;
 
+            // ★ 盤面コピー＆点マスクを SIMD OR 2発で直注入
             Board temp = board;
-            temp.dropNewPiece(x, h, static_cast<Cell>(c));
+            temp.dropMask(static_cast<Cell>(c), kPointMasks[x][h]);
 
             ErasureData ed;
             Chain::scanGroups(temp, ed, 1u << c);
