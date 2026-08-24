@@ -135,12 +135,6 @@ class Board {
         occupancy_.cols[x] |= bit;
     }
 
-    __forceinline void dropMask(Cell color, const BitBoard& mask) noexcept {
-        assert(toIndex(color) >= 0 && toIndex(color) < config::Board::kNumColors);
-        boards_[toIndex(color)].m128 = _mm_or_si128(boards_[toIndex(color)].m128, mask.m128);
-        occupancy_.m128 = _mm_or_si128(occupancy_.m128, mask.m128);
-    }
-
     __forceinline void dropPiecePair(int col, Rotation r, Cell color_axis, Cell color_sub, int& out_h_axis, int& out_h_sub) noexcept {
         const int r_idx = static_cast<int>(r);
         const int x_axis = col;
