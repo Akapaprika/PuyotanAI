@@ -32,7 +32,7 @@ inline constexpr auto kPointMasks = detail::makePointMasks();
 
 [[nodiscard]] inline int computeMaxPotentialScore(
     const Board& board,
-    const int    heights[config::Board::kWidth]) noexcept
+    uint32_t     packed_heights) noexcept
 {
     int max_pot_score = 0;
     const __m128i chainable_mask = _mm_set_epi64x(
@@ -44,23 +44,29 @@ inline constexpr auto kPointMasks = detail::makePointMasks();
         if (bb.popcount() < 3)
             continue;
 
-        const BitBoard chainable_bb = _mm_and_si128(bb.m128, chainable_mask);
+        const __m128i chainable_bb = _mm_and_si128(bb.m128, chainable_mask);
 
+        // 隣接マス集合（上下左右）
         const BitBoard neighbor =
             bb.shiftUpRaw() | bb.shiftDownRaw() |
             bb.shiftLeftRaw() | bb.shiftRightRaw();
 
+        const uint64_t n_lo = static_cast<uint64_t>(_mm_cvtsi128_si64(neighbor.m128));
+        const uint64_t n_hi = static_cast<uint64_t>(_mm_extract_epi64(neighbor.m128, 1));
+
         for (int x = 0; x < config::Board::kWidth; ++x) {
-            const int h = heights[x];
+            const int h = (packed_heights >> (x << 2)) & 0xFu;
             if (h >= config::Board::kChainableRows)
                 continue;
 
-            if (!neighbor.get(x, h))
+            // ★ スタック書き戻しを完全排除し、レジスタ内ビットテストで一撃判定
+            const uint64_t n_lane = (x < 4) ? (n_lo >> (x << 4)) : (n_hi >> ((x - 4) << 4));
+            if (((n_lane >> h) & 1ULL) == 0)
                 continue;
 
             // ★ 定数テーブルから 1 命令で直接ロード
             const __m128i point_mask = kPointMasks[x][h].m128;
-            const __m128i probed_bb = _mm_or_si128(chainable_bb.m128, point_mask);
+            const __m128i probed_bb = _mm_or_si128(chainable_bb, point_mask);
 
             // ★ core と同一の __m128i 直接レジスタ演算
             const __m128i U = _mm_slli_epi64(probed_bb, 1);

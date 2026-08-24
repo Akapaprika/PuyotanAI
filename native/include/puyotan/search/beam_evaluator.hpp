@@ -18,24 +18,9 @@ class SoloBeamEvaluator {
      * @brief Evaluate a board state and return a heuristic score for Solo mode.
      */
     static int32_t evaluate(const Board& board,
-                            const SoloBeamEvalWeights& w) noexcept {
-        // --- Precompute all column heights once ---
-        int heights[config::Board::kWidth];
-        {
-            const __m128i occ_m128 = board.getOccupied().m128;
-            const uint64_t lo = static_cast<uint64_t>(_mm_cvtsi128_si64(occ_m128));
-            const uint64_t hi = static_cast<uint64_t>(_mm_extract_epi64(occ_m128, 1));
-
-            heights[0] = static_cast<int>(_mm_popcnt_u64((lo >>  0) & config::Board::kColMask));
-            heights[1] = static_cast<int>(_mm_popcnt_u64((lo >> 16) & config::Board::kColMask));
-            heights[2] = static_cast<int>(_mm_popcnt_u64((lo >> 32) & config::Board::kColMask));
-            heights[3] = static_cast<int>(_mm_popcnt_u64((lo >> 48) & config::Board::kColMask));
-            heights[4] = static_cast<int>(_mm_popcnt_u64((hi >>  0) & config::Board::kColMask));
-            heights[5] = static_cast<int>(_mm_popcnt_u64((hi >> 16) & config::Board::kColMask));
-        }
-
-        // --- Potential chain score (shared implementation in potential_score.hpp) ---
-        return computeMaxPotentialScore(board, heights) * w.potential_score_scale;
+                            const SoloBeamEvalWeights& w,
+                            uint32_t packed_heights) noexcept {
+        return computeMaxPotentialScore(board, packed_heights) * w.potential_score_scale;
     }
 };
 
@@ -51,23 +36,9 @@ class VsBeamEvaluator {
     template <bool CalculatePotential = true>
     static int32_t evaluate(const Board& board,
                             const VsBeamEvalWeights& w,
+                            uint32_t packed_heights,
                             const VsEvalContext* ctx = nullptr) noexcept {
         int32_t r = 0;
-
-        // --- Precompute all column heights once ---
-        int heights[config::Board::kWidth];
-        {
-            const __m128i occ_m128 = board.getOccupied().m128;
-            const uint64_t lo = static_cast<uint64_t>(_mm_cvtsi128_si64(occ_m128));
-            const uint64_t hi = static_cast<uint64_t>(_mm_extract_epi64(occ_m128, 1));
-
-            heights[0] = static_cast<int>(_mm_popcnt_u64((lo >>  0) & config::Board::kColMask));
-            heights[1] = static_cast<int>(_mm_popcnt_u64((lo >> 16) & config::Board::kColMask));
-            heights[2] = static_cast<int>(_mm_popcnt_u64((lo >> 32) & config::Board::kColMask));
-            heights[3] = static_cast<int>(_mm_popcnt_u64((lo >> 48) & config::Board::kColMask));
-            heights[4] = static_cast<int>(_mm_popcnt_u64((hi >>  0) & config::Board::kColMask));
-            heights[5] = static_cast<int>(_mm_popcnt_u64((hi >> 16) & config::Board::kColMask));
-        }
 
         // --- Board metrics (BitBoard-level, branchless) ---
         {
@@ -123,7 +94,7 @@ class VsBeamEvaluator {
 
         // --- Potential chain score (shared implementation in potential_score.hpp) ---
         if constexpr (CalculatePotential) {
-            r += computeMaxPotentialScore(board, heights) * w.potential_score_scale;
+            r += computeMaxPotentialScore(board, packed_heights) * w.potential_score_scale;
         }
 
         return r;

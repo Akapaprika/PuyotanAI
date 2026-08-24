@@ -23,25 +23,25 @@ class BeamConfigLoader {
 
     static nlohmann::json getJson(const std::string& path) {
         std::lock_guard<std::mutex> lock(s_mutex);
-        try {
-            auto current_time = std::filesystem::last_write_time(path);
-            if (s_has_cache && path == s_cached_path && current_time == s_last_write_time) {
-                return s_cached_json;
-            }
-            std::ifstream ifs(path);
-            if (ifs.is_open()) {
-                nlohmann::json j;
-                ifs >> j;
+        std::error_code ec;
+        auto current_time = std::filesystem::last_write_time(path, ec);
+        if (!ec && s_has_cache && path == s_cached_path && current_time == s_last_write_time) {
+            return s_cached_json;
+        }
+        std::ifstream ifs(path);
+        if (ifs.is_open()) {
+            nlohmann::json j;
+            ifs >> j;
+            if (!j.is_discarded()) {
                 s_cached_json = j;
                 s_last_write_time = current_time;
                 s_cached_path = path;
                 s_has_cache = true;
                 return j;
             }
-        } catch (...) {
-            if (s_has_cache && path == s_cached_path) {
-                return s_cached_json;
-            }
+        }
+        if (s_has_cache && path == s_cached_path) {
+            return s_cached_json;
         }
         return nlohmann::json::object();
     }
@@ -61,7 +61,7 @@ class BeamConfigLoader {
             cfg.look_ahead = section["look_ahead"].get<int>();
 
         if (section.contains("dbs_max_similar") && section["dbs_max_similar"].is_number_integer())
-            cfg.dbs_max_similar = std::clamp(section["dbs_max_similar"].get<int>(), 0, 65535);
+            cfg.dbs_max_similar = section["dbs_max_similar"].get<int>();
 
         if (section.contains("full_beam_depth") && section["full_beam_depth"].is_number_integer())
             cfg.full_beam_depth = section["full_beam_depth"].get<int>();
@@ -69,8 +69,11 @@ class BeamConfigLoader {
         if (section.contains("min_beam_width_ratio") && section["min_beam_width_ratio"].is_number())
             cfg.min_beam_width_ratio = section["min_beam_width_ratio"].get<float>();
 
-        if (section.contains("eval_weights") && section["eval_weights"].is_object())
-            applyPatch(cfg.eval_weights, section["eval_weights"]);
+        if (section.contains("eval_weights") && section["eval_weights"].is_object()) {
+            const auto& ew = section["eval_weights"];
+            if (ew.contains("potential_score_scale") && ew["potential_score_scale"].is_number_integer())
+                cfg.eval_weights.potential_score_scale = ew["potential_score_scale"].get<int32_t>();
+        }
 
         cfg.recompute_beam_widths();
         return cfg;
@@ -90,7 +93,7 @@ class BeamConfigLoader {
             cfg.look_ahead = section["look_ahead"].get<int>();
 
         if (section.contains("dbs_max_similar") && section["dbs_max_similar"].is_number_integer())
-            cfg.dbs_max_similar = std::clamp(section["dbs_max_similar"].get<int>(), 0, 65535);
+            cfg.dbs_max_similar = section["dbs_max_similar"].get<int>();
 
         if (section.contains("full_beam_depth") && section["full_beam_depth"].is_number_integer())
             cfg.full_beam_depth = section["full_beam_depth"].get<int>();
@@ -98,8 +101,33 @@ class BeamConfigLoader {
         if (section.contains("min_beam_width_ratio") && section["min_beam_width_ratio"].is_number())
             cfg.min_beam_width_ratio = section["min_beam_width_ratio"].get<float>();
 
-        if (section.contains("eval_weights") && section["eval_weights"].is_object())
-            applyPatch(cfg.eval_weights, section["eval_weights"]);
+        if (section.contains("eval_weights") && section["eval_weights"].is_object()) {
+            const auto& ew = section["eval_weights"];
+            if (ew.contains("potential_score_scale") && ew["potential_score_scale"].is_number_integer())
+                cfg.eval_weights.potential_score_scale = ew["potential_score_scale"].get<int32_t>();
+            if (ew.contains("connectivity_bonus") && ew["connectivity_bonus"].is_number_integer())
+                cfg.eval_weights.connectivity_bonus = ew["connectivity_bonus"].get<int32_t>();
+            if (ew.contains("isolated_penalty") && ew["isolated_penalty"].is_number_integer())
+                cfg.eval_weights.isolated_penalty = ew["isolated_penalty"].get<int32_t>();
+            if (ew.contains("buried_penalty") && ew["buried_penalty"].is_number_integer())
+                cfg.eval_weights.buried_penalty = ew["buried_penalty"].get<int32_t>();
+            if (ew.contains("fire_bias") && ew["fire_bias"].is_number())
+                cfg.eval_weights.fire_bias_permille = static_cast<int32_t>(ew["fire_bias"].get<double>() * 1000.0);
+            if (ew.contains("incoming_ojama_penalty") && ew["incoming_ojama_penalty"].is_number_integer())
+                cfg.eval_weights.incoming_ojama_penalty = ew["incoming_ojama_penalty"].get<int32_t>();
+            if (ew.contains("incoming_threat_bias") && ew["incoming_threat_bias"].is_number())
+                cfg.eval_weights.incoming_threat_bias_permille = static_cast<int32_t>(ew["incoming_threat_bias"].get<double>() * 1000.0);
+            if (ew.contains("counter_attack_bias") && ew["counter_attack_bias"].is_number())
+                cfg.eval_weights.counter_attack_bias_permille = static_cast<int32_t>(ew["counter_attack_bias"].get<double>() * 1000.0);
+            if (ew.contains("timing_advantage_bias") && ew["timing_advantage_bias"].is_number())
+                cfg.eval_weights.timing_advantage_bias_permille = static_cast<int32_t>(ew["timing_advantage_bias"].get<double>() * 1000.0);
+            if (ew.contains("urgency_weight") && ew["urgency_weight"].is_number())
+                cfg.eval_weights.urgency_weight_permille = static_cast<int32_t>(ew["urgency_weight"].get<double>() * 1000.0);
+            if (ew.contains("lethal_danger_scale") && ew["lethal_danger_scale"].is_number_integer())
+                cfg.eval_weights.lethal_danger_scale = ew["lethal_danger_scale"].get<int32_t>();
+            if (ew.contains("effective_strike_multiplier") && ew["effective_strike_multiplier"].is_number())
+                cfg.eval_weights.effective_strike_multiplier_permille = static_cast<int32_t>(ew["effective_strike_multiplier"].get<double>() * 1000.0);
+        }
 
         cfg.recompute_beam_widths();
         return cfg;
@@ -119,20 +147,21 @@ class BeamConfigLoader {
         solo["min_beam_width_ratio"] = cfg.min_beam_width_ratio;
 
         auto& ew = solo["eval_weights"];
-        const auto& w = cfg.eval_weights;
-        ew["potential_score_scale"]   = w.potential_score_scale;
+        ew["potential_score_scale"] = cfg.eval_weights.potential_score_scale;
 
         std::ofstream ofs(path);
         ofs << j.dump(2);
 
         {
             std::lock_guard<std::mutex> lock(s_mutex);
-            try {
+            std::error_code ec;
+            auto current_time = std::filesystem::last_write_time(path, ec);
+            if (!ec) {
                 s_cached_json = j;
-                s_last_write_time = std::filesystem::last_write_time(path);
+                s_last_write_time = current_time;
                 s_cached_path = path;
                 s_has_cache = true;
-            } catch (...) {
+            } else {
                 s_has_cache = false;
             }
         }
@@ -171,12 +200,14 @@ class BeamConfigLoader {
 
         {
             std::lock_guard<std::mutex> lock(s_mutex);
-            try {
+            std::error_code ec;
+            auto current_time = std::filesystem::last_write_time(path, ec);
+            if (!ec) {
                 s_cached_json = j;
-                s_last_write_time = std::filesystem::last_write_time(path);
+                s_last_write_time = current_time;
                 s_cached_path = path;
                 s_has_cache = true;
-            } catch (...) {
+            } else {
                 s_has_cache = false;
             }
         }
