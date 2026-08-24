@@ -24,6 +24,7 @@
 #include <puyotan/common/types.hpp>
 #include <puyotan/engine/match.hpp>
 #include <puyotan/engine/tsumo.hpp>
+#include <puyotan/search/beam_config_loader.hpp>
 #include <puyotan/search/beam_search.hpp>
 #include <random>
 #include <string>
@@ -336,8 +337,12 @@ bool runRegressionTest(
 int main(int argc, char** argv) {
     double duration = 5.0;
     bool run_regression = false;
-    int beam_width = 500;
-    int look_ahead = 3;
+    std::string config_path = "";
+    int beam_width = -1;
+    int look_ahead = -1;
+    int dbs_max_similar = -1;
+    int full_beam_depth = -1;
+    float min_beam_width_ratio = -1.0f;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -346,35 +351,56 @@ int main(int argc, char** argv) {
                 duration = std::stod(argv[++i]);
         } else if (arg == "--regression" || arg == "-r") {
             run_regression = true;
+        } else if (arg == "--config" || arg == "-c") {
+            if (i + 1 < argc)
+                config_path = argv[++i];
         } else if (arg == "--beam-width" || arg == "-w") {
             if (i + 1 < argc)
                 beam_width = std::stoi(argv[++i]);
         } else if (arg == "--look-ahead" || arg == "-l") {
             if (i + 1 < argc)
                 look_ahead = std::stoi(argv[++i]);
-
+        } else if (arg == "--dbs") {
+            if (i + 1 < argc)
+                dbs_max_similar = std::stoi(argv[++i]);
+        } else if (arg == "--min-ratio") {
+            if (i + 1 < argc)
+                min_beam_width_ratio = std::stof(argv[++i]);
+        } else if (arg == "--full-depth") {
+            if (i + 1 < argc)
+                full_beam_depth = std::stoi(argv[++i]);
         } else if (arg == "--help" || arg == "-h") {
             printf("Usage: beam_search_benchmark [options]\n");
             printf("Options:\n");
-            printf("  --duration, -d <seconds>     Benchmark duration "
-                   "(default: 5.0)\n");
-            printf("  --regression, -r             Run regression test with "
-                   "fixed seeds\n");
-            printf(
-                "  --beam-width, -w <int>       Beam width (default: 500)\n");
-            printf("  --look-ahead, -l <int>       Look ahead depth (default: "
-                   "3)\n");
+            printf("  --duration, -d <seconds>     Benchmark duration (default: 5.0)\n");
+            printf("  --regression, -r             Run regression test with fixed seeds\n");
+            printf("  --config, -c <path>          Path to beam_config.json\n");
+            printf("  --beam-width, -w <int>       Beam width (default: 500 or from config)\n");
+            printf("  --look-ahead, -l <int>       Look ahead depth (default: 3 or from config)\n");
+            printf("  --dbs <int>                  DBS max similar (default: 0 or from config)\n");
+            printf("  --min-ratio <float>          Min beam width ratio (default: 1.0 or from config)\n");
+            printf("  --full-depth <int>           Full beam depth (default: 2 or from config)\n");
             printf("  --help, -h                   Show this help\n");
             return 0;
         }
     }
 
     SoloBeamConfig cfg;
-    cfg.beam_width = beam_width;
-    cfg.look_ahead = look_ahead;
+    if (!config_path.empty()) {
+        cfg = BeamConfigLoader::loadSolo(config_path);
+    }
+    if (beam_width > 0) cfg.beam_width = beam_width;
+    if (look_ahead > 0) cfg.look_ahead = look_ahead;
+    if (dbs_max_similar >= 0) cfg.dbs_max_similar = dbs_max_similar;
+    if (full_beam_depth >= 0) cfg.full_beam_depth = full_beam_depth;
+    if (min_beam_width_ratio >= 0.0f) cfg.min_beam_width_ratio = min_beam_width_ratio;
+    cfg.recompute_beam_widths();
+
     printf("Beam Search Benchmark (Solo-Mode format) Starting...\n");
     printf("Duration: %.1f seconds\n", duration);
-    printf("Config: width=%d, depth=%d\n", beam_width, look_ahead);
+    printf("Config: width=%d, depth=%d, dbs=%d, min_ratio=%.2f, full_depth=%d\n",
+           cfg.beam_width, cfg.look_ahead, cfg.dbs_max_similar,
+           cfg.min_beam_width_ratio, cfg.full_beam_depth);
 
     if (run_regression) {
         bool ok = runRegressionTest(cfg);

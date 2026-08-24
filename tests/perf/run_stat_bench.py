@@ -58,7 +58,7 @@ def parse_engine_output(output):
     return metrics
 
 
-def parse_beam_output(output):
+def parse_beam_output(output, prefix="beam"):
     metrics = {}
     fps_match = re.search(r"FPS \(frames/s\):\s*([\d\.]+)", output)
     searches_match = re.search(r"Searches/sec:\s*([\d\.]+)", output)
@@ -71,54 +71,69 @@ def parse_beam_output(output):
     p99_match = re.search(r"P99:\s*([\d\.]+)\s*ms", output)
 
     if fps_match:
-        metrics["beam_fps"] = float(fps_match.group(1))
+        metrics[f"{prefix}_fps"] = float(fps_match.group(1))
     if searches_match:
-        metrics["beam_searches_per_sec"] = float(searches_match.group(1))
+        metrics[f"{prefix}_searches_per_sec"] = float(searches_match.group(1))
     if nodes_match:
-        metrics["beam_nodes_per_sec"] = float(nodes_match.group(1))
+        metrics[f"{prefix}_nodes_per_sec"] = float(nodes_match.group(1))
     if avg_match:
-        metrics["beam_latency_avg_ms"] = float(avg_match.group(1))
+        metrics[f"{prefix}_latency_avg_ms"] = float(avg_match.group(1))
     if p50_match:
-        metrics["beam_latency_p50_ms"] = float(p50_match.group(1))
+        metrics[f"{prefix}_latency_p50_ms"] = float(p50_match.group(1))
     if p95_match:
-        metrics["beam_latency_p95_ms"] = float(p95_match.group(1))
+        metrics[f"{prefix}_latency_p95_ms"] = float(p95_match.group(1))
     if p99_match:
-        metrics["beam_latency_p99_ms"] = float(p99_match.group(1))
+        metrics[f"{prefix}_latency_p99_ms"] = float(p99_match.group(1))
         
     return metrics
 
 
-def collect_data(iterations, duration, beam_width, look_ahead):
+def collect_data(iterations, duration_engine, duration_light, duration_heavy, config_path=None):
     engine_path = find_executable(ENGINE_EXE)
     beam_path = find_executable(BEAM_EXE)
     
+    # Default config path to native/resources/beam_config.json if not specified
+    if config_path is None:
+        cand_cfg = BASE_DIR / "native" / "resources" / "beam_config.json"
+        if cand_cfg.exists():
+            config_path = str(cand_cfg)
+            
     results = []
     
     # Warmup
     print("Performing warmup run...")
     try:
         run_benchmark_once(engine_path, ["--duration", "1.0"])
-        beam_args = ["--duration", "1.0", "--beam-width", str(beam_width), "--look-ahead", str(look_ahead)]
-        run_benchmark_once(beam_path, beam_args)
+        run_benchmark_once(beam_path, ["--duration", "1.0", "--beam-width", "500", "--look-ahead", "3", "--dbs", "0"])
+        if config_path and duration_heavy > 0:
+            run_benchmark_once(beam_path, ["--duration", "2.0", "--config", config_path])
     except Exception as e:
         print(f"Warmup failed: {e}", file=sys.stderr)
         
-    print(f"Starting {iterations} runs (Duration per run: {duration}s)...")
+    print(f"Starting {iterations} runs (Engine: {duration_engine}s, Light Beam: {duration_light}s, Heavy Beam: {duration_heavy}s)...")
     for i in range(iterations):
         print(f"Iteration {i + 1}/{iterations}...")
         
         # 1. Engine benchmark
-        engine_out = run_benchmark_once(engine_path, ["--duration", str(duration)])
+        engine_out = run_benchmark_once(engine_path, ["--duration", str(duration_engine)])
         engine_metrics = parse_engine_output(engine_out)
         
-        # 2. Beam search benchmark
-        beam_args = ["--duration", str(duration), "--beam-width", str(beam_width), "--look-ahead", str(look_ahead)]
-        beam_out = run_benchmark_once(beam_path, beam_args)
-        beam_metrics = parse_beam_output(beam_out)
-        
-        combined = {**engine_metrics, **beam_metrics}
+        # 2. Beam search (Light) benchmark
+        combined = {**engine_metrics}
+        if duration_light > 0:
+            beam_light_args = ["--duration", str(duration_light), "--beam-width", "500", "--look-ahead", "3", "--dbs", "0"]
+            beam_light_out = run_benchmark_once(beam_path, beam_light_args)
+            beam_light_metrics = parse_beam_output(beam_light_out, prefix="beam_light")
+            combined.update(beam_light_metrics)
+            
+        # 3. Beam search (Heavy Solo) benchmark
+        if duration_heavy > 0 and config_path:
+            beam_heavy_args = ["--duration", str(duration_heavy), "--config", config_path]
+            beam_heavy_out = run_benchmark_once(beam_path, beam_heavy_args)
+            beam_heavy_metrics = parse_beam_output(beam_heavy_out, prefix="beam_heavy")
+            combined.update(beam_heavy_metrics)
+            
         results.append(combined)
-        
         time.sleep(1.0)
     return results
 
@@ -220,7 +235,7 @@ def perform_statistical_test(base_results, pr_results):
 def generate_markdown_report(comparison, iterations):
     md = []
     md.append("# PuyotanAI Performance Benchmark Report")
-    md.append(f"Statistically compared using Welch's t-test over **{iterations} repetitions** of 10s runs (with 10% outlier trimming).")
+    md.append(f"Statistically compared using Welch's t-test over **{iterations} repetitions** of runs (with 10% outlier trimming).")
     md.append("")
     md.append("| Metric | Base Mean | PR Mean | Change (%) | p-value | Significant? | Status |")
     md.append("| :--- | :---: | :---: | :---: | :---: | :---: | :---: |")
@@ -267,22 +282,30 @@ def main():
     # --compare, -c を可変長引数 (nargs='*') に変更し、短縮形 -c を追加
     parser.add_argument("--compare", "-c", nargs="*", metavar="FILE", help="Compare benchmark results. 0 args: compare two newest; 1 arg: compare specified vs newest; 2 args: compare specified base vs specified pr.")
     
-    parser.add_argument("--iterations", type=int, default=30, help="Number of repetitions to run")
-    parser.add_argument("--duration", type=float, default=10.0, help="Duration of each benchmark run in seconds")
-    parser.add_argument("--beam-width", type=int, default=500, help="Beam width for beam search benchmark")
-    parser.add_argument("--look-ahead", type=int, default=10, help="Lookahead depth for beam search benchmark")
+    parser.add_argument("--iterations", type=int, default=5, help="Number of repetitions to run (default: 5)")
+    parser.add_argument("--duration-engine", type=float, default=5.0, help="Duration of engine benchmark in seconds (default: 5.0)")
+    parser.add_argument("--duration-light", type=float, default=5.0, help="Duration of light beam search in seconds (default: 5.0)")
+    parser.add_argument("--duration-heavy", type=float, default=55.0, help="Duration of heavy solo beam search in seconds (default: 55.0)")
+    parser.add_argument("--duration", type=float, default=None, help="Legacy duration option (sets all durations to this value)")
+    parser.add_argument("--config", type=str, default=None, help="Path to beam_config.json for heavy search")
     parser.add_argument("--output", type=str, default=default_output, help="Path to output JSON")
     parser.add_argument("--output-md", type=str, default=None, help="Path to output Markdown report")
     args = parser.parse_args()
 
     if args.run:
-        results = collect_data(args.iterations, args.duration, args.beam_width, args.look_ahead)
+        d_engine = args.duration if args.duration is not None else args.duration_engine
+        d_light = args.duration if args.duration is not None else args.duration_light
+        d_heavy = args.duration if args.duration is not None else args.duration_heavy
+        
+        results = collect_data(args.iterations, d_engine, d_light, d_heavy, args.config)
         with open(args.output, "w") as f:
             # データの履歴追跡を容易にするため、jsonの内部にも実行時のタイムスタンプを保存します
             json.dump({
                 "timestamp": timestamp,
                 "iterations": args.iterations, 
-                "duration": args.duration, 
+                "duration_engine": d_engine,
+                "duration_light": d_light,
+                "duration_heavy": d_heavy,
                 "results": results
             }, f, indent=2)
         print(f"Results successfully saved to {args.output}")

@@ -204,15 +204,15 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
                 if (pr.dead)
                     continue;
 
-                int32_t eval = EvaluatorType::evaluate(pr.field, cfg.eval_weights);
-                int32_t next_accum = node.accum_score + static_cast<int32_t>(pr.score);
-                int32_t total_score = next_accum * cfg.eval_weights.potential_score_scale + eval;
-
                 // ★【完全ブランチレス】縦横判定 if を排除し、1命令加算で高さを一撃計算
                 uint32_t next_packed_h = cur_heights + (1u << (entry.ax << 2)) + (1u << (entry.sx << 2));
                 if (__builtin_expect(pr.chain > 0, 0)) {
                     next_packed_h = packHeights(pr.field);
                 }
+
+                int32_t eval = EvaluatorType::evaluate(pr.field, cfg.eval_weights, next_packed_h);
+                int32_t next_accum = node.accum_score + static_cast<int32_t>(pr.score);
+                int32_t total_score = next_accum * cfg.eval_weights.potential_score_scale + eval;
 
                 tl_candidates.push_back(CandidateNode{
                     total_score,
