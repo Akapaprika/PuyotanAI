@@ -124,9 +124,9 @@ BenchmarkResult runBenchmark(double duration_seconds, const SoloBeamConfig& cfg,
     BenchmarkResult result;
     std::vector<double> latencies;
     latencies.reserve(200000);
-    std::vector<float> expected_scores;
-    expected_scores.reserve(200000);
     double total_search_time_ms = 0.0;
+    double sum_expected_scores = 0.0;
+    const uint64_t nodes_per_search = static_cast<uint64_t>(estimateNodesProcessed(cfg));
 
     auto start_time = std::chrono::high_resolution_clock::now();
     uint32_t seed = base_seed;
@@ -137,12 +137,6 @@ BenchmarkResult runBenchmark(double duration_seconds, const SoloBeamConfig& cfg,
 
     bool time_up = false;
     while (!time_up) {
-        auto now = std::chrono::high_resolution_clock::now();
-        double elapsed =
-            std::chrono::duration<double>(now - start_time).count();
-        if (elapsed >= duration_seconds)
-            break;
-
         PuyotanMatch match(seed);
         Tsumo tsumo(seed);
         match.start();
@@ -153,18 +147,18 @@ BenchmarkResult runBenchmark(double duration_seconds, const SoloBeamConfig& cfg,
         while (match.getStatus() == MatchStatus::Playing &&
                game_moves < max_moves_per_game) {
 
-            // Check timeout per move to avoid overrunning benchmark duration in deep/heavy searches
-            auto current_now = std::chrono::high_resolution_clock::now();
-            if (std::chrono::duration<double>(current_now - start_time).count() >= duration_seconds) {
-                time_up = true;
-                break;
-            }
-
             bool action_set = false;
             int decision_mask = match.getDecisionMask();
 
             // Run beam search once at Player 0 (1P) decision timing
             if (decision_mask & 1) {
+                // Check timeout before starting next search to avoid overrunning benchmark duration
+                auto current_now = std::chrono::high_resolution_clock::now();
+                if (std::chrono::duration<double>(current_now - start_time).count() >= duration_seconds) {
+                    time_up = true;
+                    break;
+                }
+
                 auto start = std::chrono::high_resolution_clock::now();
                 auto search_res =
                     soloBeamSearch(match.getPlayer(0), tsumo, cfg);
@@ -175,7 +169,7 @@ BenchmarkResult runBenchmark(double duration_seconds, const SoloBeamConfig& cfg,
                         .count();
                 latencies.push_back(latency_ms);
                 total_search_time_ms += latency_ms;
-                expected_scores.push_back(search_res.second);
+                sum_expected_scores += search_res.second;
 
                 int action_idx = search_res.first;
                 if (action_idx >= 0 && action_idx < kNumRLActions) {
@@ -195,7 +189,7 @@ BenchmarkResult runBenchmark(double duration_seconds, const SoloBeamConfig& cfg,
                     // loop immediately
                     break;
                 }
-                result.total_nodes += estimateNodesProcessed(cfg);
+                result.total_nodes += nodes_per_search;
                 result.total_searches++;
             }
 
@@ -241,10 +235,8 @@ BenchmarkResult runBenchmark(double duration_seconds, const SoloBeamConfig& cfg,
         result.avg_latency_ms = sum_latency / n;
     }
 
-    if (!expected_scores.empty()) {
-        float sum_scores = std::accumulate(expected_scores.begin(),
-                                           expected_scores.end(), 0.0f);
-        result.avg_stats.expected_score = sum_scores / expected_scores.size();
+    if (result.total_searches > 0) {
+        result.avg_stats.expected_score = static_cast<float>(sum_expected_scores / result.total_searches);
         result.avg_stats.valid = true;
     }
 

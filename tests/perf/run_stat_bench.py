@@ -117,6 +117,7 @@ def collect_data(iterations, duration_engine, duration_light, duration_heavy, co
         # 1. Engine benchmark
         engine_out = run_benchmark_once(engine_path, ["--duration", str(duration_engine)])
         engine_metrics = parse_engine_output(engine_out)
+        time.sleep(3.0)
         
         # 2. Beam search (Light) benchmark
         combined = {**engine_metrics}
@@ -125,6 +126,7 @@ def collect_data(iterations, duration_engine, duration_light, duration_heavy, co
             beam_light_out = run_benchmark_once(beam_path, beam_light_args)
             beam_light_metrics = parse_beam_output(beam_light_out, prefix="beam_light")
             combined.update(beam_light_metrics)
+            time.sleep(3.0)
             
         # 3. Beam search (Heavy Solo) benchmark
         if duration_heavy > 0 and config_path:
@@ -134,7 +136,7 @@ def collect_data(iterations, duration_engine, duration_light, duration_heavy, co
             combined.update(beam_heavy_metrics)
             
         results.append(combined)
-        time.sleep(1.0)
+        time.sleep(3.0)
     return results
 
 
@@ -294,8 +296,8 @@ def main():
     
     parser.add_argument("--iterations", type=int, default=5, help="Number of repetitions to run (default: 5)")
     parser.add_argument("--duration-engine", type=float, default=5.0, help="Duration of engine benchmark in seconds (default: 5.0)")
-    parser.add_argument("--duration-light", type=float, default=5.0, help="Duration of light beam search in seconds (default: 5.0)")
-    parser.add_argument("--duration-heavy", type=float, default=55.0, help="Duration of heavy solo beam search in seconds (default: 55.0)")
+    parser.add_argument("--duration-light", type=float, default=10.0, help="Duration of light beam search in seconds (default: 10.0)")
+    parser.add_argument("--duration-heavy", type=float, default=45.0, help="Duration of heavy solo beam search in seconds (default: 45.0)")
     parser.add_argument("--duration", type=float, default=None, help="Legacy duration option (sets all durations to this value)")
     parser.add_argument("--config", type=str, default=None, help="Path to beam_config.json for heavy search")
     parser.add_argument("--output", type=str, default=default_output, help="Path to output JSON")
