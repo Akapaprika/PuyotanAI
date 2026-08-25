@@ -43,6 +43,8 @@ target_link_libraries(puyotan_native PRIVATE puyotan_core puyotan_search)
 # ---------------------------------------------------------
 # Compile & Link Options (All Targets)
 # ---------------------------------------------------------
+option(ENABLE_PROFILING "Enable debug symbols (/Zi) for profiling tools like AMD uProf" OFF)
+
 set(ALL_TARGETS 
     puyotan_core 
     puyotan_search 
@@ -71,7 +73,8 @@ if (MSVC)
             target_compile_options(${T} PRIVATE
                 $<$<CONFIG:Debug>: /Od /Zi /RTC1 -Wno-everything >
                 $<$<CONFIG:Release>:
-                    /O2 /arch:AVX2 /fp:fast /DNDEBUG /FS /Zi
+                    /O2 /arch:AVX2 /fp:fast /DNDEBUG /FS
+                    $<$<BOOL:${ENABLE_PROFILING}>:/Zi>
                     /clang:-O3
                     /clang:-march=znver1
                     /clang:-flto=thin
@@ -93,7 +96,10 @@ if (MSVC)
                 /wd4267
                 /wd4819
                 $<$<CONFIG:Debug>: /Od /Zi /RTC1 /W4 /MP >
-                $<$<CONFIG:Release>: /O2 /Ot /Oy /arch:AVX2 /Gy /Gw /GF /fp:fast /Oi /DNDEBUG /MP /FS /Ob3 /GS- /Qspectre- /favor:AMD64 /Zi >
+                $<$<CONFIG:Release>:
+                    /O2 /Ot /Oy /arch:AVX2 /Gy /Gw /GF /fp:fast /Oi /DNDEBUG /MP /FS /Ob3 /GS- /Qspectre- /favor:AMD64
+                    $<$<BOOL:${ENABLE_PROFILING}>:/Zi>
+                >
             )
         endif()
     endforeach()
@@ -114,17 +120,26 @@ if (MSVC)
     # Linker Options (lld-link 用にクリーン化)
     set(LINK_TARGETS puyotan_native engine_benchmark beam_search_benchmark)
     foreach(LT IN LISTS LINK_TARGETS)
-        target_link_options(${LT} PRIVATE
-            $<$<CONFIG:Debug>: /DEBUG:FASTLINK >
-            $<$<CONFIG:Release>: /DEBUG /OPT:REF /OPT:ICF /INCREMENTAL:NO >
-        )
-        
-        # Unified Post-build copy commands (.exe / .pyd および .pdb シンボルファイルを dist に配置)
-        add_custom_command(TARGET ${LT} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_SOURCE_DIR}/dist
-            COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${LT}> ${CMAKE_SOURCE_DIR}/dist/
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_PDB_FILE:${LT}> ${CMAKE_SOURCE_DIR}/dist/
-        )
+        if (ENABLE_PROFILING)
+            target_link_options(${LT} PRIVATE
+                $<$<CONFIG:Debug>: /DEBUG:FASTLINK >
+                $<$<CONFIG:Release>: /DEBUG /OPT:REF /OPT:ICF /INCREMENTAL:NO >
+            )
+            add_custom_command(TARGET ${LT} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_SOURCE_DIR}/dist
+                COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${LT}> ${CMAKE_SOURCE_DIR}/dist/
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_PDB_FILE:${LT}> ${CMAKE_SOURCE_DIR}/dist/
+            )
+        else()
+            target_link_options(${LT} PRIVATE
+                $<$<CONFIG:Debug>: /DEBUG:FASTLINK >
+                $<$<CONFIG:Release>: /DEBUG:NONE /OPT:REF /OPT:ICF /INCREMENTAL:NO >
+            )
+            add_custom_command(TARGET ${LT} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_SOURCE_DIR}/dist
+                COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${LT}> ${CMAKE_SOURCE_DIR}/dist/
+            )
+        endif()
     endforeach()
 else()
     # GCC / Native Clang (Linux / macOS)

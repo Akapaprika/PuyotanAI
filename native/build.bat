@@ -7,21 +7,22 @@ setlocal enabledelayedexpansion
 
 set MODE=Release
 set FORCE_COMPILER=
+set PROFILING=OFF
 
-if "%1"=="-d"      set MODE=Debug
-if "%1"=="--debug" set MODE=Debug
-if "%2"=="-d"      set MODE=Debug
-if "%2"=="--debug" set MODE=Debug
-
-if "%1"=="--msvc"  set FORCE_COMPILER=msvc
-if "%1"=="-msvc"   set FORCE_COMPILER=msvc
-if "%2"=="--msvc"  set FORCE_COMPILER=msvc
-if "%2"=="-msvc"   set FORCE_COMPILER=msvc
-
-if "%1"=="--clang" set FORCE_COMPILER=clang
-if "%1"=="-clang"  set FORCE_COMPILER=clang
-if "%2"=="--clang" set FORCE_COMPILER=clang
-if "%2"=="-clang"  set FORCE_COMPILER=clang
+:parse_args
+if "%~1"=="" goto :args_done
+if "%~1"=="-d"        set MODE=Debug
+if "%~1"=="--debug"   set MODE=Debug
+if "%~1"=="--msvc"    set FORCE_COMPILER=msvc
+if "%~1"=="-msvc"     set FORCE_COMPILER=msvc
+if "%~1"=="--clang"   set FORCE_COMPILER=clang
+if "%~1"=="-clang"    set FORCE_COMPILER=clang
+if "%~1"=="-p"        set PROFILING=ON
+if "%~1"=="--prof"    set PROFILING=ON
+if "%~1"=="--profile" set PROFILING=ON
+shift
+goto :parse_args
+:args_done
 
 :: pybind11 cmake dir
 FOR /F "tokens=*" %%i IN ('python -c "import pybind11; print(pybind11.get_cmake_dir().replace(chr(92),chr(47)))"') DO set PYBIND11_CMAKE_DIR=%%i
@@ -29,14 +30,18 @@ FOR /F "tokens=*" %%i IN ('python -c "import pybind11; print(pybind11.get_cmake_
 set BUILD_DIR_VS=%~dp0build_%MODE%
 set BUILD_DIR_NINJA=%~dp0build_%MODE%_clang
 
-echo === Configure (%MODE%) ===
+if "%PROFILING%"=="ON" (
+    echo === Configure (%MODE% with AMD uProf Profiling Symbols) ===
+) else (
+    echo === Configure (%MODE% - Pure Maximum Performance) ===
+)
 
 :: ------------------------------------------------------------
 :: Case 1: Force MSVC
 :: ------------------------------------------------------------
 if "%FORCE_COMPILER%"=="msvc" (
     echo [Build] Compiler: MSVC ^(forced^)
-    cmake -S "%~dp0." -B "%BUILD_DIR_VS%" -Dpybind11_DIR="%PYBIND11_CMAKE_DIR%"
+    cmake -S "%~dp0." -B "%BUILD_DIR_VS%" -Dpybind11_DIR="%PYBIND11_CMAKE_DIR%" -DENABLE_PROFILING=%PROFILING%
     if errorlevel 1 ( exit /b 1 )
     set BUILD_DIR=%BUILD_DIR_VS%
     goto :build
@@ -74,7 +79,8 @@ if not "%CLANGCL_EXE%"=="" (
             -G "Ninja" ^
             -DCMAKE_BUILD_TYPE=%MODE% ^
             -DCMAKE_CXX_COMPILER="%CLANGCL_EXE%" ^
-            -Dpybind11_DIR="%PYBIND11_CMAKE_DIR%"
+            -Dpybind11_DIR="%PYBIND11_CMAKE_DIR%" ^
+            -DENABLE_PROFILING=%PROFILING%
         if not errorlevel 1 (
             set BUILD_DIR=%BUILD_DIR_NINJA%
             goto :build
@@ -87,7 +93,7 @@ if not "%CLANGCL_EXE%"=="" (
 :: Case 3: Visual Studio Fallback (100% 確実に成功するルート)
 :: ------------------------------------------------------------
 echo [Build] Compiler: MSVC ^(Visual Studio^)
-cmake -S "%~dp0." -B "%BUILD_DIR_VS%" -Dpybind11_DIR="%PYBIND11_CMAKE_DIR%"
+cmake -S "%~dp0." -B "%BUILD_DIR_VS%" -Dpybind11_DIR="%PYBIND11_CMAKE_DIR%" -DENABLE_PROFILING=%PROFILING%
 if errorlevel 1 ( exit /b 1 )
 set BUILD_DIR=%BUILD_DIR_VS%
 
