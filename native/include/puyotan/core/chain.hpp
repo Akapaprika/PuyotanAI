@@ -71,25 +71,26 @@ class Chain {
             const __m128i X = _mm_or_si128(UD_and, LR_and);
             const __m128i Y = _mm_and_si128(UD_or, LR_or);
 
-            const __m128i XY_and  = _mm_and_si128(X, Y);
-            const __m128i XY_or   = _mm_or_si128(X, Y);
+            const __m128i XY_and = _mm_and_si128(X, Y);
+            const __m128i XY_or  = _mm_or_si128(X, Y);
 
-            const __m128i deg_ge3 = _mm_and_si128(cb, XY_and);
             const __m128i deg_ge2 = _mm_and_si128(cb, XY_or);
 
             // 3. 【ステージ1: 最速非対称シード判定】(非消去パスは 2シフトのみで即座に脱出)
+            // 【最適化】deg_ge3 の & cb を PTEST に吸収させ、非消去パス(大多数)で 1命令を節約。
+            // 数学的同値性: cb & (XY_and | d2_asym) = (cb & XY_and) | d2_asym = deg_ge3 | d2_asym
             const __m128i u_d2 = _mm_slli_epi64(deg_ge2, 1);
             const __m128i l_d2 = _mm_srli_si128(deg_ge2, 2);
             const __m128i ul_d2 = _mm_or_si128(u_d2, l_d2);
             const __m128i d2_asym = _mm_and_si128(deg_ge2, ul_d2);
 
-            const __m128i asym_seeds = _mm_or_si128(deg_ge3, d2_asym);
-            if (_mm_testz_si128(asym_seeds, asym_seeds)) {
+            if (_mm_testz_si128(cb, _mm_or_si128(XY_and, d2_asym))) {
                 temp_mask &= (temp_mask - 1);
                 continue;
             }
 
-            // 4. 【ステージ2: 消去確定時のみ対称シード化＆1ステップ展開】
+            // 4. 【ステージ2: 消去確定時のみ deg_ge3 を具体化し、対称シード化＆1ステップ展開】
+            const __m128i deg_ge3 = _mm_and_si128(cb, XY_and);
             const __m128i d_d2 = _mm_srli_epi64(deg_ge2, 1);
             const __m128i r_d2 = _mm_slli_si128(deg_ge2, 2);
             const __m128i dr_d2 = _mm_or_si128(d_d2, r_d2);
