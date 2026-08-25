@@ -98,8 +98,6 @@ def collect_data(iterations, duration_engine, duration_light, duration_heavy, co
         if cand_cfg.exists():
             config_path = str(cand_cfg)
             
-    results = []
-    
     # Warmup
     print("Performing warmup run...")
     try:
@@ -109,35 +107,53 @@ def collect_data(iterations, duration_engine, duration_light, duration_heavy, co
             run_benchmark_once(beam_path, ["--duration", "2.0", "--config", config_path])
     except Exception as e:
         print(f"Warmup failed: {e}", file=sys.stderr)
-        
+
     print(f"Starting {iterations} runs (Engine: {duration_engine}s, Light Beam: {duration_light}s, Heavy Beam: {duration_heavy}s)...")
+    print("Order: [Engine × N] → [Light × N] → [Heavy × N] (block-based)")
+
+    # --- Block 1: Engine ---
+    engine_results = []
+    print(f"\n=== Engine Block ({iterations} runs) ===")
     for i in range(iterations):
-        print(f"Iteration {i + 1}/{iterations}...")
-        
-        # 1. Engine benchmark
+        print(f"  Engine {i + 1}/{iterations}...")
         engine_out = run_benchmark_once(engine_path, ["--duration", str(duration_engine)])
-        engine_metrics = parse_engine_output(engine_out)
-        time.sleep(3.0)
-        
-        # 2. Beam search (Light) benchmark
-        combined = {**engine_metrics}
-        if duration_light > 0:
-            beam_light_args = ["--duration", str(duration_light), "--beam-width", "500", "--look-ahead", "10", "--dbs", "0"]
+        engine_results.append(parse_engine_output(engine_out))
+        time.sleep(3.0)  # sleep after every run (including last, before next block)
+
+    # --- Block 2: Beam Light ---
+    light_results = []
+    if duration_light > 0:
+        print(f"\n=== Beam Light Block ({iterations} runs) ===")
+        beam_light_args = ["--duration", str(duration_light), "--beam-width", "500", "--look-ahead", "10", "--dbs", "0"]
+        for i in range(iterations):
+            print(f"  Light {i + 1}/{iterations}...")
             beam_light_out = run_benchmark_once(beam_path, beam_light_args)
-            beam_light_metrics = parse_beam_output(beam_light_out, prefix="beam_light")
-            combined.update(beam_light_metrics)
-            time.sleep(3.0)
-            
-        # 3. Beam search (Heavy Solo) benchmark
-        if duration_heavy > 0 and config_path:
-            beam_heavy_args = ["--duration", str(duration_heavy), "--config", config_path]
+            light_results.append(parse_beam_output(beam_light_out, prefix="beam_light"))
+            time.sleep(3.0)  # sleep after every run (including last, before next block)
+
+    # --- Block 3: Beam Heavy ---
+    heavy_results = []
+    if duration_heavy > 0 and config_path:
+        print(f"\n=== Beam Heavy Block ({iterations} runs) ===")
+        beam_heavy_args = ["--duration", str(duration_heavy), "--config", config_path]
+        for i in range(iterations):
+            print(f"  Heavy {i + 1}/{iterations}...")
             beam_heavy_out = run_benchmark_once(beam_path, beam_heavy_args)
-            beam_heavy_metrics = parse_beam_output(beam_heavy_out, prefix="beam_heavy")
-            combined.update(beam_heavy_metrics)
-            
+            heavy_results.append(parse_beam_output(beam_heavy_out, prefix="beam_heavy"))
+            if i < iterations - 1:
+                time.sleep(3.0)  # sleep between runs, but not after the very last one
+
+    # --- Merge per-iteration results ---
+    results = []
+    for i in range(iterations):
+        combined = {}
+        if i < len(engine_results):
+            combined.update(engine_results[i])
+        if i < len(light_results):
+            combined.update(light_results[i])
+        if i < len(heavy_results):
+            combined.update(heavy_results[i])
         results.append(combined)
-        time.sleep(3.0)
-    return results
 
 
 def trim_raw_samples(samples, trim_pct=0.1):
