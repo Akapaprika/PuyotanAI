@@ -26,6 +26,22 @@ ENGINE_EXE = "engine_benchmark.exe" if os.name == "nt" else "engine_benchmark"
 BEAM_EXE = "beam_search_benchmark.exe" if os.name == "nt" else "beam_search_benchmark"
 
 
+def print_prominent_warning(title, cmd_str="", stderr_str="", stdout_str=""):
+    """エラー・警告内容を詳細かつ目立つように出力する関数"""
+    border = "═" * 74
+    print(f"\n\033[93m╔{border}╗", file=sys.stderr)
+    print(f"║ ⚠️  【連鎖点検警告】{title.ljust(50)} ║", file=sys.stderr)
+    if cmd_str:
+        print(f"║    実行コマンド: {cmd_str[:58].ljust(58)} ║", file=sys.stderr)
+    print(f"╚{border}╝\033[0m", file=sys.stderr)
+    
+    if stderr_str:
+        print(f"\033[91m[エラー出力 (stderr)]:\n{stderr_str.strip()}\033[0m", file=sys.stderr)
+    if stdout_str:
+        print(f"\033[90m[プロセス標準出力 (stdout)]:\n{stdout_str.strip()}\033[0m", file=sys.stderr)
+    print("", file=sys.stderr)
+
+
 def find_executable(filename):
     candidates = [DIST_DIR / filename, BUILD_RELEASE_DIR / filename, BUILD_DEBUG_DIR / filename]
     for path in candidates:
@@ -40,51 +56,63 @@ def run_benchmark_once(exe_path, args_list):
     
     cmd = [str(exe_path)] + args_list
     result = subprocess.run(cmd, env=env, capture_output=True, text=True)
-    if result.returncode != 0:
-        print(f"Error running benchmark: {result.stderr}", file=sys.stderr)
-        raise RuntimeError(f"Benchmark failed with exit code {result.returncode}")
-    return result.stdout
-
-
-def parse_engine_output(output):
-    metrics = {}
-    fps_match = re.search(r"FPS \(frames/s\):\s*([\d\.]+)", output)
-    games_match = re.search(r"Games/s:\s*([\d\.]+)", output)
     
-    if fps_match:
-        metrics["engine_fps"] = float(fps_match.group(1))
-    if games_match:
-        metrics["engine_games_per_sec"] = float(games_match.group(1))
+    if result.returncode != 0:
+        print_prominent_warning(
+            f"プロセス異常終了 (Exit Code: {result.returncode})",
+            cmd_str=" ".join(args_list),
+            stderr_str=result.stderr.strip() or "（stderr は空です。アサーション失敗または異常終了）",
+            stdout_str=result.stdout.strip()
+        )
+    return result.stdout, result.stderr, result.returncode
+
+
+def parse_engine_output(stdout, stderr, returncode):
+    metrics = {"engine_status": "ok" if returncode == 0 else f"error_exit_{returncode}"}
+    if returncode != 0:
+        metrics["engine_error"] = stderr.strip() or "unknown_error"
+
+    if stdout:
+        fps_match = re.search(r"FPS \(frames/s\):\s*([\d\.]+)", stdout)
+        games_match = re.search(r"Games/s:\s*([\d\.]+)", stdout)
+        
+        if fps_match:
+            metrics["engine_fps"] = float(fps_match.group(1))
+        if games_match:
+            metrics["engine_games_per_sec"] = float(games_match.group(1))
     return metrics
 
 
-def parse_beam_output(output, prefix="beam"):
-    metrics = {}
-    fps_match = re.search(r"FPS \(frames/s\):\s*([\d\.]+)", output)
-    searches_match = re.search(r"Searches/sec:\s*([\d\.]+)", output)
-    nodes_match = re.search(r"Nodes/sec:\s*([\d\.]+)", output)
-    
-    # Latency section parsing
-    avg_match = re.search(r"Avg:\s*([\d\.]+)\s*ms", output)
-    p50_match = re.search(r"P50:\s*([\d\.]+)\s*ms", output)
-    p95_match = re.search(r"P95:\s*([\d\.]+)\s*ms", output)
-    p99_match = re.search(r"P99:\s*([\d\.]+)\s*ms", output)
+def parse_beam_output(stdout, stderr, returncode, prefix="beam"):
+    metrics = {f"{prefix}_status": "ok" if returncode == 0 else f"error_exit_{returncode}"}
+    if returncode != 0:
+        metrics[f"{prefix}_error"] = stderr.strip() or f"exit_code_{returncode}"
 
-    if fps_match:
-        metrics[f"{prefix}_fps"] = float(fps_match.group(1))
-    if searches_match:
-        metrics[f"{prefix}_searches_per_sec"] = float(searches_match.group(1))
-    if nodes_match:
-        metrics[f"{prefix}_nodes_per_sec"] = float(nodes_match.group(1))
-    if avg_match:
-        metrics[f"{prefix}_latency_avg_ms"] = float(avg_match.group(1))
-    if p50_match:
-        metrics[f"{prefix}_latency_p50_ms"] = float(p50_match.group(1))
-    if p95_match:
-        metrics[f"{prefix}_latency_p95_ms"] = float(p95_match.group(1))
-    if p99_match:
-        metrics[f"{prefix}_latency_p99_ms"] = float(p99_match.group(1))
+    if stdout:
+        fps_match = re.search(r"FPS \(frames/s\):\s*([\d\.]+)", stdout)
+        searches_match = re.search(r"Searches/sec:\s*([\d\.]+)", stdout)
+        nodes_match = re.search(r"Nodes/sec:\s*([\d\.]+)", stdout)
         
+        avg_match = re.search(r"Avg:\s*([\d\.]+)\s*ms", stdout)
+        p50_match = re.search(r"P50:\s*([\d\.]+)\s*ms", stdout)
+        p95_match = re.search(r"P95:\s*([\d\.]+)\s*ms", stdout)
+        p99_match = re.search(r"P99:\s*([\d\.]+)\s*ms", stdout)
+
+        if fps_match:
+            metrics[f"{prefix}_fps"] = float(fps_match.group(1))
+        if searches_match:
+            metrics[f"{prefix}_searches_per_sec"] = float(searches_match.group(1))
+        if nodes_match:
+            metrics[f"{prefix}_nodes_per_sec"] = float(nodes_match.group(1))
+        if avg_match:
+            metrics[f"{prefix}_latency_avg_ms"] = float(avg_match.group(1))
+        if p50_match:
+            metrics[f"{prefix}_latency_p50_ms"] = float(p50_match.group(1))
+        if p95_match:
+            metrics[f"{prefix}_latency_p95_ms"] = float(p95_match.group(1))
+        if p99_match:
+            metrics[f"{prefix}_latency_p99_ms"] = float(p99_match.group(1))
+            
     return metrics
 
 
@@ -97,15 +125,11 @@ def collect_data(iterations, duration_engine, duration_light, duration_heavy, co
         if cand_cfg.exists():
             config_path = str(cand_cfg)
             
-    # Warmup
     print("Performing warmup run...")
-    try:
-        run_benchmark_once(engine_path, ["--duration", "1.0"])
-        run_benchmark_once(beam_path, ["--duration", "1.0", "--beam-width", "500", "--look-ahead", "3", "--dbs", "0"])
-        if config_path and duration_heavy > 0:
-            run_benchmark_once(beam_path, ["--duration", "2.0", "--config", config_path])
-    except Exception as e:
-        print(f"Warmup failed: {e}", file=sys.stderr)
+    run_benchmark_once(engine_path, ["--duration", "1.0"])
+    run_benchmark_once(beam_path, ["--duration", "1.0", "--beam-width", "500", "--look-ahead", "3", "--dbs", "0"])
+    if config_path and duration_heavy > 0:
+        run_benchmark_once(beam_path, ["--duration", "2.0", "--config", config_path])
 
     print(f"Starting {iterations} runs (Engine: {duration_engine}s, Light Beam: {duration_light}s, Heavy Beam: {duration_heavy}s)...")
     print("Order: [Engine × N] → [Light × N] → [Heavy × N] (block-based)")
@@ -115,8 +139,8 @@ def collect_data(iterations, duration_engine, duration_light, duration_heavy, co
     print(f"\n=== Engine Block ({iterations} runs) ===")
     for i in range(iterations):
         print(f"  Engine {i + 1}/{iterations}...")
-        engine_out = run_benchmark_once(engine_path, ["--duration", str(duration_engine)])
-        engine_results.append(parse_engine_output(engine_out))
+        stdout, stderr, code = run_benchmark_once(engine_path, ["--duration", str(duration_engine)])
+        engine_results.append(parse_engine_output(stdout, stderr, code))
         time.sleep(3.0)
 
     # --- Block 2: Beam Light ---
@@ -126,8 +150,8 @@ def collect_data(iterations, duration_engine, duration_light, duration_heavy, co
         beam_light_args = ["--duration", str(duration_light), "--beam-width", "500", "--look-ahead", "10", "--dbs", "0"]
         for i in range(iterations):
             print(f"  Light {i + 1}/{iterations}...")
-            beam_light_out = run_benchmark_once(beam_path, beam_light_args)
-            light_results.append(parse_beam_output(beam_light_out, prefix="beam_light"))
+            stdout, stderr, code = run_benchmark_once(beam_path, beam_light_args)
+            light_results.append(parse_beam_output(stdout, stderr, code, prefix="beam_light"))
             time.sleep(3.0)
 
     # --- Block 3: Beam Heavy ---
@@ -137,8 +161,8 @@ def collect_data(iterations, duration_engine, duration_light, duration_heavy, co
         beam_heavy_args = ["--duration", str(duration_heavy), "--config", config_path]
         for i in range(iterations):
             print(f"  Heavy {i + 1}/{iterations}...")
-            beam_heavy_out = run_benchmark_once(beam_path, beam_heavy_args)
-            heavy_results.append(parse_beam_output(beam_heavy_out, prefix="beam_heavy"))
+            stdout, stderr, code = run_benchmark_once(beam_path, beam_heavy_args)
+            heavy_results.append(parse_beam_output(stdout, stderr, code, prefix="beam_heavy"))
             if i < iterations - 1:
                 time.sleep(3.0)
 
@@ -154,7 +178,7 @@ def collect_data(iterations, duration_engine, duration_light, duration_heavy, co
             combined.update(heavy_results[i])
         results.append(combined)
 
-    return results  # ★ 追加
+    return results
 
 
 def trim_raw_samples(samples, trim_pct=0.1):
@@ -169,15 +193,24 @@ def trim_raw_samples(samples, trim_pct=0.1):
 
 
 def perform_statistical_test(base_results, pr_results):
-    keys = set(base_results[0].keys()) & set(pr_results[0].keys())
+    if not base_results or not pr_results:
+        return {}
+    
+    # 数値メトリクスのみを対象にする（_status や _error などの文字列を除外）
+    keys = set()
+    for r in base_results + pr_results:
+        for k, v in r.items():
+            if isinstance(v, (int, float)):
+                keys.add(k)
+                
     comparison = {}
     import math
 
     trim_pct = 0.1
     
     for key in sorted(keys):
-        base_raw = [r[key] for r in base_results if key in r]
-        pr_raw = [r[key] for r in pr_results if key in r]
+        base_raw = [r[key] for r in base_results if key in r and isinstance(r[key], (int, float))]
+        pr_raw = [r[key] for r in pr_results if key in r and isinstance(r[key], (int, float))]
         
         base_samples = trim_raw_samples(base_raw, trim_pct)
         pr_samples = trim_raw_samples(pr_raw, trim_pct)
@@ -257,6 +290,14 @@ def generate_markdown_report(comparison, iterations):
     md.append("# PuyotanAI Performance Benchmark Report")
     md.append(f"Statistically compared using Welch's t-test over **{iterations} repetitions** of runs (with 10% outlier trimming).")
     md.append("")
+    md.append("> ⚠️ **【点検アラート】**: タイブレーク（同点手）の選択順序変更により設置位置が変わる可能性があります。")
+    md.append("> 異常終了や性能低下が見られる場合は、実際の連鎖構築能力を手動点検してください。")
+    md.append("")
+    
+    if not comparison:
+        md.append("※ 有効な数値メトリクスが取得できませんでした（ベンチマーク異常終了のログを確認してください）。")
+        return "\n".join(md)
+
     md.append("| Metric | Base Mean | PR Mean | Change (%) | p-value | Significant? | Status |")
     md.append("| :--- | :---: | :---: | :---: | :---: | :---: | :---: |")
     
@@ -297,7 +338,7 @@ def main():
     
     parser = argparse.ArgumentParser()
     parser.add_argument("--run", action="store_true", help="Run the benchmarks and save output")
-    parser.add_argument("--compare", "-c", nargs="*", metavar="FILE", help="Compare benchmark results. 0 args: compare two newest; 1 arg: compare specified vs newest; 2 args: compare specified base vs specified pr.")
+    parser.add_argument("--compare", "-c", nargs="*", metavar="FILE", help="Compare benchmark results.")
     parser.add_argument("--iterations", type=int, default=5, help="Number of repetitions to run (default: 5)")
     parser.add_argument("--duration-engine", type=float, default=5.0, help="Duration of engine benchmark in seconds (default: 5.0)")
     parser.add_argument("--duration-light", type=float, default=10.0, help="Duration of light beam search in seconds (default: 10.0)")
@@ -323,7 +364,7 @@ def main():
                 "duration_heavy": d_heavy,
                 "results": results
             }, f, indent=2)
-        print(f"Results successfully saved to {args.output}")
+        print(f"\nResults successfully saved to {args.output}")
         
     elif args.compare is not None:
         num_args = len(args.compare)
