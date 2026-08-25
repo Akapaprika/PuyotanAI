@@ -71,7 +71,7 @@ if (MSVC)
             target_compile_options(${T} PRIVATE
                 $<$<CONFIG:Debug>: /Od /Zi /RTC1 -Wno-everything >
                 $<$<CONFIG:Release>:
-                    /O2 /arch:AVX2 /fp:fast /DNDEBUG /FS
+                    /O2 /arch:AVX2 /fp:fast /DNDEBUG /FS /Zi
                     /clang:-O3
                     /clang:-march=znver1
                     /clang:-flto=thin
@@ -119,10 +119,11 @@ if (MSVC)
             $<$<CONFIG:Release>: /DEBUG /OPT:REF /OPT:ICF /INCREMENTAL:NO >
         )
         
-        # Unified Post-build copy commands
+        # Unified Post-build copy commands (.exe / .pyd および .pdb シンボルファイルを dist に配置)
         add_custom_command(TARGET ${LT} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_SOURCE_DIR}/dist
             COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${LT}> ${CMAKE_SOURCE_DIR}/dist/
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_PDB_FILE:${LT}> ${CMAKE_SOURCE_DIR}/dist/
         )
     endforeach()
 else()
