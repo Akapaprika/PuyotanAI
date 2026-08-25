@@ -7,7 +7,7 @@ to eliminate outlier noise and maximize statistical power.
 """
 
 import argparse
-import datetime  # 追加：タイムスタンプ生成に使用
+import datetime
 import json
 import os
 import re
@@ -92,7 +92,6 @@ def collect_data(iterations, duration_engine, duration_light, duration_heavy, co
     engine_path = find_executable(ENGINE_EXE)
     beam_path = find_executable(BEAM_EXE)
     
-    # Default config path to native/resources/beam_config.json if not specified
     if config_path is None:
         cand_cfg = BASE_DIR / "native" / "resources" / "beam_config.json"
         if cand_cfg.exists():
@@ -118,7 +117,7 @@ def collect_data(iterations, duration_engine, duration_light, duration_heavy, co
         print(f"  Engine {i + 1}/{iterations}...")
         engine_out = run_benchmark_once(engine_path, ["--duration", str(duration_engine)])
         engine_results.append(parse_engine_output(engine_out))
-        time.sleep(3.0)  # sleep after every run (including last, before next block)
+        time.sleep(3.0)
 
     # --- Block 2: Beam Light ---
     light_results = []
@@ -129,7 +128,7 @@ def collect_data(iterations, duration_engine, duration_light, duration_heavy, co
             print(f"  Light {i + 1}/{iterations}...")
             beam_light_out = run_benchmark_once(beam_path, beam_light_args)
             light_results.append(parse_beam_output(beam_light_out, prefix="beam_light"))
-            time.sleep(3.0)  # sleep after every run (including last, before next block)
+            time.sleep(3.0)
 
     # --- Block 3: Beam Heavy ---
     heavy_results = []
@@ -141,7 +140,7 @@ def collect_data(iterations, duration_engine, duration_light, duration_heavy, co
             beam_heavy_out = run_benchmark_once(beam_path, beam_heavy_args)
             heavy_results.append(parse_beam_output(beam_heavy_out, prefix="beam_heavy"))
             if i < iterations - 1:
-                time.sleep(3.0)  # sleep between runs, but not after the very last one
+                time.sleep(3.0)
 
     # --- Merge per-iteration results ---
     results = []
@@ -155,33 +154,31 @@ def collect_data(iterations, duration_engine, duration_light, duration_heavy, co
             combined.update(heavy_results[i])
         results.append(combined)
 
+    return results  # ★ 追加
+
 
 def trim_raw_samples(samples, trim_pct=0.1):
-    """【新設】上下一定割合（デフォルト10%）のハズレ値をカットするトリム関数"""
     n = len(samples)
-    if n < 5:  # サンプル数が少なすぎる場合はトリムしない
+    if n < 5:
         return samples
     sorted_samples = sorted(samples)
     k = int(n * trim_pct)
     if k == 0:
         k = 1
-    # 最も速い上位k個、最も遅い下位k個を完全に切り捨てて返します
     return sorted_samples[k : n - k]
 
 
 def perform_statistical_test(base_results, pr_results):
     keys = set(base_results[0].keys()) & set(pr_results[0].keys())
     comparison = {}
-    import math  # 標準ライブラリのみ使用
+    import math
 
-    # トリム率の定義（10%を上下からカット）
     trim_pct = 0.1
     
     for key in sorted(keys):
         base_raw = [r[key] for r in base_results if key in r]
         pr_raw = [r[key] for r in pr_results if key in r]
         
-        # --- ここで外れ値（異常スパイク）を完全にカット ---
         base_samples = trim_raw_samples(base_raw, trim_pct)
         pr_samples = trim_raw_samples(pr_raw, trim_pct)
         
@@ -206,13 +203,11 @@ def perform_statistical_test(base_results, pr_results):
         else:
             t_stat = (pr_mean - base_mean) / se
             
-            # ウェルチ・サタスウェイトの自由度(df)の算出
             df = (var_base / n_base + var_pr / n_pr) ** 2 / (
                 (var_base / n_base) ** 2 / (n_base - 1) + 
                 (var_pr / n_pr) ** 2 / (n_pr - 1)
             )
             
-            # 【超高精度なWilson-Hilferty近似による純粋Python p値算出】
             f_val = 1.0 - 2.0 / (9.0 * df)
             denom = math.sqrt(f_val + (2.0 / (9.0 * df)) * (t_stat ** 2))
             if denom == 0:
@@ -267,8 +262,6 @@ def generate_markdown_report(comparison, iterations):
     
     for key, data in comparison.items():
         metric_name = key.replace("_", " ").title()
-        
-        # Formatting speedup
         sig_str = "✅ Yes" if data["significant"] else "❌ No"
         
         if data["significant"]:
@@ -283,7 +276,6 @@ def generate_markdown_report(comparison, iterations):
             change_str = f"{data['diff_pct']:.2f}%"
             
         p_val_str = f"{data['p_value']:.4f}" if data["p_value"] >= 0.0001 else "< 0.0001"
-        
         base_str = format_stat_value(data['base_mean'], data['base_std'])
         pr_str = format_stat_value(data['pr_mean'], data['pr_std'])
         
@@ -300,16 +292,12 @@ def main():
     except AttributeError:
         pass
     
-    # 起動時の現在日時から、ローカル実行用のデフォルトファイル名を動的に生成
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     default_output = f"bench_results_{timestamp}.json"
     
     parser = argparse.ArgumentParser()
     parser.add_argument("--run", action="store_true", help="Run the benchmarks and save output")
-    
-    # --compare, -c を可変長引数 (nargs='*') に変更し、短縮形 -c を追加
     parser.add_argument("--compare", "-c", nargs="*", metavar="FILE", help="Compare benchmark results. 0 args: compare two newest; 1 arg: compare specified vs newest; 2 args: compare specified base vs specified pr.")
-    
     parser.add_argument("--iterations", type=int, default=5, help="Number of repetitions to run (default: 5)")
     parser.add_argument("--duration-engine", type=float, default=5.0, help="Duration of engine benchmark in seconds (default: 5.0)")
     parser.add_argument("--duration-light", type=float, default=10.0, help="Duration of light beam search in seconds (default: 10.0)")
@@ -327,7 +315,6 @@ def main():
         
         results = collect_data(args.iterations, d_engine, d_light, d_heavy, args.config)
         with open(args.output, "w") as f:
-            # データの履歴追跡を容易にするため、jsonの内部にも実行時のタイムスタンプを保存します
             json.dump({
                 "timestamp": timestamp,
                 "iterations": args.iterations, 
@@ -339,14 +326,10 @@ def main():
         print(f"Results successfully saved to {args.output}")
         
     elif args.compare is not None:
-        # 自動比較用のロジック
         num_args = len(args.compare)
-        
-        # フォルダ内の bench_results_*.json を探し、日時順（昇順）にソート
         bench_files = sorted([str(p) for p in Path(".").glob("bench_results_*.json")])
         
         if num_args == 0:
-            # 引数なし：最新の2ファイルを自動比較
             if len(bench_files) < 2:
                 print("Error: Auto-compare requires at least 2 saved benchmark files in the current directory.", file=sys.stderr)
                 sys.exit(1)
@@ -354,7 +337,6 @@ def main():
             pr_path = bench_files[-1]
             print(f"Auto-comparing two newest results:\n  Base (Previous): {base_path}\n  PR   (Newest)  : {pr_path}\n")
         elif num_args == 1:
-            # 引数1個：指定された古いファイル ↔ 最も新しいファイルを比較
             if len(bench_files) < 1:
                 print("Error: No local benchmark files found to compare against.", file=sys.stderr)
                 sys.exit(1)
@@ -362,14 +344,12 @@ def main():
             pr_path = bench_files[-1]
             print(f"Comparing specified base against newest result:\n  Base: {base_path}\n  PR   (Newest): {pr_path}\n")
         elif num_args == 2:
-            # 引数2個：従来通りの指定ファイル同士の比較（GHAでの動作を保証）
             base_path = args.compare[0]
             pr_path = args.compare[1]
         else:
             print("Error: --compare / -c takes at most 2 arguments (base, pr).", file=sys.stderr)
             sys.exit(1)
 
-        # Load datasets
         with open(base_path) as f:
             base_data = json.load(f)
         with open(pr_path) as f:
