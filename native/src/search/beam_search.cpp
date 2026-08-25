@@ -22,15 +22,13 @@ struct BeamNode {
     uint32_t packed_heights;
 };
 
-// 16バイトに収まる軽量候補記述子
-// ビットフィールドにより parent_idx を 24bit (最大 16,777,215) まで拡張
+// 16バイトに収まる超軽量候補記述子（親ノードは32bitに拡張し数百万〜数億の巨大ビーム幅に対応）
 struct alignas(16) CandidateNode {
-    int32_t score;
-    int32_t accum_score;
-    uint32_t packed_heights;
-    uint32_t parent_idx : 24; // 24bit (最大 16,777,215 まで安全に格納可能)
-    uint32_t action_idx : 7;  // 7bit  (0〜127, アクション数最大22に対して十分)
-    uint32_t is_zoro    : 1;  // 1bit  (0 or 1)
+    int32_t  score;          // 4B: 評価スコア (offset 0, ソート用)
+    uint32_t packed_heights; // 4B: 高さ情報 (offset 4, DBS用)
+    uint32_t parent_idx;     // 4B: 親ノードインデックス (offset 8, 最大 42億対応)
+    uint8_t  action_idx;     // 1B: アクションインデックス (offset 12, 0〜21)
+    uint8_t  _pad[3];        // 3B: パディング (offset 13〜15)
 };
 static_assert(sizeof(CandidateNode) == 16, "CandidateNode must be exactly 16 bytes");
 
@@ -183,17 +181,21 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
 
     tl_current_beam.emplace_back(player.field, 0, 0, -1, packed_heights_root);
 
+    int best_action = -1;
+    int32_t best_score = -1000000000;
+
     for (int depth = 0; depth < cfg.look_ahead; ++depth) {
         int32_t piece_idx = tsumo_base + depth;
         PuyoPiece piece = tsumo.get(piece_idx);
         const bool is_zoro = (piece.axis == piece.sub);
-        
+        const bool is_last_depth = (depth == cfg.look_ahead - 1);
+
         tl_candidates.clear();
 
         const auto actions = is_zoro ? getZoroActions() : getPutActions();
         const int current_size = static_cast<int>(tl_current_beam.size());
 
-        // Phase 1: 候補の生成と評価
+        // Phase 1: 候補の生成と評価（accum_scoreの無駄な保存を完全排除）
         for (int p_idx = 0; p_idx < current_size; ++p_idx) {
             const BeamNode& node = tl_current_beam[p_idx];
             const uint32_t cur_heights = node.packed_heights;
@@ -216,11 +218,10 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
 
                 tl_candidates.push_back(CandidateNode{
                     total_score,
-                    next_accum,
                     next_packed_h,
                     static_cast<uint32_t>(p_idx),
                     a_idx,
-                    static_cast<uint32_t>(is_zoro ? 1 : 0)
+                    {0, 0, 0}
                 });
             }
         }
@@ -228,22 +229,38 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
         if (tl_candidates.empty())
             break;
 
+        // ★ ① 最終深さの場合：Phase 2（数万回の実体化・盤面コピー）を完全スキップ！
+        if (is_last_depth) {
+            const auto best_it = std::max_element(
+                tl_candidates.begin(), tl_candidates.end(),
+                [](const CandidateNode& a, const CandidateNode& b) noexcept {
+                    return a.score < b.score;
+                });
+
+            best_score = best_it->score;
+            best_action = (depth == 0)
+                              ? actions[best_it->action_idx].idx
+                              : tl_current_beam[best_it->parent_idx].first_action;
+            break;
+        }
+
         const int target_beam_width = cfg.target_beam_widths[depth];
         const int keep = std::min(static_cast<int>(tl_candidates.size()), target_beam_width);
 
-        // Phase 2: 上位候補の選別と実体化
+        // Phase 2: 上位候補の選別と実体化（中間深さのみ実行）
         tl_prev_beam.swap(tl_current_beam);
         tl_current_beam.clear();
 
-        // ★ 重複していたノード実体化処理を 1 本化 (ゼロオーバーヘッドでインライン化)
+        // ★ 重複していたノード実体化処理を 1 本化 (accum_score は親からその場で加算復元)
         auto instantiate_node = [&](const CandidateNode& item) {
             const auto& parent = tl_prev_beam[item.parent_idx];
             const auto& act = actions[item.action_idx];
             
             PlaceResult pr = simulatePlacement(parent.field, piece, act, parent.packed_heights);
             int first = (depth == 0) ? act.idx : parent.first_action;
+            int32_t next_accum = parent.accum_score + static_cast<int32_t>(pr.score);
             
-            tl_current_beam.emplace_back(pr.field, item.score, item.accum_score, first, item.packed_heights);
+            tl_current_beam.emplace_back(pr.field, item.score, next_accum, first, item.packed_heights);
         };
 
         if (cfg.dbs_max_similar >= 1) {
@@ -281,18 +298,22 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
         }
     }
 
+    if (best_action == -1 && !tl_current_beam.empty()) {
+        best_action = tl_current_beam[0].first_action;
+        best_score = tl_current_beam[0].score;
+    }
+
     if constexpr (HasFireBias) {
-        if (fire_best_action >= 0 && !tl_current_beam.empty()) {
-            const int32_t beam_score = tl_current_beam[0].score;
+        if (fire_best_action >= 0 && best_action >= 0) {
             const int64_t fire_val = (static_cast<int64_t>(fire_best_score) * cfg.eval_weights.fire_bias_permille) / 1000;
-            if (fire_val > beam_score) {
+            if (fire_val > best_score) {
                 return {fire_best_action, fire_best_score};
             }
         }
     }
 
-    if (!tl_current_beam.empty() && tl_current_beam[0].first_action >= 0)
-        return {tl_current_beam[0].first_action, tl_current_beam[0].score};
+    if (best_action >= 0)
+        return {best_action, best_score};
 
     return {0, -1000000000};
 }
