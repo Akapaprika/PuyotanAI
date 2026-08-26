@@ -66,7 +66,7 @@ class PuyotanMatch {
     int32_t frame_ = 1;
     MatchStatus status_ = MatchStatus::Ready;
 
-    void stepPlayerFrame(int id, const std::array<ActionType, 2>& prev_types) noexcept;
+    void stepPlayerFrame(int id) noexcept;
     void sendOjama(int sender_id, int ojama) noexcept;
     void activateOjama(int finishing_player_id) noexcept;
 
