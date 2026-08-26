@@ -1,5 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
+pushd "%~dp0"
 
 :: =========================================================
 :: build.bat  --  PuyotanAI native build script (Robust Edition)
@@ -31,9 +32,9 @@ set BUILD_DIR_VS=%~dp0build_%MODE%
 set BUILD_DIR_NINJA=%~dp0build_%MODE%_clang
 
 if "%PROFILING%"=="ON" (
-    echo === Configure (%MODE% with AMD uProf Profiling Symbols) ===
+    echo === Configure: %MODE% with AMD uProf Profiling Symbols ===
 ) else (
-    echo === Configure (%MODE% - Pure Maximum Performance) ===
+    echo === Configure: %MODE% - Pure Maximum Performance ===
 )
 
 :: ------------------------------------------------------------
@@ -75,12 +76,7 @@ if not "%CLANGCL_EXE%"=="" (
         echo [Build] Compiler: Clang ^(LLVM clang-cl^) + Ninja
         if exist "%BUILD_DIR_NINJA%\CMakeCache.txt" del /f /q "%BUILD_DIR_NINJA%\CMakeCache.txt" >nul 2>&1
 
-        cmake -S "%~dp0." -B "%BUILD_DIR_NINJA%" ^
-            -G "Ninja" ^
-            -DCMAKE_BUILD_TYPE=%MODE% ^
-            -DCMAKE_CXX_COMPILER="%CLANGCL_EXE%" ^
-            -Dpybind11_DIR="%PYBIND11_CMAKE_DIR%" ^
-            -DENABLE_PROFILING=%PROFILING%
+        cmake -S "%~dp0." -B "%BUILD_DIR_NINJA%" -G "Ninja" -DCMAKE_BUILD_TYPE=%MODE% -DCMAKE_CXX_COMPILER="%CLANGCL_EXE%" -Dpybind11_DIR="%PYBIND11_CMAKE_DIR%" -DENABLE_PROFILING=%PROFILING%
         if not errorlevel 1 (
             set BUILD_DIR=%BUILD_DIR_NINJA%
             goto :build
@@ -103,5 +99,6 @@ cmake --build "%BUILD_DIR%" --config %MODE% --parallel
 if errorlevel 1 ( exit /b 1 )
 
 echo === Done (%MODE%) ===
+popd
 endlocal
 exit /b 0
