@@ -38,62 +38,79 @@ inline constexpr auto kPointMasks = detail::makePointMasks();
     const __m128i chainable_mask = _mm_set_epi64x(
         config::Board::kChainableHiMask, config::Board::kChainableLoMask);
 
+    // 1. 高さを色ループの外で事前アンパック
+    const int heights[6] = {
+        static_cast<int>((packed_heights      ) & 0xFu),
+        static_cast<int>((packed_heights >>  4) & 0xFu),
+        static_cast<int>((packed_heights >>  8) & 0xFu),
+        static_cast<int>((packed_heights >> 12) & 0xFu),
+        static_cast<int>((packed_heights >> 16) & 0xFu),
+        static_cast<int>((packed_heights >> 20) & 0xFu)
+    };
+
     for (int c = 0; c < config::Rule::kColors; ++c) {
         const BitBoard& bb = board.getBitboard(static_cast<Cell>(c));
-        // ★ 盤面に 2個以下なら、どこに 1個落としても 4連結発火しないため色ごと即スキップ
         if (bb.popcount() < 3)
             continue;
 
         const __m128i chainable_bb = _mm_and_si128(bb.m128, chainable_mask);
 
-        // 隣接マス集合（上下左右）
-        const BitBoard neighbor =
-            bb.shiftUpRaw() | bb.shiftDownRaw() |
-            bb.shiftLeftRaw() | bb.shiftRightRaw();
+        // --- 元の盤面における上下左右の同色ぷよ（色ごとに1回だけ計算） ---
+        const __m128i U = _mm_slli_epi64(chainable_bb, 1);
+        const __m128i D = _mm_srli_epi64(chainable_bb, 1);
+        const __m128i L = _mm_srli_si128(chainable_bb, 2);
+        const __m128i R = _mm_slli_si128(chainable_bb, 2);
 
-        const uint64_t n_lo = static_cast<uint64_t>(_mm_cvtsi128_si64(neighbor.m128));
-        const uint64_t n_hi = static_cast<uint64_t>(_mm_extract_epi64(neighbor.m128, 1));
+        const __m128i UD_and = _mm_and_si128(U, D);
+        const __m128i LR_and = _mm_and_si128(L, R);
+        const __m128i UD_or  = _mm_or_si128(U, D);
+        const __m128i LR_or  = _mm_or_si128(L, R);
 
+        // 元々の盤面での次数2以上のマス
+        const __m128i deg_ge2 = _mm_and_si128(chainable_bb,
+            _mm_or_si128(_mm_or_si128(UD_and, LR_and), _mm_and_si128(UD_or, LR_or)));
+
+        // 元々の盤面での次数1以上のマス
+        const __m128i deg_ge1 = _mm_and_si128(chainable_bb, _mm_or_si128(UD_or, LR_or));
+
+        #pragma unroll 6
         for (int x = 0; x < config::Board::kWidth; ++x) {
-            const int h = (packed_heights >> (x << 2)) & 0xFu;
+            const int h = heights[x];
             if (h >= config::Board::kChainableRows)
                 continue;
 
-            // ★ スタック書き戻しを完全排除し、レジスタ内ビットテストで一撃判定
-            const uint64_t n_lane = (x < 4) ? (n_lo >> (x << 4)) : (n_hi >> ((x - 4) << 4));
-            if (((n_lane >> h) & 1ULL) == 0)
-                continue;
-
-            // ★ 定数テーブルから 1 命令で直接ロード
             const __m128i point_mask = kPointMasks[x][h].m128;
+
+            // -------------------------------------------------------------
+            // ★ 元の probed_bb と 100% 同値なシード判定（完全保証）
+            // -------------------------------------------------------------
             const __m128i probed_bb = _mm_or_si128(chainable_bb, point_mask);
 
-            // ★ core と同一の __m128i 直接レジスタ演算
-            const __m128i U = _mm_slli_epi64(probed_bb, 1);
-            const __m128i D = _mm_srli_epi64(probed_bb, 1);
-            const __m128i L = _mm_srli_si128(probed_bb, 2);
-            const __m128i R = _mm_slli_si128(probed_bb, 2);
+            const __m128i p_U = _mm_slli_epi64(probed_bb, 1);
+            const __m128i p_D = _mm_srli_epi64(probed_bb, 1);
+            const __m128i p_L = _mm_srli_si128(probed_bb, 2);
+            const __m128i p_R = _mm_slli_si128(probed_bb, 2);
 
-            const __m128i UD_and = _mm_and_si128(U, D);
-            const __m128i LR_and = _mm_and_si128(L, R);
-            const __m128i UD_or  = _mm_or_si128(U, D);
-            const __m128i LR_or  = _mm_or_si128(L, R);
+            const __m128i p_UD_and = _mm_and_si128(p_U, p_D);
+            const __m128i p_LR_and = _mm_and_si128(p_L, p_R);
+            const __m128i p_UD_or  = _mm_or_si128(p_U, p_D);
+            const __m128i p_LR_or  = _mm_or_si128(p_L, p_R);
 
-            const __m128i X = _mm_or_si128(UD_and, LR_and);
-            const __m128i Y = _mm_and_si128(UD_or, LR_or);
+            const __m128i p_X = _mm_or_si128(p_UD_and, p_LR_and);
+            const __m128i p_Y = _mm_and_si128(p_UD_or, p_LR_or);
 
-            const __m128i deg_ge3 = _mm_and_si128(probed_bb, _mm_and_si128(X, Y));
-            const __m128i deg_ge2 = _mm_and_si128(probed_bb, _mm_or_si128(X, Y));
+            const __m128i p_deg_ge3 = _mm_and_si128(probed_bb, _mm_and_si128(p_X, p_Y));
+            const __m128i p_deg_ge2 = _mm_and_si128(probed_bb, _mm_or_si128(p_X, p_Y));
 
-            const __m128i u_d2 = _mm_slli_epi64(deg_ge2, 1);
-            const __m128i l_d2 = _mm_srli_si128(deg_ge2, 2);
-            const __m128i d2_adj = _mm_and_si128(deg_ge2, _mm_or_si128(u_d2, l_d2));
+            const __m128i p_u_d2 = _mm_slli_epi64(p_deg_ge2, 1);
+            const __m128i p_l_d2 = _mm_srli_si128(p_deg_ge2, 2);
+            const __m128i p_d2_adj = _mm_and_si128(p_deg_ge2, _mm_or_si128(p_u_d2, p_l_d2));
 
-            const __m128i seeds = _mm_or_si128(deg_ge3, d2_adj);
+            const __m128i seeds = _mm_or_si128(p_deg_ge3, p_d2_adj);
             if (_mm_testz_si128(seeds, seeds))
                 continue;
 
-            // ★ 盤面コピー＆点マスクを SIMD OR 2発で直注入
+            // 連鎖シミュレーション
             Board temp = board;
             temp.dropMask(static_cast<Cell>(c), kPointMasks[x][h]);
 
