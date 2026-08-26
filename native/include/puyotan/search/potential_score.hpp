@@ -55,24 +55,6 @@ inline constexpr auto kPointMasks = detail::makePointMasks();
 
         const __m128i chainable_bb = _mm_and_si128(bb.m128, chainable_mask);
 
-        // --- 元の盤面における上下左右の同色ぷよ（色ごとに1回だけ計算） ---
-        const __m128i U = _mm_slli_epi64(chainable_bb, 1);
-        const __m128i D = _mm_srli_epi64(chainable_bb, 1);
-        const __m128i L = _mm_srli_si128(chainable_bb, 2);
-        const __m128i R = _mm_slli_si128(chainable_bb, 2);
-
-        const __m128i UD_and = _mm_and_si128(U, D);
-        const __m128i LR_and = _mm_and_si128(L, R);
-        const __m128i UD_or  = _mm_or_si128(U, D);
-        const __m128i LR_or  = _mm_or_si128(L, R);
-
-        // 元々の盤面での次数2以上のマス
-        const __m128i deg_ge2 = _mm_and_si128(chainable_bb,
-            _mm_or_si128(_mm_or_si128(UD_and, LR_and), _mm_and_si128(UD_or, LR_or)));
-
-        // 元々の盤面での次数1以上のマス
-        const __m128i deg_ge1 = _mm_and_si128(chainable_bb, _mm_or_si128(UD_or, LR_or));
-
         #pragma unroll 6
         for (int x = 0; x < config::Board::kWidth; ++x) {
             const int h = heights[x];
@@ -80,12 +62,9 @@ inline constexpr auto kPointMasks = detail::makePointMasks();
                 continue;
 
             const __m128i point_mask = kPointMasks[x][h].m128;
-
-            // -------------------------------------------------------------
-            // ★ 元の probed_bb と 100% 同値なシード判定（完全保証）
-            // -------------------------------------------------------------
             const __m128i probed_bb = _mm_or_si128(chainable_bb, point_mask);
 
+            // --- 厳密な 4連結シード判定 ---
             const __m128i p_U = _mm_slli_epi64(probed_bb, 1);
             const __m128i p_D = _mm_srli_epi64(probed_bb, 1);
             const __m128i p_L = _mm_srli_si128(probed_bb, 2);
@@ -110,7 +89,7 @@ inline constexpr auto kPointMasks = detail::makePointMasks();
             if (_mm_testz_si128(seeds, seeds))
                 continue;
 
-            // 連鎖シミュレーション
+            // 連鎖シミュレーション（クイック判定付き）
             Board temp = board;
             temp.dropMask(static_cast<Cell>(c), kPointMasks[x][h]);
 
