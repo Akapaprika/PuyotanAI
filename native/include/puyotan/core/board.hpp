@@ -136,28 +136,28 @@ class Board {
         occupancy_.m128 = _mm_or_si128(occupancy_.m128, mask.m128);
     }
 
-    // ★【最適化 2】下詰め不変条件を活用した加算 (INC) による最速着手生成
     __forceinline void dropPiecePair(int col, Rotation r, Cell color_axis, Cell color_sub, int& out_h_axis, int& out_h_sub) noexcept {
-        const int r_idx = static_cast<int>(r);
+        const int r_idx  = static_cast<int>(r);
         const int x_axis = col;
-        const int x_sub = col + kSubDx[r_idx];
+        const int x_sub  = col + kSubDx[r_idx];
 
-        const uint32_t lane_axis = occupancy_.cols[x_axis];
-        const uint32_t lane_sub  = occupancy_.cols[x_sub];
+        // 1. 各列の空きマスビットを取得 (下詰めなので lane + 1)
+        const uint32_t bit1_axis = occupancy_.cols[x_axis] + 1u;
+        const uint32_t bit1_sub  = occupancy_.cols[x_sub]  + 1u;
 
-        // 隙間なく詰まっているため、lane + 1 がそのまま「1番目の空きマスビット」になる
-        const uint32_t bit1_axis = lane_axis + 1u;
-        const uint32_t bit1_sub  = lane_sub + 1u;
+        // ★ 本家仕様：縦置き時も「最初に接地する下側の着地高さ」を返す
+        out_h_axis = static_cast<int>(_tzcnt_u32(bit1_axis));
+        out_h_sub  = static_cast<int>(_tzcnt_u32(bit1_sub));
 
-        out_h_axis = std::countr_zero(bit1_axis);
-        out_h_sub  = std::countr_zero(bit1_sub);
+        // 2. 上に乗る側のシフト量 (0 または 1)
+        const uint32_t shift_axis = static_cast<uint32_t>(r == Rotation::Down);
+        const uint32_t shift_sub  = static_cast<uint32_t>(r == Rotation::Up);
 
-        const int use_2nd_axis = static_cast<int>(r == Rotation::Down);
-        const int use_2nd_sub  = static_cast<int>(r == Rotation::Up);
+        // 3. 配置ビットの生成 (SHLX + AND)
+        const uint16_t bit_axis = static_cast<uint16_t>((bit1_axis << shift_axis) & config::Board::kVisibleColMask);
+        const uint16_t bit_sub  = static_cast<uint16_t>((bit1_sub  << shift_sub)  & config::Board::kVisibleColMask);
 
-        const uint16_t bit_axis = static_cast<uint16_t>((bit1_axis << use_2nd_axis) & config::Board::kVisibleColMask);
-        const uint16_t bit_sub  = static_cast<uint16_t>((bit1_sub  << use_2nd_sub)  & config::Board::kVisibleColMask);
-
+        // 4. 色盤面と occupancy を完全ブランチレスで無条件更新
         boards_[static_cast<int>(color_axis)].cols[x_axis] |= bit_axis;
         boards_[static_cast<int>(color_sub)].cols[x_sub]   |= bit_sub;
 

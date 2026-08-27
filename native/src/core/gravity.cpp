@@ -61,11 +61,13 @@ uint32_t Gravity::execute(Board& board) noexcept {
         // 下位 7bit と 上位 6bit に分割
         const uint32_t mask_lo = occ_lane & 0x7Fu;
         const uint32_t mask_hi = (occ_lane >> 7) & 0x3Fu;
+        
         const int shift_hi     = static_cast<int>(_mm_popcnt_u32(mask_lo));
-        const int total_cnt    = shift_hi + static_cast<int>(_mm_popcnt_u32(mask_hi));
+        const int total_cnt    = static_cast<int>(_mm_popcnt_u32(occ_lane));
         const uint16_t new_occ = static_cast<uint16_t>((1u << total_cnt) - 1u);
 
-        // 各色ブランチレス展開（if分岐を排除し、L1キャッシュからダイレクトロード）
+        // ★ 完全ブランチレス：4色を無条件にL1から引かせてパイプラインを埋め切る
+        #pragma unroll
         for (int i = 0; i < config::Board::kNumColors; ++i) {
             const uint16_t lane = board.boards_[i].cols[col];
             const uint32_t val_lo = lane & 0x7Fu;

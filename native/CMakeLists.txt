@@ -61,7 +61,6 @@ if (MSVC)
 
     foreach(T IN LISTS ALL_TARGETS)
         set_property(TARGET ${T} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
-        set_property(TARGET ${T} PROPERTY INTERPROCEDURAL_OPTIMIZATION $<$<CONFIG:Release>:TRUE>)
         
         # Unified PCH application
         target_precompile_headers(${T} PRIVATE include/puyotan/pch.hpp)
