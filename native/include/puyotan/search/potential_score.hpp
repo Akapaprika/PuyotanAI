@@ -123,25 +123,29 @@ inline constexpr auto kPointMasks = detail::makePointMasks();
             const __m128i p_XY_and = _mm_and_si128(p_X, p_Y);
             const __m128i p_XY_or  = _mm_or_si128(p_X, p_Y);
 
+            // --- Stage 1: 4連結シード判定 & 非対称早期脱出 ---
             const __m128i p_deg_ge2 = _mm_and_si128(probed_bb, p_XY_or);
+            const __m128i p_deg_ge3 = _mm_and_si128(probed_bb, p_XY_and);
 
             const __m128i p_u_d2 = _mm_slli_epi64(p_deg_ge2, 1);
             const __m128i p_l_d2 = _mm_srli_si128(p_deg_ge2, 2);
             const __m128i p_ul_d2 = _mm_or_si128(p_u_d2, p_l_d2);
             const __m128i p_d2_asym = _mm_and_si128(p_deg_ge2, p_ul_d2);
 
-            // ステージ1: 最速非対称シード脱出判定
-            if (_mm_testz_si128(probed_bb, _mm_or_si128(p_XY_and, p_d2_asym)))
+            // 分配律により、この asym_seeds を Stage 2 でそのまま再利用する
+            const __m128i asym_seeds = _mm_or_si128(p_deg_ge3, p_d2_asym);
+
+            if (_mm_testz_si128(asym_seeds, asym_seeds))
                 continue;
 
-            // ステージ2: 消去確定！シードから第1消去グループをそのまま抽出
-            const __m128i p_deg_ge3 = _mm_and_si128(probed_bb, p_XY_and);
+            // --- Stage 2: 消去確定！シードから第1消去グループをそのまま抽出 ---
             const __m128i p_d_d2 = _mm_srli_epi64(p_deg_ge2, 1);
             const __m128i p_r_d2 = _mm_slli_si128(p_deg_ge2, 2);
             const __m128i p_dr_d2 = _mm_or_si128(p_d_d2, p_r_d2);
-            const __m128i p_adj_d2 = _mm_or_si128(p_ul_d2, p_dr_d2);
 
-            const __m128i sym_seeds = _mm_or_si128(p_deg_ge3, _mm_and_si128(p_deg_ge2, p_adj_d2));
+            // 【分配律等式】: sym_seeds = asym_seeds | (p_deg_ge2 & p_dr_d2)
+            // (p_deg_ge3 の再計算と p_adj_d2 の OR 結合を完全にスキップ)
+            const __m128i sym_seeds = _mm_or_si128(asym_seeds, _mm_and_si128(p_deg_ge2, p_dr_d2));
 
             const __m128i u_s = _mm_slli_epi64(sym_seeds, 1);
             const __m128i d_s = _mm_srli_epi64(sym_seeds, 1);
