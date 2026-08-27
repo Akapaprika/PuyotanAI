@@ -26,11 +26,11 @@ struct alignas(16) BitBoard {
     BitBoard(__m128i m) noexcept : m128(m) {}
 
     [[nodiscard]] __forceinline bool operator==(const BitBoard& o) const noexcept {
-        __m128i x = _mm_xor_si128(m128, o.m128);
+        const __m128i x = _mm_xor_si128(m128, o.m128);
         return _mm_testz_si128(x, x) != 0;
     }
     [[nodiscard]] __forceinline bool operator!=(const BitBoard& o) const noexcept {
-        __m128i x = _mm_xor_si128(m128, o.m128);
+        const __m128i x = _mm_xor_si128(m128, o.m128);
         return _mm_testz_si128(x, x) == 0;
     }
     [[nodiscard]] __forceinline BitBoard operator&(const BitBoard& o) const noexcept {
@@ -83,12 +83,9 @@ struct alignas(16) BitBoard {
     }
 
     [[nodiscard]] __forceinline BitBoard extractLSB() const noexcept {
-        const __m128i zero = _mm_setzero_si128();
-        const __m128i neg  = _mm_sub_epi64(zero, m128);
-        const __m128i lsb  = _mm_and_si128(m128, neg);
-        const __m128i cmp  = _mm_cmpeq_epi64(m128, zero);
-        const __m128i mask = _mm_unpacklo_epi64(_mm_set1_epi32(-1), cmp);
-        return _mm_and_si128(lsb, mask);
+        const uint64_t l = _blsi_u64(lo);
+        const uint64_t h = (lo == 0) ? _blsi_u64(hi) : 0ULL;
+        return BitBoard(l, h);
     }
 
     [[nodiscard]] __forceinline BitBoard shiftUpRaw() const noexcept {
@@ -115,13 +112,11 @@ class Board {
 
     Board() noexcept = default;
 
-    // Python / GUI / テスト用（実体は board.cpp）
     [[nodiscard]] std::vector<ActivePuyo> getActivePuyos() const noexcept;
     [[nodiscard]] Cell get(int x, int y) const noexcept;
     void set(int x, int y, Cell color) noexcept;
     void clear(int x, int y) noexcept;
 
-    // C++ ホットパス用（インライン）
     [[nodiscard]] __forceinline int getColumnHeight(int x) const noexcept {
         assert(x >= 0 && x < config::Board::kWidth);
         return static_cast<int>(_mm_popcnt_u32(occupancy_.cols[x]));
@@ -141,6 +136,7 @@ class Board {
         occupancy_.m128 = _mm_or_si128(occupancy_.m128, mask.m128);
     }
 
+    // ★【最適化 2】下詰め不変条件を活用した加算 (INC) による最速着手生成
     __forceinline void dropPiecePair(int col, Rotation r, Cell color_axis, Cell color_sub, int& out_h_axis, int& out_h_sub) noexcept {
         const int r_idx = static_cast<int>(r);
         const int x_axis = col;
@@ -149,18 +145,16 @@ class Board {
         const uint32_t lane_axis = occupancy_.cols[x_axis];
         const uint32_t lane_sub  = occupancy_.cols[x_sub];
 
-        // 各列の 1番目の空きマス（着地ビット）を取得
-        const uint32_t bit1_axis = _blsi_u32(~lane_axis);
-        const uint32_t bit1_sub  = _blsi_u32(~lane_sub);
+        // 隙間なく詰まっているため、lane + 1 がそのまま「1番目の空きマスビット」になる
+        const uint32_t bit1_axis = lane_axis + 1u;
+        const uint32_t bit1_sub  = lane_sub + 1u;
 
         out_h_axis = std::countr_zero(bit1_axis);
         out_h_sub  = std::countr_zero(bit1_sub);
 
-        // ★ 上に乗る側だけシフト量を 1 (1段上)、下側や横置きは 0 (空きマスそのまま)
         const int use_2nd_axis = static_cast<int>(r == Rotation::Down);
         const int use_2nd_sub  = static_cast<int>(r == Rotation::Up);
 
-        // シフトを適用し、表示領域（0〜12行）マスクをかける
         const uint16_t bit_axis = static_cast<uint16_t>((bit1_axis << use_2nd_axis) & config::Board::kVisibleColMask);
         const uint16_t bit_sub  = static_cast<uint16_t>((bit1_sub  << use_2nd_sub)  & config::Board::kVisibleColMask);
 
