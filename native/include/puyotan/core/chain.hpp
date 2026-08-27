@@ -62,7 +62,7 @@ class Chain {
             const __m128i D = _mm_srli_epi64(cb, 1);
             const __m128i R = _mm_slli_si128(cb, 2);
 
-            // 2. ブール束因数分解 (Zen 1 の 4-wide ベクトル ALU で並列実行)
+            // 2. ブール束因数分解 (多数決論理の直交分解)
             const __m128i UD_and = _mm_and_si128(U, D);
             const __m128i LR_and = _mm_and_si128(L, R);
             const __m128i UD_or  = _mm_or_si128(U, D);
@@ -76,27 +76,23 @@ class Chain {
 
             const __m128i deg_ge2 = _mm_and_si128(cb, XY_or);
 
-            // 3. 【ステージ1: 最速非対称シード判定】(非消去パスは 2シフトのみで即座に脱出)
-            // 【最適化】deg_ge3 の & cb を PTEST に吸収させ、非消去パス(大多数)で 1命令を節約。
-            // 数学的同値性: cb & (XY_and | d2_asym) = (cb & XY_and) | d2_asym = deg_ge3 | d2_asym
+            // 3. 【数学的最適化 1】deg_ge2 を第1引数にして中間 AND を消滅
             const __m128i u_d2 = _mm_slli_epi64(deg_ge2, 1);
             const __m128i l_d2 = _mm_srli_si128(deg_ge2, 2);
             const __m128i ul_d2 = _mm_or_si128(u_d2, l_d2);
-            const __m128i d2_asym = _mm_and_si128(deg_ge2, ul_d2);
+            const __m128i ptest_term = _mm_or_si128(XY_and, ul_d2);
 
-            if (_mm_testz_si128(cb, _mm_or_si128(XY_and, d2_asym))) {
+            if (_mm_testz_si128(deg_ge2, ptest_term)) {
                 temp_mask &= (temp_mask - 1);
                 continue;
             }
 
-            // 4. 【ステージ2: 消去確定時のみ deg_ge3 を具体化し、対称シード化＆1ステップ展開】
-            const __m128i deg_ge3 = _mm_and_si128(cb, XY_and);
+            // 4. 【数学的最適化 2】ptest_term を再利用し、分配法則で共通因数 deg_ge2 を括り出す (2命令削減)
             const __m128i d_d2 = _mm_srli_epi64(deg_ge2, 1);
             const __m128i r_d2 = _mm_slli_si128(deg_ge2, 2);
             const __m128i dr_d2 = _mm_or_si128(d_d2, r_d2);
-            const __m128i adj_d2 = _mm_or_si128(ul_d2, dr_d2);
 
-            const __m128i sym_seeds = _mm_or_si128(deg_ge3, _mm_and_si128(deg_ge2, adj_d2));
+            const __m128i sym_seeds = _mm_and_si128(deg_ge2, _mm_or_si128(ptest_term, dr_d2));
 
             const __m128i u_s = _mm_slli_epi64(sym_seeds, 1);
             const __m128i d_s = _mm_srli_epi64(sym_seeds, 1);
@@ -114,11 +110,10 @@ class Chain {
             erasure_data.num_erased   += static_cast<uint8_t>(sz);
             erased_color_bits         |= (1u << i);
 
-            // 5. ボーナス加算 (ルール完全厳密・8連結大消しと同色同時消しを正確に分離)
+            // 5. ボーナス加算
             if (__builtin_expect(sz < 8, 1)) {
                 erasure_data.group_bonus += kGroupBonusLut[sz];
             } else {
-                // シードから1点を取得
                 const uint64_t lo = _mm_cvtsi128_si64(sym_seeds);
                 __m128i s0;
                 if (lo != 0) {
@@ -128,14 +123,13 @@ class Chain {
                     s0 = _mm_set_epi64x(static_cast<int64_t>(hi & -hi), 0);
                 }
 
-                // 第1グループを完全回収 (PTEST キャリーフラグ直結で最速終了判定)
                 const __m128i grp = group.m128;
                 __m128i g1 = s0;
                 while (true) {
                     const __m128i ud = _mm_or_si128(_mm_slli_epi64(g1, 1), _mm_srli_epi64(g1, 1));
                     const __m128i lr = _mm_or_si128(_mm_slli_si128(g1, 2), _mm_srli_si128(g1, 2));
                     const __m128i next = _mm_and_si128(_mm_or_si128(g1, _mm_or_si128(ud, lr)), grp);
-                    if (_mm_testc_si128(g1, next)) break; // 変化がなくなれば終了
+                    if (_mm_testc_si128(g1, next)) break;
                     g1 = next;
                 }
 
@@ -144,18 +138,14 @@ class Chain {
                 const int sz1 = b_g1.popcount();
 
                 if (sz1 == sz) {
-                    // ★ 単一の 8連結・10連結等の大消し：100% 正確に満額ボーナスを加算！
                     erasure_data.group_bonus += kGroupBonusLut[std::min(sz, 15)];
                 } else {
-                    // ★ 同色2ダブ (4+4, 4+5, 5+5 等)：第1グループと第2グループのボーナスを合算
                     const int sz2 = sz - sz1;
                     erasure_data.group_bonus += kGroupBonusLut[std::min(sz1, 15)];
 
                     if (sz2 < 8) {
-                        // 第2グループは単一確定のため 2回目の Flood Fill なしで即加算
                         erasure_data.group_bonus += kGroupBonusLut[sz2];
                     } else {
-                        // 3グループ以上の極めて稀なケース (4+4+4 等)
                         BitBoard rem = group;
                         rem.andNot(b_g1);
                         while (!rem.empty()) {
@@ -250,11 +240,10 @@ class Chain {
 
             const __m128i u_d2 = _mm_slli_epi64(deg_ge2, 1);
             const __m128i l_d2 = _mm_srli_si128(deg_ge2, 2);
-            const __m128i d2_adj = _mm_and_si128(deg_ge2, _mm_or_si128(u_d2, l_d2));
+            const __m128i ul_d2 = _mm_or_si128(u_d2, l_d2);
 
-            const __m128i seeds_term = _mm_or_si128(XY_and, d2_adj);
-
-            if (!_mm_testz_si128(cb, seeds_term)) {
+            // 数学的簡約: 1命令短縮
+            if (!_mm_testz_si128(deg_ge2, _mm_or_si128(XY_and, ul_d2))) {
                 return true;
             }
 
