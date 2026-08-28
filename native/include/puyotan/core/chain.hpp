@@ -20,23 +20,6 @@ struct alignas(16) ErasureData {
 };
 
 class Chain {
-  private:
-    // ★ 最適化2: GPR転送と分岐を排除する、完全SIMD化された128bit LSB抽出
-    [[nodiscard]] static __forceinline __m128i extractLsbSimd(const __m128i& v) noexcept {
-        const __m128i neg = _mm_sub_epi64(_mm_setzero_si128(), v);
-        const __m128i lsb64 = _mm_and_si128(v, neg); // [ hi_lsb | lo_lsb ]
-        
-        const __m128i lo_mask = _mm_set_epi64x(0, -1LL);
-        const __m128i lo_only = _mm_and_si128(lsb64, lo_mask); // [ 0 | lo_lsb ]
-        
-        // lo_lsb が 0 なら全ビット1、非0なら0 のマスクを生成し、上位64bitにコピー
-        const __m128i cmp = _mm_cmpeq_epi64(lo_only, _mm_setzero_si128());
-        const __m128i hi_mask = _mm_shuffle_epi32(cmp, _MM_SHUFFLE(1, 0, 1, 0));
-        
-        const __m128i hi_only = _mm_andnot_si128(lo_mask, lsb64); // [ hi_lsb | 0 ]
-        return _mm_or_si128(lo_only, _mm_and_si128(hi_only, hi_mask));
-    }
-
   public:
     static constexpr uint32_t kAllColorsMask =
         (1u << config::Rule::kColors) - 1u;
@@ -59,23 +42,27 @@ class Chain {
             config::Board::kChainableHiMask, config::Board::kChainableLoMask);
 
         uint32_t erased_color_bits = 0;
+        uint32_t temp_mask = color_mask & ((1u << config::Rule::kColors) - 1u);
 
-        // ★ 最適化1: while と TZCNT を排除し、アンロールでアウトオブオーダ実行を最大化
-        #pragma unroll
-        for (int i = 0; i < config::Rule::kColors; ++i) {
-            if ((color_mask & (1u << i)) == 0) continue;
-
+        while (temp_mask) {
+            const int i = std::countr_zero(temp_mask);
             const Cell c = static_cast<Cell>(i);
+
             const __m128i cb = _mm_and_si128(board.getBitboard(c).m128, chainable_mask);
 
+            // 1. 2連結チェック (最小の2シフトで即脱出判定)
             const __m128i U = _mm_slli_epi64(cb, 1);
             const __m128i L = _mm_srli_si128(cb, 2);
             const __m128i UL = _mm_or_si128(U, L);
-            if (_mm_testz_si128(cb, UL)) continue;
+            if (_mm_testz_si128(cb, UL)) {
+                temp_mask &= (temp_mask - 1);
+                continue;
+            }
 
             const __m128i D = _mm_srli_epi64(cb, 1);
             const __m128i R = _mm_slli_si128(cb, 2);
 
+            // 2. ブール束因数分解 (多数決論理の直交分解)
             const __m128i UD_and = _mm_and_si128(U, D);
             const __m128i LR_and = _mm_and_si128(L, R);
             const __m128i UD_or  = _mm_or_si128(U, D);
@@ -89,13 +76,18 @@ class Chain {
 
             const __m128i deg_ge2 = _mm_and_si128(cb, XY_or);
 
+            // 3. 【数学的最適化 1】deg_ge2 を第1引数にして中間 AND を消滅
             const __m128i u_d2 = _mm_slli_epi64(deg_ge2, 1);
             const __m128i l_d2 = _mm_srli_si128(deg_ge2, 2);
             const __m128i ul_d2 = _mm_or_si128(u_d2, l_d2);
             const __m128i ptest_term = _mm_or_si128(XY_and, ul_d2);
 
-            if (_mm_testz_si128(deg_ge2, ptest_term)) continue;
+            if (_mm_testz_si128(deg_ge2, ptest_term)) {
+                temp_mask &= (temp_mask - 1);
+                continue;
+            }
 
+            // 4. 【数学的最適化 2】ptest_term を再利用し、分配法則で共通因数 deg_ge2 を括り出す (2命令削減)
             const __m128i d_d2 = _mm_srli_epi64(deg_ge2, 1);
             const __m128i r_d2 = _mm_slli_si128(deg_ge2, 2);
             const __m128i dr_d2 = _mm_or_si128(d_d2, r_d2);
@@ -118,13 +110,21 @@ class Chain {
             erasure_data.num_erased   += static_cast<uint8_t>(sz);
             erased_color_bits         |= (1u << i);
 
+            // 5. ボーナス加算
             if (__builtin_expect(sz < 8, 1)) {
                 erasure_data.group_bonus += kGroupBonusLut[sz];
             } else {
-                // ★ 最適化2適用: 分岐とGPR転送を排除した O(1) LSB抽出
-                __m128i g1 = extractLsbSimd(sym_seeds);
-                const __m128i grp = group.m128;
+                const uint64_t lo = _mm_cvtsi128_si64(sym_seeds);
+                __m128i s0;
+                if (lo != 0) {
+                    s0 = _mm_cvtsi64_si128(static_cast<int64_t>(lo & -lo));
+                } else {
+                    const uint64_t hi = _mm_extract_epi64(sym_seeds, 1);
+                    s0 = _mm_set_epi64x(static_cast<int64_t>(hi & -hi), 0);
+                }
 
+                const __m128i grp = group.m128;
+                __m128i g1 = s0;
                 while (true) {
                     const __m128i ud = _mm_or_si128(_mm_slli_epi64(g1, 1), _mm_srli_epi64(g1, 1));
                     const __m128i lr = _mm_or_si128(_mm_slli_si128(g1, 2), _mm_srli_si128(g1, 2));
@@ -149,8 +149,8 @@ class Chain {
                         BitBoard rem = group;
                         rem.andNot(b_g1);
                         while (!rem.empty()) {
-                            // ★ 最適化2適用: 残りグループのLSB抽出も完全SIMD化
-                            __m128i v_rem = extractLsbSimd(rem.m128);
+                            BitBoard g_rem = rem.extractLSB();
+                            __m128i v_rem = g_rem.m128;
                             while (true) {
                                 const __m128i ud = _mm_or_si128(_mm_slli_epi64(v_rem, 1), _mm_srli_epi64(v_rem, 1));
                                 const __m128i lr = _mm_or_si128(_mm_slli_si128(v_rem, 2), _mm_srli_si128(v_rem, 2));
@@ -167,15 +167,19 @@ class Chain {
                     }
                 }
             }
+
+            temp_mask &= (temp_mask - 1);
         }
 
         erasure_data.num_colors =
             static_cast<uint8_t>(_mm_popcnt_u32(erased_color_bits));
 
+        // 6. おじゃまぷよ消去
         if (erasure_data.num_erased > 0) {
             const BitBoard ojama = board.getBitboard(Cell::Ojama);
             if (!ojama.empty()) {
                 const __m128i t = erasure_data.total_erased.m128;
+
                 const __m128i raw_up    = _mm_slli_epi64(t, 1);
                 const __m128i raw_down  = _mm_srli_epi64(t, 1);
                 const __m128i raw_right = _mm_slli_si128(t, 2);
@@ -187,7 +191,7 @@ class Chain {
 
                 const __m128i oj_erased = _mm_and_si128(ojama.m128, combined);
                 erasure_data.total_erased.m128 =
-                    _mm_or_si128(t, oj_erased); // t を再利用して依存関係を短縮
+                    _mm_or_si128(erasure_data.total_erased.m128, oj_erased);
             }
         }
     }
@@ -205,17 +209,19 @@ class Chain {
         const __m128i chainable_mask = _mm_set_epi64x(
             config::Board::kChainableHiMask, config::Board::kChainableLoMask);
 
-        // ★ 最適化1適用: canFire もアンロールし、各色の発火判定を並行実行させる
-        #pragma unroll
-        for (int i = 0; i < config::Rule::kColors; ++i) {
-            if ((color_mask & (1u << i)) == 0) continue;
-            
+        uint32_t temp_mask = color_mask & ((1u << config::Rule::kColors) - 1u);
+        while (temp_mask) {
+            const int i = std::countr_zero(temp_mask);
             const Cell c = static_cast<Cell>(i);
+
             const __m128i cb = _mm_and_si128(board.getBitboard(c).m128, chainable_mask);
 
             const __m128i U = _mm_slli_epi64(cb, 1);
             const __m128i L = _mm_srli_si128(cb, 2);
-            if (_mm_testz_si128(cb, _mm_or_si128(U, L))) continue;
+            if (_mm_testz_si128(cb, _mm_or_si128(U, L))) {
+                temp_mask &= (temp_mask - 1);
+                continue;
+            }
 
             const __m128i D = _mm_srli_epi64(cb, 1);
             const __m128i R = _mm_slli_si128(cb, 2);
@@ -237,9 +243,12 @@ class Chain {
             const __m128i l_d2 = _mm_srli_si128(deg_ge2, 2);
             const __m128i ul_d2 = _mm_or_si128(u_d2, l_d2);
 
+            // 数学的簡約: 1命令短縮
             if (!_mm_testz_si128(deg_ge2, _mm_or_si128(XY_and, ul_d2))) {
                 return true;
             }
+
+            temp_mask &= (temp_mask - 1);
         }
         return false;
     }
