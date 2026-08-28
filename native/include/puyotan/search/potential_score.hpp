@@ -32,10 +32,12 @@ constexpr auto makePointMasks() {
 inline constexpr auto kPointMasks = detail::makePointMasks();
 
 /**
- * @brief Zen 1 (AMD 3020e) 特化型・極限ポテンシャル得点計算 (理論極限版)
+ * @brief Zen 1 (AMD 3020e) 特化型・極限ポテンシャル得点計算 (真・理論極限版)
  *        - 完全無分岐 drop_points 生成
-        - グラフ理論的性質による第1連鎖グループ計算の O(1) 化
-        - Port 0 / Port 1 完全均等パイプライン最適化
+ *        - グラフ理論的性質による第1連鎖グループ計算の O(1) 化
+ *        - Port 0 / Port 1 完全均等パイプライン最適化
+ *        - 【NEW】 GPR ⇔ XMM ドメイン間転送ペナルティの完全排除
+ *        - 【NEW】 PTEST 命令による列有効判定の 1 サイクル化
  */
 [[nodiscard]] inline int computeMaxPotentialScore(
     const Board& board,
@@ -53,16 +55,23 @@ inline constexpr auto kPointMasks = detail::makePointMasks();
     const int h4 = static_cast<int>((packed_heights >> 16) & 0xFu);
     const int h5 = static_cast<int>((packed_heights >> 20) & 0xFu);
 
-    const int heights[6] = { h0, h1, h2, h3, h4, h5 };
+    // 2. 有効着地点マスクを LUT から直接 SIMD レジスタへロード
+    //    GPR -> XMM の転送ペナルティを排除し、後続の列ループでの再ロードも防ぐ
+    const __m128i pms[6] = {
+        kPointMasks[0][h0].m128,
+        kPointMasks[1][h1].m128,
+        kPointMasks[2][h2].m128,
+        kPointMasks[3][h3].m128,
+        kPointMasks[4][h4].m128,
+        kPointMasks[5][h5].m128
+    };
 
-    // 2. 有効着地点マスクを【完全無分岐】で生成
-    //    h >= 12 のビットは 12~15 bit 目に立つため、chainable_mask の AND 1 回で自動消去される
-    const uint64_t raw_lo = (1ULL << h0) | (1ULL << (16 + h1)) | 
-                            (1ULL << (32 + h2)) | (1ULL << (48 + h3));
-    const uint64_t raw_hi = (1ULL << h4) | (1ULL << (16 + h5));
-
+    // ILP (命令レベル並列性) を最大化する対称 OR ツリー
+    const __m128i dp01 = _mm_or_si128(pms[0], pms[1]);
+    const __m128i dp23 = _mm_or_si128(pms[2], pms[3]);
+    const __m128i dp45 = _mm_or_si128(pms[4], pms[5]);
     const __m128i drop_points_mask = _mm_and_si128(
-        _mm_set_epi64x(static_cast<int64_t>(raw_hi), static_cast<int64_t>(raw_lo)),
+        _mm_or_si128(_mm_or_si128(dp01, dp23), dp45),
         chainable_mask);
 
     // おじゃまぷよ盤面の事前キャッシュ
@@ -89,22 +98,14 @@ inline constexpr auto kPointMasks = detail::makePointMasks();
         if (_mm_testz_si128(valid_drops, valid_drops))
             continue;
 
-        const uint64_t v_lo = static_cast<uint64_t>(_mm_cvtsi128_si64(valid_drops));
-        const uint64_t v_hi = static_cast<uint64_t>(_mm_extract_epi64(valid_drops, 1));
-
         #pragma unroll 6
         for (int x = 0; x < config::Board::kWidth; ++x) {
-            // 列 x の 16bit 領域が 0 でなければ有効（動的ビットシフトを完全排除）
-            const bool is_valid = (x < 4)
-                ? ((v_lo & (0xFFFFULL << (x << 4))) != 0)
-                : ((v_hi & (0xFFFFULL << ((x - 4) << 4))) != 0);
-
-            if (!is_valid)
+            // PTEST による完全 SIMD 化（XMM -> GPR 抽出ペナルティと GPR ビット演算を排除）
+            if (_mm_testz_si128(valid_drops, pms[x]))
                 continue;
 
-            const int h = heights[x];
-            const __m128i point_mask = kPointMasks[x][h].m128;
-            const __m128i probed_bb = _mm_or_si128(chainable_bb, point_mask);
+            // heights[x] を介した kPointMasks の再ロードを排除 (レジスタキャッシュ利用)
+            const __m128i probed_bb = _mm_or_si128(chainable_bb, pms[x]);
 
             // --- 4連結シード判定（Port 0 / Port 1 最適インターリーブ） ---
             const __m128i p_U = _mm_slli_epi64(probed_bb, 1);
@@ -144,7 +145,6 @@ inline constexpr auto kPointMasks = detail::makePointMasks();
             const __m128i p_dr_d2 = _mm_or_si128(p_d_d2, p_r_d2);
 
             // 【分配律等式】: sym_seeds = asym_seeds | (p_deg_ge2 & p_dr_d2)
-            // (p_deg_ge3 の再計算と p_adj_d2 の OR 結合を完全にスキップ)
             const __m128i sym_seeds = _mm_or_si128(asym_seeds, _mm_and_si128(p_deg_ge2, p_dr_d2));
 
             const __m128i u_s = _mm_slli_epi64(sym_seeds, 1);
@@ -161,7 +161,6 @@ inline constexpr auto kPointMasks = detail::makePointMasks();
             ed.total_erased = first_group;
             ed.num_erased   = static_cast<uint8_t>(sz);
             ed.num_colors   = 1;
-            // 1個置きで発生する4連結グループは数学的に1個しか存在し得ないため O(1) で厳密計算完了
             ed.group_bonus  = Chain::kGroupBonusLut[std::min(sz, 15)];
 
             // 第1連鎖のおじゃま消去
@@ -173,14 +172,14 @@ inline constexpr auto kPointMasks = detail::makePointMasks();
                 const __m128i raw_left  = _mm_srli_si128(t, 2);
                 const __m128i combined  = _mm_or_si128(_mm_or_si128(raw_up, raw_down), _mm_or_si128(raw_right, raw_left));
                 const __m128i oj_erased = _mm_and_si128(ojama_bb.m128, combined);
-                ed.total_erased.m128 = _mm_or_si128(ed.total_erased.m128, oj_erased);
+                ed.total_erased.m128 = _mm_or_si128(t, oj_erased); // t を再利用して依存関係を短縮
             }
 
             // 第1連鎖スコア加算
             int pot_chain = 1;
             int pot_score = Scorer::calculateStepScore(ed, pot_chain);
 
-            // 発火確定時のみ盤面を複製して消去適用（dropMask は ed.total_erased に含まれるため不要）
+            // 発火確定時のみ盤面を複製して消去適用
             Board temp = board;
             Chain::applyErasure(temp, ed);
 
