@@ -193,6 +193,7 @@ class Chain {
     }
 
     static __forceinline void applyErasure(Board& board, const ErasureData& data) noexcept {
+        #pragma unroll
         for (int i = 0; i < config::Board::kNumColors; ++i) {
             board.boards_[i].andNot(data.total_erased);
         }
