@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <vector>
+#include <cstring>
 
 #include <puyotan/common/types.hpp>
 #include <puyotan/core/chain.hpp>
@@ -22,21 +23,17 @@ struct BeamNode {
     uint32_t packed_heights;
 };
 
-// 16バイトに収まる超軽量候補記述子（親ノードは32bitに拡張し数百万〜数億の巨大ビーム幅に対応）
+// 16バイトに収まる超軽量候補記述子
 struct alignas(16) CandidateNode {
-    int32_t  score;          // 4B: 評価スコア (offset 0, ソート用)
-    uint32_t packed_heights; // 4B: 高さ情報 (offset 4, DBS用)
-    uint32_t parent_idx;     // 4B: 親ノードインデックス (offset 8, 最大 42億対応)
-    uint8_t  action_idx;     // 1B: アクションインデックス (offset 12, 0〜21)
-    uint8_t  _pad[3];        // 3B: パディング (offset 13〜15)
+    int32_t  score;          
+    uint32_t packed_heights; 
+    uint32_t parent_idx;     
+    uint8_t  action_idx;     
+    uint8_t  _pad[3];        
 };
 static_assert(sizeof(CandidateNode) == 16, "CandidateNode must be exactly 16 bytes");
 
-// ---------------------------------------------------------------------------
-// DynamicFlatCountTable: beam_width に応じて安全に拡張するフラットハッシュ
-// ---------------------------------------------------------------------------
 struct DynamicFlatCountTable {
-    // 1エントリをジャスト 8 バイト (64bit) に圧縮し、キャッシュヒット率を向上
     struct alignas(8) Entry {
         uint32_t key;
         uint16_t count;
@@ -50,7 +47,6 @@ struct DynamicFlatCountTable {
 
     void ensure_capacity(std::size_t required_capacity) {
         std::size_t cap = 2048;
-        // 負荷率を抑えて無限ループ・衝突多発を防ぐため 2倍以上の2冪を確保
         while (cap < required_capacity * 2) {
             cap <<= 1;
         }
@@ -69,7 +65,6 @@ struct DynamicFlatCountTable {
     }
 
     int get_and_inc(uint32_t key) noexcept {
-        // フィボナッチハッシュで全スロットに均等分散
         std::size_t idx = (static_cast<uint64_t>(key) * 0x9E3779B97F4A7C15ULL) >> 32 & mask;
         while (table[idx].gen == current_gen) {
             if (table[idx].key == key) {
@@ -95,9 +90,11 @@ struct PlaceResult {
     bool dead;
 };
 
-PlaceResult simulatePlacement(const Board& src, PuyoPiece piece,
-                              const BeamAction& action,
-                              uint32_t packed_heights) noexcept {
+// ★【最適化1】引数を参照渡し (out_res) に変更し、NRVO失敗による盤面コピー(96B)とデフォルトコンストラクタの初期化コストを完全排除
+void simulatePlacement(const Board& src, PuyoPiece piece,
+                       const BeamAction& action,
+                       uint32_t packed_heights,
+                       PlaceResult& out_res) noexcept {
     const int ax = action.ax;
     const int sx = action.sx;
 
@@ -108,30 +105,32 @@ PlaceResult simulatePlacement(const Board& src, PuyoPiece piece,
     const int y_sub  = h_sub + action.sub_dy;
 
     if (y_axis >= config::Board::kTotalRows || y_sub >= config::Board::kTotalRows) [[unlikely]] {
-        return {Board{}, 0, 0, true};
+        out_res.dead = true;
+        return;
     }
 
-    PlaceResult res{src, 0, 0, false};
-    res.field.dropPiecePairFast(ax, sx, y_axis, y_sub, piece.axis, piece.sub);
+    // ここで1回だけコピー。デフォルトコンストラクタによるゼロクリアは発生しない
+    out_res.field = src;
+    out_res.chain = 0;
+    out_res.score = 0;
+    out_res.dead  = false;
 
-    // 連鎖解決
+    out_res.field.dropPiecePairFast(ax, sx, y_axis, y_sub, piece.axis, piece.sub);
+
     ErasureData ed;
-    Chain::scanGroups(res.field, ed, piece.dirty_flag);
+    Chain::scanGroups(out_res.field, ed, piece.dirty_flag);
     while (ed.num_erased > 0) {
-        ++res.chain;
-        res.score += Scorer::calculateStepScore(ed, res.chain);
-        Chain::applyErasure(res.field, ed);
+        ++out_res.chain;
+        out_res.score += Scorer::calculateStepScore(ed, out_res.chain);
+        Chain::applyErasure(out_res.field, ed);
 
-        uint32_t fallen = Gravity::execute(res.field);
-        Chain::scanGroups(res.field, ed, fallen);
+        uint32_t fallen = Gravity::execute(out_res.field);
+        Chain::scanGroups(out_res.field, ed, fallen);
     }
 
-    if (res.field.isOccupied(config::Rule::kDeathCol, config::Rule::kDeathRow)) [[unlikely]] {
-        res.dead = true;
-        return res;
+    if (out_res.field.isOccupied(config::Rule::kDeathCol, config::Rule::kDeathRow)) [[unlikely]] {
+        out_res.dead = true;
     }
-
-    return res;
 }
 
 } // anonymous namespace
@@ -154,8 +153,10 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
         PuyoPiece piece0 = tsumo.get(piece0_idx);
         const bool is_zoro0 = (piece0.axis == piece0.sub);
         const auto& actions0 = is_zoro0 ? getZoroActions() : getPutActions();
+        
+        PlaceResult pr; // ここで1度だけ宣言
         for (const auto& entry : actions0) {
-            PlaceResult pr = simulatePlacement(player.field, piece0, entry, packed_heights_root);
+            simulatePlacement(player.field, piece0, entry, packed_heights_root, pr);
             if (pr.dead || pr.score == 0)
                 continue;
             int32_t s = static_cast<int32_t>(pr.score);
@@ -195,18 +196,22 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
         const auto actions = is_zoro ? getZoroActions() : getPutActions();
         const int current_size = static_cast<int>(tl_current_beam.size());
 
-        // Phase 1: 候補の生成と評価（accum_scoreの無駄な保存を完全排除）
+        // ★【最適化1】ループ外で確保し、11,000回のコンストラクタ呼び出し(ゼロクリア)を排除
+        PlaceResult pr; 
+
+        // Phase 1: 候補の生成と評価
         for (int p_idx = 0; p_idx < current_size; ++p_idx) {
             const BeamNode& node = tl_current_beam[p_idx];
             const uint32_t cur_heights = node.packed_heights;
 
             for (uint8_t a_idx = 0; a_idx < static_cast<uint8_t>(actions.size()); ++a_idx) {
                 const auto& entry = actions[a_idx];
-                PlaceResult pr = simulatePlacement(node.field, piece, entry, cur_heights);
+                
+                // pr を再利用してシミュレーション
+                simulatePlacement(node.field, piece, entry, cur_heights, pr);
                 if (pr.dead)
                     continue;
 
-                // ★【完全ブランチレス】縦横判定 if を排除し、1命令加算で高さを一撃計算
                 uint32_t next_packed_h = cur_heights + (1u << (entry.ax << 2)) + (1u << (entry.sx << 2));
                 if (__builtin_expect(pr.chain > 0, 0)) {
                     next_packed_h = packHeights(pr.field);
@@ -216,47 +221,46 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
                 int32_t next_accum = node.accum_score + static_cast<int32_t>(pr.score);
                 int32_t total_score = next_accum * cfg.eval_weights.potential_score_scale + eval;
 
-                tl_candidates.push_back(CandidateNode{
-                    total_score,
-                    next_packed_h,
-                    static_cast<uint32_t>(p_idx),
-                    a_idx,
-                    {0, 0, 0}
-                });
+                // ★【最適化2】最終深さの場合、候補ノードの生成(vectorへのpush_back)を完全スキップし、
+                // メモリ書き込み(176KB)と、後続の max_element 走査を O(1) 化する。
+                if (is_last_depth) {
+                    if (total_score > best_score) {
+                        best_score = total_score;
+                        best_action = (depth == 0) ? entry.idx : node.first_action;
+                    }
+                } else {
+                    tl_candidates.push_back({
+                        total_score,
+                        next_packed_h,
+                        static_cast<uint32_t>(p_idx),
+                        a_idx,
+                        {0, 0, 0}
+                    });
+                }
             }
+        }
+
+        // 最終深さなら Phase 2 (ソートと実体化) を完全にスキップ
+        if (is_last_depth) {
+            break;
         }
 
         if (tl_candidates.empty())
             break;
 
-        // ★ ① 最終深さの場合：Phase 2（数万回の実体化・盤面コピー）を完全スキップ！
-        if (is_last_depth) {
-            const auto best_it = std::max_element(
-                tl_candidates.begin(), tl_candidates.end(),
-                [](const CandidateNode& a, const CandidateNode& b) noexcept {
-                    return a.score < b.score;
-                });
-
-            best_score = best_it->score;
-            best_action = (depth == 0)
-                              ? actions[best_it->action_idx].idx
-                              : tl_current_beam[best_it->parent_idx].first_action;
-            break;
-        }
-
         const int target_beam_width = cfg.target_beam_widths[depth];
         const int keep = std::min(static_cast<int>(tl_candidates.size()), target_beam_width);
 
-        // Phase 2: 上位候補の選別と実体化（中間深さのみ実行）
+        // Phase 2: 上位候補の選別と実体化
         tl_prev_beam.swap(tl_current_beam);
         tl_current_beam.clear();
 
-        // ★ 重複していたノード実体化処理を 1 本化 (accum_score は親からその場で加算復元)
         auto instantiate_node = [&](const CandidateNode& item) {
             const auto& parent = tl_prev_beam[item.parent_idx];
             const auto& act = actions[item.action_idx];
             
-            PlaceResult pr = simulatePlacement(parent.field, piece, act, parent.packed_heights);
+            // pr を再利用
+            simulatePlacement(parent.field, piece, act, parent.packed_heights, pr);
             int first = (depth == 0) ? act.idx : parent.first_action;
             int32_t next_accum = parent.accum_score + static_cast<int32_t>(pr.score);
             
