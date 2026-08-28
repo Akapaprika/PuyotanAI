@@ -66,17 +66,24 @@ uint32_t Gravity::execute(Board& board) noexcept {
         const int total_cnt    = static_cast<int>(_mm_popcnt_u32(occ_lane));
         const uint16_t new_occ = static_cast<uint16_t>((1u << total_cnt) - 1u);
 
-        // ★ 完全ブランチレス：4色を無条件にL1から引かせてパイプラインを埋め切る
+        // 色ループ内で発生する mask_lo / mask_hi を使った暗黙のポインタ加算を完全に消去
+        const uint8_t* p_lo = kPext13.lo[mask_lo];
+        const uint8_t* p_hi = kPext13.hi[mask_hi];
+
         #pragma unroll
         for (int i = 0; i < config::Board::kNumColors; ++i) {
             const uint16_t lane = board.boards_[i].cols[col];
+            
             const uint32_t val_lo = lane & 0x7Fu;
-            const uint32_t val_hi = (lane >> 7) & 0x3Fu;
+            
+            const uint32_t val_hi = lane >> 7; 
 
+            // ポインタからの直接参照により、L1キャッシュからの最短レイテンシを実現
             const uint16_t compacted = static_cast<uint16_t>(
-                kPext13.lo[mask_lo][val_lo] | (kPext13.hi[mask_hi][val_hi] << shift_hi)
+                p_lo[val_lo] | (p_hi[val_hi] << shift_hi)
             );
 
+            // 変化があった色のみフラグを立て、次回のスキャン対象を制限する
             fallen_mask |= static_cast<uint32_t>(compacted != lane) << i;
             board.boards_[i].cols[col] = compacted;
         }
