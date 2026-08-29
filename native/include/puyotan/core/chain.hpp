@@ -210,6 +210,17 @@ class Chain {
         }
         return false;
     }
+
+    static __forceinline void applySingleErasure(Board& board, Cell color, 
+        const BitBoard& group, 
+        const BitBoard& total_erased, 
+        bool has_ojama) noexcept {
+        board.boards_[static_cast<int>(color)].andNot(group);
+        if (has_ojama) {
+        board.boards_[static_cast<int>(Cell::Ojama)].andNot(total_erased);
+        }
+        board.occupancy_.andNot(total_erased);
+    }
 };
 
 } // namespace puyotan

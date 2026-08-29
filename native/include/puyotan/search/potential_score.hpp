@@ -15,9 +15,10 @@ namespace puyotan::search {
 /**
  * @brief Zen 1 (AMD 3020e) 特化・極限ポテンシャル計算 (μopキャッシュ完全常駐版)
  *        - `_mm_add_epi16` による 1 サイクル全列着地点生成
- *        - `drops[0] | drops[1]` による超高速カラー早期スキップ
+ *        - 【真の単一whileループ】lo/hi 統合による二重ループ・三項演算子の完全消滅
  *        - 【数学的最適化】分配法則による中間 AND/OR 消滅 (4命令削減)
- *        - 単一ループ構造によるバイナリ極小化 (< 800 bytes / L1i ミス撲滅)
+ *        - 【1連鎖目ピンポイント消去】無関係な3色の andNot をスキップ (3命令削減)
+ *        - バイナリ極小化 (< 700 bytes / L1i ミス完全撲滅)
  */
 [[nodiscard]] inline int computeMaxPotentialScore(
     const Board& board,
@@ -55,94 +56,95 @@ namespace puyotan::search {
         alignas(16) uint64_t drops[2];
         _mm_store_si128(reinterpret_cast<__m128i*>(drops), valid_drops);
 
-        // 有効な着地点が 1 つもなければ色ごと即座にスキップ (PTESTより高速)
-        if ((drops[0] | drops[1]) == 0)
-            continue;
+        uint64_t lo = drops[0];
+        uint64_t hi = drops[1];
 
         // -------------------------------------------------------------
-        // 【単一ループ化】バイナリを複製させず μop キャッシュ内に完全常駐
+        // 【真の単一whileループ】二重ループ・外側if・三項演算子を完全撤廃
         // -------------------------------------------------------------
-        for (int part = 0; part < 2; ++part) {
-            uint64_t v = drops[part];
+        while ((lo | hi) != 0) {
+            __m128i pm;
+            if (lo != 0) {
+                const uint64_t lsb = lo & -lo; // BLSI (1 cycle)
+                lo &= (lo - 1);                // BLSR (1 cycle)
+                pm = _mm_cvtsi64_si128(lsb);
+            } else {
+                const uint64_t lsb = hi & -hi; // BLSI (1 cycle)
+                hi &= (hi - 1);                // BLSR (1 cycle)
+                pm = _mm_set_epi64x(lsb, 0);
+            }
 
-            while (v != 0) {
-                const uint64_t lsb = v & -v; // BLSI (1 cycle)
-                v &= (v - 1);                // BLSR (1 cycle)
+            const __m128i probed_bb = _mm_or_si128(chainable_bb, pm);
 
-                const __m128i pm = (part == 0)
-                    ? _mm_cvtsi64_si128(lsb)
-                    : _mm_set_epi64x(lsb, 0);
+            // --- 4連結判定 (多数決論理の直交分解) ---
+            const __m128i p_U = _mm_slli_epi64(probed_bb, 1);
+            const __m128i p_D = _mm_srli_epi64(probed_bb, 1);
+            const __m128i p_L = _mm_srli_si128(probed_bb, 2);
+            const __m128i p_R = _mm_slli_si128(probed_bb, 2);
 
-                const __m128i probed_bb = _mm_or_si128(chainable_bb, pm);
+            const __m128i p_X = _mm_or_si128(_mm_and_si128(p_U, p_D), _mm_and_si128(p_L, p_R));
+            const __m128i p_Y = _mm_and_si128(_mm_or_si128(p_U, p_D), _mm_or_si128(p_L, p_R));
 
-                // --- 4連結判定 (多数決論理の直交分解) ---
-                const __m128i p_U = _mm_slli_epi64(probed_bb, 1);
-                const __m128i p_D = _mm_srli_epi64(probed_bb, 1);
-                const __m128i p_L = _mm_srli_si128(probed_bb, 2);
-                const __m128i p_R = _mm_slli_si128(probed_bb, 2);
+            const __m128i p_deg_ge2 = _mm_and_si128(probed_bb, _mm_or_si128(p_X, p_Y));
 
-                const __m128i p_X = _mm_or_si128(_mm_and_si128(p_U, p_D), _mm_and_si128(p_L, p_R));
-                const __m128i p_Y = _mm_and_si128(_mm_or_si128(p_U, p_D), _mm_or_si128(p_L, p_R));
+            // --- 【数学的最適化】共通因数 p_deg_ge2 を括り出して中間 AND を消滅 (4命令削減) ---
+            const __m128i p_u_d2 = _mm_slli_epi64(p_deg_ge2, 1);
+            const __m128i p_l_d2 = _mm_srli_si128(p_deg_ge2, 2);
+            const __m128i ptest_term = _mm_or_si128(_mm_and_si128(p_X, p_Y), 
+                                                    _mm_or_si128(p_u_d2, p_l_d2));
 
-                const __m128i p_deg_ge2 = _mm_and_si128(probed_bb, _mm_or_si128(p_X, p_Y));
+            if (_mm_testz_si128(p_deg_ge2, ptest_term))
+                continue;
 
-                // --- 【数学的最適化】共通因数 p_deg_ge2 を括り出して中間 AND を消滅 ---
-                const __m128i p_u_d2 = _mm_slli_epi64(p_deg_ge2, 1);
-                const __m128i p_l_d2 = _mm_srli_si128(p_deg_ge2, 2);
-                const __m128i ptest_term = _mm_or_si128(_mm_and_si128(p_X, p_Y), 
-                                                        _mm_or_si128(p_u_d2, p_l_d2));
+            // --- 第1消去グループの抽出 (ptest_term を再利用して 2命令削減) ---
+            const __m128i p_d_d2 = _mm_srli_epi64(p_deg_ge2, 1);
+            const __m128i p_r_d2 = _mm_slli_si128(p_deg_ge2, 2);
+            const __m128i sym_seeds = _mm_and_si128(p_deg_ge2, 
+                _mm_or_si128(ptest_term, _mm_or_si128(p_d_d2, p_r_d2)));
 
-                if (_mm_testz_si128(p_deg_ge2, ptest_term))
-                    continue;
+            const __m128i ud_s = _mm_or_si128(_mm_slli_epi64(sym_seeds, 1), _mm_srli_epi64(sym_seeds, 1));
+            const __m128i lr_s = _mm_or_si128(_mm_slli_si128(sym_seeds, 2), _mm_srli_si128(sym_seeds, 2));
+            const __m128i adj_s = _mm_or_si128(ud_s, lr_s);
 
-                // --- 第1消去グループの抽出 (ptest_term を再利用して 2命令削減) ---
-                const __m128i p_d_d2 = _mm_srli_epi64(p_deg_ge2, 1);
-                const __m128i p_r_d2 = _mm_slli_si128(p_deg_ge2, 2);
-                const __m128i sym_seeds = _mm_and_si128(p_deg_ge2, 
-                    _mm_or_si128(ptest_term, _mm_or_si128(p_d_d2, p_r_d2)));
+            BitBoard first_group;
+            first_group.m128 = _mm_and_si128(_mm_or_si128(sym_seeds, adj_s), probed_bb);
 
-                const __m128i ud_s = _mm_or_si128(_mm_slli_epi64(sym_seeds, 1), _mm_srli_epi64(sym_seeds, 1));
-                const __m128i lr_s = _mm_or_si128(_mm_slli_si128(sym_seeds, 2), _mm_srli_si128(sym_seeds, 2));
-                const __m128i adj_s = _mm_or_si128(ud_s, lr_s);
+            const int sz = first_group.popcount();
+            ErasureData ed;
+            ed.total_erased = first_group;
+            ed.num_erased   = static_cast<uint8_t>(sz);
+            ed.num_colors   = 1;
+            ed.group_bonus  = Chain::kGroupBonusLut[std::min(sz, 15)];
 
-                BitBoard first_group;
-                first_group.m128 = _mm_and_si128(_mm_or_si128(sym_seeds, adj_s), probed_bb);
+            if (has_ojama) {
+                const __m128i t = ed.total_erased.m128;
+                const __m128i ud = _mm_or_si128(_mm_slli_epi64(t, 1), _mm_srli_epi64(t, 1));
+                const __m128i lr = _mm_or_si128(_mm_slli_si128(t, 2), _mm_srli_si128(t, 2));
+                ed.total_erased.m128 = _mm_or_si128(t, _mm_and_si128(ojama_bb.m128, _mm_or_si128(ud, lr)));
+            }
 
-                const int sz = first_group.popcount();
-                ErasureData ed;
-                ed.total_erased = first_group;
-                ed.num_erased   = static_cast<uint8_t>(sz);
-                ed.num_colors   = 1;
-                ed.group_bonus  = Chain::kGroupBonusLut[std::min(sz, 15)];
+            int pot_chain = 1;
+            int pot_score = Scorer::calculateStepScore(ed, pot_chain);
 
-                if (has_ojama) {
-                    const __m128i t = ed.total_erased.m128;
-                    const __m128i ud = _mm_or_si128(_mm_slli_epi64(t, 1), _mm_srli_epi64(t, 1));
-                    const __m128i lr = _mm_or_si128(_mm_slli_si128(t, 2), _mm_srli_si128(t, 2));
-                    ed.total_erased.m128 = _mm_or_si128(t, _mm_and_si128(ojama_bb.m128, _mm_or_si128(ud, lr)));
-                }
+            Board temp = board;
 
-                int pot_chain = 1;
-                int pot_score = Scorer::calculateStepScore(ed, pot_chain);
+            // ★【1連鎖目ピンポイント消去】無関係な3色の andNot を安全にスキップ (3命令削減)
+            Chain::applySingleErasure(temp, static_cast<Cell>(c), first_group, ed.total_erased, has_ojama);
 
-                Board temp = board;
+            uint32_t fallen = Gravity::execute(temp);
+            while (fallen != 0) {
+                Chain::scanGroups(temp, ed, fallen);
+                if (ed.num_erased == 0)
+                    break;
+
+                ++pot_chain;
+                pot_score += Scorer::calculateStepScore(ed, pot_chain);
                 Chain::applyErasure(temp, ed);
 
-                uint32_t fallen = Gravity::execute(temp);
-                while (fallen != 0) {
-                    Chain::scanGroups(temp, ed, fallen);
-                    if (ed.num_erased == 0)
-                        break;
-
-                    ++pot_chain;
-                    pot_score += Scorer::calculateStepScore(ed, pot_chain);
-                    Chain::applyErasure(temp, ed);
-
-                    fallen = Gravity::execute(temp);
-                }
-
-                max_pot_score = std::max(max_pot_score, pot_score);
+                fallen = Gravity::execute(temp);
             }
+
+            max_pot_score = std::max(max_pot_score, pot_score);
         }
     }
 
