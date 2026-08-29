@@ -40,35 +40,42 @@ class VsBeamEvaluator {
                             const VsEvalContext* ctx = nullptr) noexcept {
         int32_t r = 0;
 
-        // --- Board metrics (BitBoard-level, branchless) ---
+        // --- Board metrics (BitBoard-level, branchless & 遅延 popcount) ---
         {
-            int conn = 0, iso = 0;
+            __m128i all_has2 = _mm_setzero_si128();
+            __m128i all_iso  = _mm_setzero_si128();
+
             for (int c = 0; c < config::Rule::kColors; ++c) {
                 const BitBoard& bb = board.getBitboard(static_cast<Cell>(c));
                 if (bb.empty())
                     continue;
 
-                const BitBoard U = bb.shiftUpRaw();
-                const BitBoard D = bb.shiftDownRaw();
-                const BitBoard L = bb.shiftLeftRaw();
-                const BitBoard R = bb.shiftRightRaw();
+                const __m128i bbm = bb.m128;
+                const __m128i U = _mm_slli_epi64(bbm, 1);
+                const __m128i D = _mm_srli_epi64(bbm, 1);
+                const __m128i L = _mm_srli_si128(bbm, 2);
+                const __m128i R = _mm_slli_si128(bbm, 2);
 
-                const BitBoard UD = U | D;
-                const BitBoard LR = L | R;
+                const __m128i UD = _mm_or_si128(U, D);
+                const __m128i LR = _mm_or_si128(L, R);
 
-                // Puyos with >= 2 same-color neighbors
-                const BitBoard has2 =
-                    bb & ((U & D) | (L & R) | (UD & LR));
-                conn += has2.popcount();
+                // Puyos with >= 2 same-color neighbors: (U & D) | (L & R) | (UD & LR)
+                const __m128i has2 = _mm_and_si128(bbm,
+                    _mm_or_si128(_mm_or_si128(_mm_and_si128(U, D), _mm_and_si128(L, R)),
+                                 _mm_and_si128(UD, LR)));
+                all_has2 = _mm_or_si128(all_has2, has2);
 
-                // Isolated: no same-color neighbors
-                BitBoard iso_bb = bb;
-                iso_bb.andNot(UD | LR);
-                iso += iso_bb.popcount();
+                // Isolated: no same-color neighbors (bb & ~(UD | LR))
+                const __m128i iso_m = _mm_andnot_si128(_mm_or_si128(UD, LR), bbm);
+                all_iso = _mm_or_si128(all_iso, iso_m);
             }
 
-            r += conn * w.connectivity_bonus;
-            r += iso * w.isolated_penalty;
+            // ★ 4色合算後に 1 回だけ popcount を実行 (16命令 → 4命令に削減)
+            const BitBoard b_has2(all_has2);
+            const BitBoard b_iso(all_iso);
+
+            r += b_has2.popcount() * w.connectivity_bonus;
+            r += b_iso.popcount() * w.isolated_penalty;
         }
 
         // --- Buried puyo count (colored puyos beneath any ojama shadow) ---
@@ -81,14 +88,9 @@ class VsBeamEvaluator {
                 s_reg = _mm_or_si128(s_reg, _mm_srli_epi64(s_reg, 4));
                 s_reg = _mm_or_si128(s_reg, _mm_srli_epi64(s_reg, 8));
 
-                __m128i all_colored = _mm_andnot_si128(oj.m128, board.getOccupied().m128);
-                __m128i buried_reg = _mm_and_si128(all_colored, s_reg);
-
-                uint64_t b_lo = _mm_cvtsi128_si64(buried_reg);
-                uint64_t b_hi = _mm_extract_epi64(buried_reg, 1);
-                int buried =
-                    static_cast<int>(std::popcount(b_lo) + std::popcount(b_hi));
-                r += buried * w.buried_penalty;
+                const __m128i all_colored = _mm_andnot_si128(oj.m128, board.getOccupied().m128);
+                const BitBoard buried_bb(_mm_and_si128(all_colored, s_reg));
+                r += buried_bb.popcount() * w.buried_penalty;
             }
         }
 
