@@ -90,11 +90,13 @@ struct PlaceResult {
     bool dead;
 };
 
-// ★【最適化1】引数を参照渡し (out_res) に変更し、NRVO失敗による盤面コピー(96B)とデフォルトコンストラクタの初期化コストを完全排除
-void simulatePlacement(const Board& src, PuyoPiece piece,
-                       const BeamAction& action,
-                       uint32_t packed_heights,
-                       PlaceResult& out_res) noexcept {
+// =========================================================================
+// simulatePlacement: 連鎖シミュレーションの極限最適化
+// =========================================================================
+__forceinline void simulatePlacement(const Board& src, PuyoPiece piece,
+                                    const BeamAction& action,
+                                    uint32_t packed_heights,
+                                    PlaceResult& out_res) noexcept {
     const int ax = action.ax;
     const int sx = action.sx;
 
@@ -109,7 +111,6 @@ void simulatePlacement(const Board& src, PuyoPiece piece,
         return;
     }
 
-    // ここで1回だけコピー。デフォルトコンストラクタによるゼロクリアは発生しない
     out_res.field = src;
     out_res.chain = 0;
     out_res.score = 0;
@@ -119,12 +120,19 @@ void simulatePlacement(const Board& src, PuyoPiece piece,
 
     ErasureData ed;
     Chain::scanGroups(out_res.field, ed, piece.dirty_flag);
+
+    // 連鎖ループ: 誰も落ちていなければ即座に終了する
     while (ed.num_erased > 0) {
         ++out_res.chain;
         out_res.score += Scorer::calculateStepScore(ed, out_res.chain);
         Chain::applyErasure(out_res.field, ed);
 
-        uint32_t fallen = Gravity::execute(out_res.field);
+        const uint32_t fallen = Gravity::execute(out_res.field);
+        // 【最重要最適化】誰も落ちていなければ次の連鎖は絶対に起きないため即脱出
+        if (fallen == 0) {
+            break;
+        }
+
         Chain::scanGroups(out_res.field, ed, fallen);
     }
 
@@ -154,7 +162,7 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
         const bool is_zoro0 = (piece0.axis == piece0.sub);
         const auto& actions0 = is_zoro0 ? getZoroActions() : getPutActions();
         
-        PlaceResult pr; // ここで1度だけ宣言
+        PlaceResult pr;
         for (const auto& entry : actions0) {
             simulatePlacement(player.field, piece0, entry, packed_heights_root, pr);
             if (pr.dead || pr.score == 0)
@@ -196,8 +204,7 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
         const auto actions = is_zoro ? getZoroActions() : getPutActions();
         const int current_size = static_cast<int>(tl_current_beam.size());
 
-        // ★【最適化1】ループ外で確保し、11,000回のコンストラクタ呼び出し(ゼロクリア)を排除
-        PlaceResult pr; 
+        PlaceResult pr;
 
         // Phase 1: 候補の生成と評価
         for (int p_idx = 0; p_idx < current_size; ++p_idx) {
@@ -207,7 +214,6 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
             for (uint8_t a_idx = 0; a_idx < static_cast<uint8_t>(actions.size()); ++a_idx) {
                 const auto& entry = actions[a_idx];
                 
-                // pr を再利用してシミュレーション
                 simulatePlacement(node.field, piece, entry, cur_heights, pr);
                 if (pr.dead)
                     continue;
@@ -221,8 +227,6 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
                 int32_t next_accum = node.accum_score + static_cast<int32_t>(pr.score);
                 int32_t total_score = next_accum * cfg.eval_weights.potential_score_scale + eval;
 
-                // ★【最適化2】最終深さの場合、候補ノードの生成(vectorへのpush_back)を完全スキップし、
-                // メモリ書き込み(176KB)と、後続の max_element 走査を O(1) 化する。
                 if (is_last_depth) {
                     if (total_score > best_score) {
                         best_score = total_score;
@@ -240,7 +244,6 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
             }
         }
 
-        // 最終深さなら Phase 2 (ソートと実体化) を完全にスキップ
         if (is_last_depth) {
             break;
         }
@@ -259,7 +262,6 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
             const auto& parent = tl_prev_beam[item.parent_idx];
             const auto& act = actions[item.action_idx];
             
-            // pr を再利用
             simulatePlacement(parent.field, piece, act, parent.packed_heights, pr);
             int first = (depth == 0) ? act.idx : parent.first_action;
             int32_t next_accum = parent.accum_score + static_cast<int32_t>(pr.score);
