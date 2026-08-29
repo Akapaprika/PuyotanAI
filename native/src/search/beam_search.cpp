@@ -106,39 +106,34 @@ __forceinline void simulatePlacement(const Board& src, PuyoPiece piece,
     const int y_axis = h_axis + action.axis_dy;
     const int y_sub  = h_sub + action.sub_dy;
 
-    if (y_axis >= config::Board::kTotalRows || y_sub >= config::Board::kTotalRows) [[unlikely]] {
-        out_res.dead = true;
-        return;
-    }
-
     out_res.field = src;
     out_res.chain = 0;
     out_res.score = 0;
-    out_res.dead  = false;
 
     out_res.field.dropPiecePairFast(ax, sx, y_axis, y_sub, piece.axis, piece.sub);
 
-    ErasureData ed;
-    Chain::scanGroups(out_res.field, ed, piece.dirty_flag);
+    // ★ 1〜12段目 (消去可能領域) に置かれたぷよがある場合のみスキャン
+    // 2粒とも 13段目以上 (幽霊マス・14段目横置き等) の場合は消去が起きないため完全スキップ！
+    if (y_axis < config::Board::kChainableRows || y_sub < config::Board::kChainableRows) {
+        ErasureData ed;
+        Chain::scanGroups(out_res.field, ed, piece.dirty_flag);
 
-    // 連鎖ループ: 誰も落ちていなければ即座に終了する
-    while (ed.num_erased > 0) {
-        ++out_res.chain;
-        out_res.score += Scorer::calculateStepScore(ed, out_res.chain);
-        Chain::applyErasure(out_res.field, ed);
+        // 連鎖ループ: 誰も落ちていなければ即座に終了する
+        while (ed.num_erased > 0) {
+            ++out_res.chain;
+            out_res.score += Scorer::calculateStepScore(ed, out_res.chain);
+            Chain::applyErasure(out_res.field, ed);
 
-        const uint32_t fallen = Gravity::execute(out_res.field);
-        // 【最重要最適化】誰も落ちていなければ次の連鎖は絶対に起きないため即脱出
-        if (fallen == 0) {
-            break;
+            const uint32_t fallen = Gravity::execute(out_res.field);
+            if (fallen == 0) {
+                break;
+            }
+
+            Chain::scanGroups(out_res.field, ed, fallen);
         }
-
-        Chain::scanGroups(out_res.field, ed, fallen);
     }
 
-    if (out_res.field.isOccupied(config::Rule::kDeathCol, config::Rule::kDeathRow)) [[unlikely]] {
-        out_res.dead = true;
-    }
+    out_res.dead = out_res.field.isOccupied(config::Rule::kDeathCol, config::Rule::kDeathRow);
 }
 
 } // anonymous namespace
@@ -219,7 +214,11 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
                     continue;
 
                 uint32_t next_packed_h = cur_heights + (1u << (entry.ax << 2)) + (1u << (entry.sx << 2));
-                if (__builtin_expect(pr.chain > 0, 0)) {
+                const int next_h_ax = (next_packed_h >> (entry.ax << 2)) & 0xFu;
+                const int next_h_sx = (next_packed_h >> (entry.sx << 2)) & 0xFu;
+
+                // ★ 連鎖発生時、または加算後が 14段目以上（ツモ捨てで突き抜けた時）だけ正確に同期！
+                if (__builtin_expect(pr.chain > 0 || next_h_ax >= 14 || next_h_sx >= 14, 0)) {
                     next_packed_h = packHeights(pr.field);
                 }
 

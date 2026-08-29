@@ -189,7 +189,7 @@ __forceinline void PuyotanMatch::stepPlayerFrame(int id) noexcept {
                 int h_sub = 0;
                 p.field.dropPiecePair(action.x, action.rotation, tumo.axis, tumo.sub, h_axis, h_sub);
             
-                p.score += std::max(0, config::Board::kSpawnRow - std::max(h_axis, h_sub));
+                p.score += config::Board::kSpawnRow - std::max(h_axis, h_sub);
             
                 const uint32_t dirty_colors = tumo.dirty_flag;
                 Chain::scanGroups(p.field, pending_erasure_[id], dirty_colors);
