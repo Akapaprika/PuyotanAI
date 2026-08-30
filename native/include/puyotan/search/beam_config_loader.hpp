@@ -74,11 +74,13 @@ class BeamConfigLoader {
             if (section.contains(k) && section[k].is_number())
                 dst = section[k].template get<float>();
         };
-        getInt  ("beam_width",          cfg.beam_width);
-        getInt  ("look_ahead",          cfg.look_ahead);
-        getInt  ("dbs_max_similar",     cfg.dbs_max_similar);
-        getInt  ("full_beam_depth",     cfg.full_beam_depth);
-        getFloat("min_beam_width_ratio", cfg.min_beam_width_ratio);
+        getInt  ("beam_width",               cfg.beam_width);
+        getInt  ("look_ahead",               cfg.look_ahead);
+        getInt  ("dbs_max_similar",          cfg.dbs_max_similar);
+        getInt  ("full_beam_depth",          cfg.full_beam_depth);
+        getFloat("min_beam_width_ratio",     cfg.min_beam_width_ratio);
+        getInt  ("main_chain_threshold",     cfg.main_chain_threshold);
+        getInt  ("dynamic_lookahead_margin", cfg.dynamic_lookahead_margin);
     }
 
     // ── Eval-weights patch (key-value iteration, handles all weight types) ────
@@ -145,11 +147,13 @@ class BeamConfigLoader {
         if (j.empty() || j.is_discarded()) j = nlohmann::json::object();
 
         auto& solo = j["solo"];
-        solo["beam_width"]          = cfg.beam_width;
-        solo["look_ahead"]          = cfg.look_ahead;
-        solo["dbs_max_similar"]     = cfg.dbs_max_similar;
-        solo["full_beam_depth"]     = cfg.full_beam_depth;
-        solo["min_beam_width_ratio"]= cfg.min_beam_width_ratio;
+        solo["beam_width"]               = cfg.beam_width;
+        solo["look_ahead"]               = cfg.look_ahead;
+        solo["dbs_max_similar"]          = cfg.dbs_max_similar;
+        solo["full_beam_depth"]          = cfg.full_beam_depth;
+        solo["min_beam_width_ratio"]     = cfg.min_beam_width_ratio;
+        solo["main_chain_threshold"]     = cfg.main_chain_threshold;
+        solo["dynamic_lookahead_margin"] = cfg.dynamic_lookahead_margin;
 
         auto& ew = solo["eval_weights"];
         ew["potential_score_scale"] = cfg.eval_weights.potential_score_scale;
@@ -163,11 +167,14 @@ class BeamConfigLoader {
         if (j.empty() || j.is_discarded()) j = nlohmann::json::object();
 
         auto& vs = j["vs"];
-        vs["beam_width"]          = cfg.beam_width;
-        vs["look_ahead"]          = cfg.look_ahead;
-        vs["dbs_max_similar"]     = cfg.dbs_max_similar;
-        vs["full_beam_depth"]     = cfg.full_beam_depth;
-        vs["min_beam_width_ratio"]= cfg.min_beam_width_ratio;
+        vs["beam_width"]               = cfg.beam_width;
+        vs["look_ahead"]               = cfg.look_ahead;
+        vs["dbs_max_similar"]          = cfg.dbs_max_similar;
+        vs["full_beam_depth"]          = cfg.full_beam_depth;
+        vs["min_beam_width_ratio"]     = cfg.min_beam_width_ratio;
+        vs["main_chain_threshold"]     = cfg.main_chain_threshold;
+        vs["dynamic_lookahead_margin"] = cfg.dynamic_lookahead_margin;
+        vs["enable_attack_search"]     = cfg.enable_attack_search;
 
         const auto& w = cfg.eval_weights;
         auto& ew = vs["eval_weights"];

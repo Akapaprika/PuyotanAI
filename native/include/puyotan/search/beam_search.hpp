@@ -22,4 +22,6 @@ std::pair<int, int32_t> vsBeamSearch(const PuyotanPlayer& player,
                                      const VsBeamConfig&  cfg,
                                      BeamSearchSession*   session = nullptr) noexcept;
 
+Board getBestLeafField() noexcept;
+
 } // namespace puyotan::search

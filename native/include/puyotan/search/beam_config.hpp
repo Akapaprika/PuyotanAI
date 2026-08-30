@@ -55,8 +55,10 @@ struct SoloBeamConfig {
     int   beam_width           = 500;
     int   look_ahead           = 3;
     int   dbs_max_similar      = 0;
-    int   full_beam_depth      = 2;
-    float min_beam_width_ratio = 1.0f;
+    int   full_beam_depth        = 2;
+    float min_beam_width_ratio   = 1.0f;
+    int   main_chain_threshold   = 20000;
+    int   dynamic_lookahead_margin = 90;
     SoloBeamEvalWeights eval_weights;
     std::array<int, 64> target_beam_widths{};
 
@@ -92,9 +94,11 @@ struct VsBeamConfig {
     int   beam_width           = 500;
     int   look_ahead           = 3;
     int   dbs_max_similar      = 0;
-    int   full_beam_depth      = 2;
-    float min_beam_width_ratio = 1.0f;
-    bool  enable_attack_search = true;
+    int   full_beam_depth        = 2;
+    float min_beam_width_ratio   = 1.0f;
+    int   main_chain_threshold   = 20000;
+    int   dynamic_lookahead_margin = 0;
+    bool  enable_attack_search   = true;
     VsBeamEvalWeights eval_weights;
     VsEvalContext     context;
     std::array<int, 64> target_beam_widths{};

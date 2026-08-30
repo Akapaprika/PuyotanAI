@@ -11,11 +11,14 @@
 #include <puyotan/search/action_table.hpp>
 #include <puyotan/search/beam_evaluator.hpp>
 #include <puyotan/search/beam_search.hpp>
+#include <puyotan/search/depth_dedup_table.hpp>
 #include <puyotan/search/transposition_table.hpp>
 #include <puyotan/search/zobrist.hpp>
 
 namespace puyotan::search {
 namespace {
+
+inline thread_local Board tl_best_leaf_field;
 
 struct BeamNode {
     Board field;
@@ -24,17 +27,20 @@ struct BeamNode {
     int first_action;
     uint32_t packed_heights;
     uint64_t hash;
+    bool has_fired_main;
 };
 
-// 16バイトに収まる超軽量候補記述子
-struct alignas(16) CandidateNode {
+// 24バイトの候補記述子
+struct CandidateNode {
+    uint64_t hash;
     int32_t  score;          
     uint32_t packed_heights; 
     uint32_t parent_idx;     
     uint8_t  action_idx;     
-    uint8_t  _pad[3];        
+    bool     has_fired_main;
+    uint8_t  _pad[2];        
 };
-static_assert(sizeof(CandidateNode) == 16, "CandidateNode must be exactly 16 bytes");
+static_assert(sizeof(CandidateNode) == 24, "CandidateNode must be exactly 24 bytes");
 
 struct DynamicFlatCountTable {
     struct alignas(8) Entry {
@@ -190,66 +196,65 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
         tl_dbs_table.ensure_capacity(static_cast<std::size_t>(cfg.beam_width));
     }
 
-    tl_current_beam.emplace_back(player.field, 0, 0, -1, packed_heights_root, root_hash);
+    tl_current_beam.emplace_back(player.field, 0, 0, -1, packed_heights_root, root_hash, false);
 
     int best_action = -1;
     int32_t best_score = -1000000000;
 
-    for (int depth = 0; depth < cfg.look_ahead; ++depth) {
+    const int occupied_puyos = player.field.getOccupied().popcount();
+    const int effective_look_ahead = (cfg.dynamic_lookahead_margin > 0)
+        ? std::min(cfg.look_ahead, std::max(1, (cfg.dynamic_lookahead_margin - occupied_puyos) / 2))
+        : cfg.look_ahead;
+
+    for (int depth = 0; depth < effective_look_ahead; ++depth) {
+        tl_depth_dedup.advanceDepth();
+
         int32_t piece_idx = tsumo_base + depth;
         PuyoPiece piece = tsumo.get(piece_idx);
         const bool is_zoro = (piece.axis == piece.sub);
-        const bool is_last_depth = (depth == cfg.look_ahead - 1);
+        const bool is_last_depth = (depth == effective_look_ahead - 1);
 
         tl_candidates.clear();
 
-        // ★ コピーを排除し参照で取得
         const auto& actions = is_zoro ? getZoroActions() : getPutActions();
         const int current_size = static_cast<int>(tl_current_beam.size());
-        const uint8_t num_actions = static_cast<uint8_t>(actions.size());
 
-        PlaceResult pr;
-
-        // Phase 1: 候補の生成と評価
         for (int p_idx = 0; p_idx < current_size; ++p_idx) {
-            const BeamNode& node = tl_current_beam[p_idx];
-            // ループ不変項のローカル展開
-            const Board& parent_field     = node.field;
-            const uint32_t cur_heights    = node.packed_heights;
-            const int32_t parent_accum    = node.accum_score;
-            const int parent_first_action = node.first_action;
-            const uint64_t parent_hash    = node.hash;
+            const auto& parent = tl_current_beam[p_idx];
+            const int32_t parent_accum = parent.accum_score;
+            const int parent_first_action = parent.first_action;
+            const uint64_t parent_hash = parent.hash;
+            const uint32_t parent_packed_heights = parent.packed_heights;
+            const bool parent_has_fired_main = parent.has_fired_main;
 
-            for (uint8_t a_idx = 0; a_idx < num_actions; ++a_idx) {
+            for (uint8_t a_idx = 0; a_idx < actions.size(); ++a_idx) {
                 const auto& entry = actions[a_idx];
-                
-                simulatePlacement(parent_field, piece, entry, cur_heights, pr);
+                const int h_axis = (parent_packed_heights >> (entry.ax << 2)) & 0xFu;
+                const int h_sub  = (parent_packed_heights >> (entry.sx << 2)) & 0xFu;
+                const int y_axis = h_axis + entry.axis_dy;
+                const int y_sub  = h_sub  + entry.sub_dy;
+
+                PlaceResult pr;
+                simulatePlacement(parent.field, piece, entry, parent_packed_heights, pr);
+
                 if (pr.dead)
                     continue;
 
-                uint32_t next_packed_h = cur_heights + (1u << (entry.ax << 2)) + (1u << (entry.sx << 2));
-                const int next_h_ax = (next_packed_h >> (entry.ax << 2)) & 0xFu;
-                const int next_h_sx = (next_packed_h >> (entry.sx << 2)) & 0xFu;
+                const uint32_t next_packed_h = packHeights(pr.field);
 
-                // 連鎖発生時、または突き抜けた時のみ同期
-                if (__builtin_expect(pr.chain > 0 || next_h_ax >= 14 || next_h_sx >= 14, 0)) {
-                    next_packed_h = packHeights(pr.field);
-                }
-
-                // --- Zobrist Hash 計算 ---
                 uint64_t child_hash;
-                if (__builtin_expect(pr.chain > 0, 0)) {
+                if (pr.score > 0 || y_axis >= config::Board::kSpawnRow || y_sub >= config::Board::kSpawnRow) {
                     child_hash = Zobrist::hashBoard(pr.field);
                 } else {
-                    const int h_axis = (cur_heights >> (entry.ax << 2)) & 0xFu;
-                    const int h_sub  = (cur_heights >> (entry.sx << 2)) & 0xFu;
-                    const int y_axis = h_axis + entry.axis_dy;
-                    const int y_sub  = h_sub  + entry.sub_dy;
-                    child_hash = parent_hash ^ Zobrist::xorPuyo(piece.axis, entry.ax, y_axis)
-                                             ^ Zobrist::xorPuyo(piece.sub,  entry.sx, y_sub);
+                    child_hash = parent_hash;
+                    if (y_axis < config::Board::kHeight) {
+                        child_hash ^= Zobrist::xorPuyo(piece.axis, entry.ax, y_axis);
+                    }
+                    if (y_sub < config::Board::kHeight) {
+                        child_hash ^= Zobrist::xorPuyo(piece.sub, entry.sx, y_sub);
+                    }
                 }
 
-                // --- Transposition Table Lookup ---
                 int32_t pot_score = 0;
                 if (!tl_tt.get(child_hash, pot_score)) {
                     pot_score = computeMaxPotentialScore(pr.field, next_packed_h);
@@ -263,21 +268,33 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
                     eval = EvaluatorType::evaluateWithPotential(pr.field, cfg.eval_weights, next_packed_h, pot_score, &cfg.context);
                 }
 
-                int32_t next_accum = parent_accum + static_cast<int32_t>(pr.score);
-                int32_t total_score = next_accum * cfg.eval_weights.potential_score_scale + eval;
+                const int32_t step_score = static_cast<int32_t>(pr.score);
+                const bool next_has_fired_main = parent_has_fired_main || (cfg.main_chain_threshold > 0 && step_score >= cfg.main_chain_threshold);
+                const int32_t next_accum = parent_accum + step_score;
+
+                // 本線大連鎖発火済みの場合はセカンドポテンシャルを加算しない（水増し防止）
+                int32_t total_score;
+                if (next_has_fired_main) {
+                    total_score = next_accum * cfg.eval_weights.potential_score_scale;
+                } else {
+                    total_score = next_accum * cfg.eval_weights.potential_score_scale + eval;
+                }
 
                 if (is_last_depth) {
                     if (total_score > best_score) {
                         best_score = total_score;
                         best_action = (depth == 0) ? entry.idx : parent_first_action;
+                        tl_best_leaf_field = pr.field;
                     }
                 } else {
                     tl_candidates.push_back({
+                        child_hash,
                         total_score,
                         next_packed_h,
                         static_cast<uint32_t>(p_idx),
                         a_idx,
-                        {0, 0, 0}
+                        next_has_fired_main,
+                        {0, 0}
                     });
                 }
             }
@@ -293,7 +310,6 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
         const int target_beam_width = cfg.target_beam_widths[depth];
         const int keep = std::min(static_cast<int>(tl_candidates.size()), target_beam_width);
 
-        // Phase 2: 上位候補の選別と実体化
         tl_prev_beam.swap(tl_current_beam);
         tl_current_beam.clear();
 
@@ -301,23 +317,12 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
             const auto& parent = tl_prev_beam[item.parent_idx];
             const auto& act = actions[item.action_idx];
             
+            PlaceResult pr;
             simulatePlacement(parent.field, piece, act, parent.packed_heights, pr);
             int first = (depth == 0) ? act.idx : parent.first_action;
             int32_t next_accum = parent.accum_score + static_cast<int32_t>(pr.score);
 
-            uint64_t child_hash;
-            if (__builtin_expect(pr.chain > 0, 0)) {
-                child_hash = Zobrist::hashBoard(pr.field);
-            } else {
-                const int h_axis = (parent.packed_heights >> (act.ax << 2)) & 0xFu;
-                const int h_sub  = (parent.packed_heights >> (act.sx << 2)) & 0xFu;
-                const int y_axis = h_axis + act.axis_dy;
-                const int y_sub  = h_sub  + act.sub_dy;
-                child_hash = parent.hash ^ Zobrist::xorPuyo(piece.axis, act.ax, y_axis)
-                                         ^ Zobrist::xorPuyo(piece.sub,  act.sx, y_sub);
-            }
-            
-            tl_current_beam.emplace_back(pr.field, item.score, next_accum, first, item.packed_heights, child_hash);
+            tl_current_beam.emplace_back(pr.field, item.score, next_accum, first, item.packed_heights, item.hash, item.has_fired_main);
         };
 
         if (cfg.dbs_max_similar >= 1) {
@@ -328,6 +333,9 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
 
             tl_dbs_table.clear();
             for (const auto& item : tl_candidates) {
+                if (tl_depth_dedup.checkAndInsert(item.hash))
+                    continue;
+
                 if (tl_dbs_table.get_and_inc(item.packed_heights) < cfg.dbs_max_similar) {
                     instantiate_node(item);
                     if (static_cast<int>(tl_current_beam.size()) == keep) {
@@ -336,26 +344,19 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
                 }
             }
         } else {
-            if (keep < static_cast<int>(tl_candidates.size())) {
-                std::nth_element(tl_candidates.begin(), tl_candidates.begin() + keep,
-                                 tl_candidates.end(),
-                                 [](const CandidateNode& a, const CandidateNode& b) noexcept {
-                                     return a.score > b.score;
-                                 });
-            }
+            std::sort(tl_candidates.begin(), tl_candidates.end(),
+                      [](const CandidateNode& a, const CandidateNode& b) noexcept {
+                          return a.score > b.score;
+                      });
 
-            // ★ 最終深さの直前のみソートを実行
-            // - 通常深さ: ソートをスキップしてスループット最大化 (Light の P99 -31.8% を維持)
-            // - 最終深さ前: ソートして次深さ 88 万手の best_score 分岐予測ミスを完全撲滅 (Heavy を回復)
-            if (depth == cfg.look_ahead - 2) {
-                std::sort(tl_candidates.begin(), tl_candidates.begin() + keep,
-                          [](const CandidateNode& a, const CandidateNode& b) noexcept {
-                              return a.score > b.score;
-                          });
-            }
+            for (const auto& item : tl_candidates) {
+                if (tl_depth_dedup.checkAndInsert(item.hash))
+                    continue;
 
-            for (int i = 0; i < keep; ++i) {
-                instantiate_node(tl_candidates[i]);
+                instantiate_node(item);
+                if (static_cast<int>(tl_current_beam.size()) == keep) {
+                    break;
+                }
             }
         }
     }
@@ -400,6 +401,10 @@ std::pair<int, int32_t> vsBeamSearch(const PuyotanPlayer& player,
         session->update(res.second);
     }
     return res;
+}
+
+Board getBestLeafField() noexcept {
+    return tl_best_leaf_field;
 }
 
 } // namespace puyotan::search

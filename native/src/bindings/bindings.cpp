@@ -207,25 +207,29 @@ PYBIND11_MODULE(puyotan_native, m) {
 
     pybind11::class_<search::SoloBeamConfig>(m, "SoloBeamConfig")
         .def(pybind11::init<>())
-        .def_readwrite("beam_width",            &search::SoloBeamConfig::beam_width)
-        .def_readwrite("look_ahead",            &search::SoloBeamConfig::look_ahead)
-        .def_readwrite("dbs_max_similar",       &search::SoloBeamConfig::dbs_max_similar)
-        .def_readwrite("full_beam_depth",       &search::SoloBeamConfig::full_beam_depth)
-        .def_readwrite("min_beam_width_ratio",   &search::SoloBeamConfig::min_beam_width_ratio)
-        .def_readwrite("eval_weights",          &search::SoloBeamConfig::eval_weights)
-        .def("recompute_beam_widths",           &search::SoloBeamConfig::recompute_beam_widths);
+        .def_readwrite("beam_width",               &search::SoloBeamConfig::beam_width)
+        .def_readwrite("look_ahead",               &search::SoloBeamConfig::look_ahead)
+        .def_readwrite("dbs_max_similar",          &search::SoloBeamConfig::dbs_max_similar)
+        .def_readwrite("full_beam_depth",          &search::SoloBeamConfig::full_beam_depth)
+        .def_readwrite("min_beam_width_ratio",     &search::SoloBeamConfig::min_beam_width_ratio)
+        .def_readwrite("main_chain_threshold",     &search::SoloBeamConfig::main_chain_threshold)
+        .def_readwrite("dynamic_lookahead_margin", &search::SoloBeamConfig::dynamic_lookahead_margin)
+        .def_readwrite("eval_weights",             &search::SoloBeamConfig::eval_weights)
+        .def("recompute_beam_widths",              &search::SoloBeamConfig::recompute_beam_widths);
 
     pybind11::class_<search::VsBeamConfig>(m, "VsBeamConfig")
         .def(pybind11::init<>())
-        .def_readwrite("beam_width",            &search::VsBeamConfig::beam_width)
-        .def_readwrite("look_ahead",            &search::VsBeamConfig::look_ahead)
-        .def_readwrite("dbs_max_similar",       &search::VsBeamConfig::dbs_max_similar)
-        .def_readwrite("full_beam_depth",       &search::VsBeamConfig::full_beam_depth)
-        .def_readwrite("min_beam_width_ratio",   &search::VsBeamConfig::min_beam_width_ratio)
-        .def_readwrite("enable_attack_search",  &search::VsBeamConfig::enable_attack_search)
-        .def_readwrite("eval_weights",          &search::VsBeamConfig::eval_weights)
-        .def_readwrite("context",               &search::VsBeamConfig::context)
-        .def("recompute_beam_widths",           &search::VsBeamConfig::recompute_beam_widths);
+        .def_readwrite("beam_width",               &search::VsBeamConfig::beam_width)
+        .def_readwrite("look_ahead",               &search::VsBeamConfig::look_ahead)
+        .def_readwrite("dbs_max_similar",          &search::VsBeamConfig::dbs_max_similar)
+        .def_readwrite("full_beam_depth",          &search::VsBeamConfig::full_beam_depth)
+        .def_readwrite("min_beam_width_ratio",     &search::VsBeamConfig::min_beam_width_ratio)
+        .def_readwrite("main_chain_threshold",     &search::VsBeamConfig::main_chain_threshold)
+        .def_readwrite("dynamic_lookahead_margin", &search::VsBeamConfig::dynamic_lookahead_margin)
+        .def_readwrite("enable_attack_search",     &search::VsBeamConfig::enable_attack_search)
+        .def_readwrite("eval_weights",             &search::VsBeamConfig::eval_weights)
+        .def_readwrite("context",                  &search::VsBeamConfig::context)
+        .def("recompute_beam_widths",              &search::VsBeamConfig::recompute_beam_widths);
 
     m.def("load_solo_config", &search::BeamConfigLoader::loadSolo, pybind11::arg("path"),
           "Load SoloBeamConfig from JSON");
@@ -246,6 +250,9 @@ PYBIND11_MODULE(puyotan_native, m) {
         pybind11::arg("player"), pybind11::arg("tsumo"),
         pybind11::arg("cfg"), pybind11::arg("session") = nullptr,
         "Run Solo beam search with a SoloBeamConfig. Returns (RL action index, expected score).");
+
+    m.def("get_best_leaf_field", &search::getBestLeafField,
+          "Get the best leaf node board from the most recent beam search.");
 
     // Pure VS beam search
     m.def(

@@ -52,7 +52,7 @@ public:
                 lo &= (lo - 1);
                 h ^= table[c][idx >> 4][idx & 15];
             }
-            uint64_t hi = bb.hi;
+            uint64_t hi = bb.hi & config::Board::kHiMask;
             while (hi) {
                 const int idx = std::countr_zero(hi);
                 hi &= (hi - 1);

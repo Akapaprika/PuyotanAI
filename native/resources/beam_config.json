@@ -10,6 +10,10 @@
     "full_beam_depth": 2,
     "_comment_min_beam_width_ratio": "最終手（look_ahead-1）時点でのビーム幅の到達比率 (1.0で減衰なし, 0.1で10%にテーパー縮小)",
     "min_beam_width_ratio": 0.01,
+    "_comment_main_chain_threshold": "本線大連鎖とみなす最小得点。発火後はセカンドポテンシャルの合算を遮断 (0で無効化, 20000等で有効化)",
+    "main_chain_threshold": 20000,
+    "_comment_dynamic_lookahead_margin": "空きマス連動の先読み深さマージン (90-ぷよ数)/2。盤面満杯付近で深さを自動縮小 (0で無効化, 90推奨)",
+    "dynamic_lookahead_margin": 90,
     "eval_weights": {
       "_comment_potential_score_scale": "ポテンシャル連鎖スコアへの整数乗数。1 = 素点そのままを使用。",
       "potential_score_scale": 1
@@ -26,6 +30,10 @@
     "full_beam_depth": 2,
     "_comment_min_beam_width_ratio": "最終手（look_ahead-1）時点でのビーム幅の到達比率 (1.0で減衰なし, 0.1で10%にテーパー縮小)",
     "min_beam_width_ratio": 0.01,
+    "_comment_main_chain_threshold": "本線大連鎖とみなす最小得点。発火後はセカンドポテンシャルの合算を遮断 (0で無効化, 20000等で有効化)",
+    "main_chain_threshold": 20000,
+    "_comment_dynamic_lookahead_margin": "空きマス連動の先読み深さマージン (90-ぷよ数)/2。盤面満杯付近で深さを自動縮小 (0で無効化, 90推奨)",
+    "dynamic_lookahead_margin": 0,
     "eval_weights": {
       "_comment_potential_score_scale": "ポテンシャル連鎖スコアへの整数乗数。1 = 素点そのままを使用。",
       "potential_score_scale": 1,
