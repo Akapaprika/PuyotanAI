@@ -11,6 +11,8 @@
 #include <puyotan/search/action_table.hpp>
 #include <puyotan/search/beam_evaluator.hpp>
 #include <puyotan/search/beam_search.hpp>
+#include <puyotan/search/transposition_table.hpp>
+#include <puyotan/search/zobrist.hpp>
 
 namespace puyotan::search {
 namespace {
@@ -21,6 +23,7 @@ struct BeamNode {
     int32_t accum_score;
     int first_action;
     uint32_t packed_heights;
+    uint64_t hash;
 };
 
 // 16バイトに収まる超軽量候補記述子
@@ -144,10 +147,14 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
                                        const ConfigType& cfg) noexcept {
     assert(cfg.dbs_max_similar <= 65535 && "dbs_max_similar must not exceed 65535");
 
+    tl_tt.advanceGeneration();
+    Zobrist::init();
+
     const Tsumo& tsumo = tsumo_const;
     const int tsumo_base = player.active_next_pos;
 
     uint32_t packed_heights_root = packHeights(player.field);
+    const uint64_t root_hash = Zobrist::hashBoard(player.field);
 
     int fire_best_action = -1;
     int32_t fire_best_score = 0;
@@ -183,7 +190,7 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
         tl_dbs_table.ensure_capacity(static_cast<std::size_t>(cfg.beam_width));
     }
 
-    tl_current_beam.emplace_back(player.field, 0, 0, -1, packed_heights_root);
+    tl_current_beam.emplace_back(player.field, 0, 0, -1, packed_heights_root, root_hash);
 
     int best_action = -1;
     int32_t best_score = -1000000000;
@@ -211,6 +218,7 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
             const uint32_t cur_heights    = node.packed_heights;
             const int32_t parent_accum    = node.accum_score;
             const int parent_first_action = node.first_action;
+            const uint64_t parent_hash    = node.hash;
 
             for (uint8_t a_idx = 0; a_idx < num_actions; ++a_idx) {
                 const auto& entry = actions[a_idx];
@@ -228,7 +236,33 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
                     next_packed_h = packHeights(pr.field);
                 }
 
-                int32_t eval = EvaluatorType::evaluate(pr.field, cfg.eval_weights, next_packed_h);
+                // --- Zobrist Hash 計算 ---
+                uint64_t child_hash;
+                if (__builtin_expect(pr.chain > 0, 0)) {
+                    child_hash = Zobrist::hashBoard(pr.field);
+                } else {
+                    const int h_axis = (cur_heights >> (entry.ax << 2)) & 0xFu;
+                    const int h_sub  = (cur_heights >> (entry.sx << 2)) & 0xFu;
+                    const int y_axis = h_axis + entry.axis_dy;
+                    const int y_sub  = h_sub  + entry.sub_dy;
+                    child_hash = parent_hash ^ Zobrist::xorPuyo(piece.axis, entry.ax, y_axis)
+                                             ^ Zobrist::xorPuyo(piece.sub,  entry.sx, y_sub);
+                }
+
+                // --- Transposition Table Lookup ---
+                int32_t pot_score = 0;
+                if (!tl_tt.get(child_hash, pot_score)) {
+                    pot_score = computeMaxPotentialScore(pr.field, next_packed_h);
+                    tl_tt.put(child_hash, pot_score);
+                }
+
+                int32_t eval;
+                if constexpr (std::is_same_v<EvaluatorType, SoloBeamEvaluator>) {
+                    eval = EvaluatorType::evaluateWithPotential(pr.field, cfg.eval_weights, next_packed_h, pot_score);
+                } else {
+                    eval = EvaluatorType::evaluateWithPotential(pr.field, cfg.eval_weights, next_packed_h, pot_score, &cfg.context);
+                }
+
                 int32_t next_accum = parent_accum + static_cast<int32_t>(pr.score);
                 int32_t total_score = next_accum * cfg.eval_weights.potential_score_scale + eval;
 
@@ -270,8 +304,20 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
             simulatePlacement(parent.field, piece, act, parent.packed_heights, pr);
             int first = (depth == 0) ? act.idx : parent.first_action;
             int32_t next_accum = parent.accum_score + static_cast<int32_t>(pr.score);
+
+            uint64_t child_hash;
+            if (__builtin_expect(pr.chain > 0, 0)) {
+                child_hash = Zobrist::hashBoard(pr.field);
+            } else {
+                const int h_axis = (parent.packed_heights >> (act.ax << 2)) & 0xFu;
+                const int h_sub  = (parent.packed_heights >> (act.sx << 2)) & 0xFu;
+                const int y_axis = h_axis + act.axis_dy;
+                const int y_sub  = h_sub  + act.sub_dy;
+                child_hash = parent.hash ^ Zobrist::xorPuyo(piece.axis, act.ax, y_axis)
+                                         ^ Zobrist::xorPuyo(piece.sub,  act.sx, y_sub);
+            }
             
-            tl_current_beam.emplace_back(pr.field, item.score, next_accum, first, item.packed_heights);
+            tl_current_beam.emplace_back(pr.field, item.score, next_accum, first, item.packed_heights, child_hash);
         };
 
         if (cfg.dbs_max_similar >= 1) {

@@ -22,6 +22,16 @@ class SoloBeamEvaluator {
                             uint32_t packed_heights) noexcept {
         return computeMaxPotentialScore(board, packed_heights) * w.potential_score_scale;
     }
+
+    /**
+     * @brief Evaluate with a precomputed or cached max potential score.
+     */
+    static int32_t evaluateWithPotential([[maybe_unused]] const Board& board,
+                                         const SoloBeamEvalWeights& w,
+                                         [[maybe_unused]] uint32_t packed_heights,
+                                         int32_t pot_score) noexcept {
+        return pot_score * w.potential_score_scale;
+    }
 };
 
 /**
@@ -100,6 +110,17 @@ class VsBeamEvaluator {
         }
 
         return r;
+    }
+
+    /**
+     * @brief Evaluate with a precomputed or cached max potential score.
+     */
+    static int32_t evaluateWithPotential(const Board& board,
+                                         const VsBeamEvalWeights& w,
+                                         uint32_t packed_heights,
+                                         int32_t pot_score,
+                                         const VsEvalContext* ctx = nullptr) noexcept {
+        return evaluate<false>(board, w, packed_heights, ctx) + pot_score * w.potential_score_scale;
     }
 };
 
