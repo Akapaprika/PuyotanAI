@@ -16,7 +16,9 @@ struct alignas(16) ErasureData {
 
     __forceinline void clear() noexcept {
         total_erased.m128 = _mm_setzero_si128();
-        *reinterpret_cast<uint32_t*>(&num_erased) = 0;
+        num_erased = 0;
+        num_colors = 0;
+        group_bonus = 0;
     }
 };
 
@@ -116,10 +118,10 @@ class Chain {
                 };
 
                 const uint64_t lo = _mm_cvtsi128_si64(sym_seeds);
-                const __m128i s0 = (lo != 0)
-                    ? _mm_cvtsi64_si128(static_cast<int64_t>(lo & -lo))
-                    : _mm_unpacklo_epi64(_mm_setzero_si128(), _mm_cvtsi64_si128(static_cast<int64_t>(_mm_extract_epi64(sym_seeds, 1) & -_mm_extract_epi64(sym_seeds, 1))));
-
+                const uint64_t hi = _mm_extract_epi64(sym_seeds, 1);
+                const uint64_t s_lo = lo & (0ULL - lo);
+                const uint64_t s_hi = (lo == 0) ? (hi & (0ULL - hi)) : 0ULL;
+                const __m128i s0 = _mm_set_epi64x(s_hi, s_lo);
                 const __m128i g1 = flood_fill(s0, group_m128);
                 BitBoard b_g1;
                 b_g1.m128 = g1;

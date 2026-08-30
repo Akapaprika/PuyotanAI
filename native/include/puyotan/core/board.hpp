@@ -89,10 +89,10 @@ struct alignas(16) BitBoard {
     }
 
     [[nodiscard]] __forceinline BitBoard shiftUpRaw() const noexcept {
-        return _mm_slli_epi64(m128, 1);
+        return _mm_slli_epi16(m128, 1);
     }
     [[nodiscard]] __forceinline BitBoard shiftDownRaw() const noexcept {
-        return _mm_srli_epi64(m128, 1);
+        return _mm_srli_epi16(m128, 1);
     }
     [[nodiscard]] __forceinline BitBoard shiftRightRaw() const noexcept {
         return _mm_slli_si128(m128, 2);
