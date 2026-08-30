@@ -20,6 +20,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <filesystem>
 #include <numeric>
 #include <puyotan/common/types.hpp>
 #include <puyotan/engine/match.hpp>
@@ -402,6 +403,10 @@ int main(int argc, char** argv) {
 
     SoloBeamConfig cfg;
     if (!config_path.empty()) {
+        if (!std::filesystem::exists(config_path)) {
+            fprintf(stderr, "\033[91m[ERROR] Specified config file '%s' does not exist!\033[0m\n", config_path.c_str());
+            return 1;
+        }
         cfg = BeamConfigLoader::loadSolo(config_path);
     }
     if (beam_width > 0) cfg.beam_width = beam_width;

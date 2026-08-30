@@ -123,7 +123,9 @@ def collect_data(iterations, duration_engine, duration_light, duration_heavy, co
     if config_path is None:
         cand_cfg = BASE_DIR / "native" / "resources" / "beam_config.json"
         if cand_cfg.exists():
-            config_path = str(cand_cfg)
+            config_path = str(cand_cfg.resolve())
+    else:
+        config_path = str(Path(config_path).resolve())
             
     print("Performing warmup run...")
     run_benchmark_once(engine_path, ["--duration", "1.0"])
@@ -278,6 +280,19 @@ def perform_statistical_test(base_results, pr_results):
     return comparison
 
 
+def get_git_info():
+    """Returns current git commit hash and branch name if available."""
+    try:
+        sha = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
+    except Exception:
+        sha = "unknown"
+    try:
+        branch = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], text=True).strip()
+    except Exception:
+        branch = "unknown"
+    return sha, branch
+
+
 def format_stat_value(val, std):
     if abs(val) < 10.0 and abs(val) > 0.0:
         return f"{val:.4f} (±{std:.4f})"
@@ -285,11 +300,18 @@ def format_stat_value(val, std):
         return f"{val:.2f} (±{std:.2f})"
 
 
-def generate_markdown_report(comparison, iterations):
+def generate_markdown_report(comparison, iterations, base_meta=None, pr_meta=None):
     md = []
     md.append("# PuyotanAI Performance Benchmark Report")
     md.append(f"Statistically compared using Welch's t-test over **{iterations} repetitions** of runs (with 10% outlier trimming).")
     md.append("")
+    
+    if base_meta or pr_meta:
+        b_str = f"Commit: `{base_meta.get('commit_sha', 'unknown')}` | Branch: `{base_meta.get('branch', 'unknown')}` | Time: `{base_meta.get('timestamp', 'unknown')}`" if base_meta else "N/A"
+        p_str = f"Commit: `{pr_meta.get('commit_sha', 'unknown')}` | Branch: `{pr_meta.get('branch', 'unknown')}` | Time: `{pr_meta.get('timestamp', 'unknown')}`" if pr_meta else "N/A"
+        md.append(f"- **Base (比較基準)**: {b_str}")
+        md.append(f"- **PR   (測定対象)**: {p_str}")
+        md.append("")
     
     if not comparison:
         md.append("※ 有効な数値メトリクスが取得できませんでした（ベンチマーク異常終了のログを確認してください）。")
@@ -351,17 +373,20 @@ def main():
         d_light = args.duration if args.duration is not None else args.duration_light
         d_heavy = args.duration if args.duration is not None else args.duration_heavy
         
+        sha, branch = get_git_info()
         results = collect_data(args.iterations, d_engine, d_light, d_heavy, args.config)
         with open(args.output, "w") as f:
             json.dump({
                 "timestamp": timestamp,
+                "commit_sha": sha,
+                "branch": branch,
                 "iterations": args.iterations, 
                 "duration_engine": d_engine,
                 "duration_light": d_light,
                 "duration_heavy": d_heavy,
                 "results": results
             }, f, indent=2)
-        print(f"\nResults successfully saved to {args.output}")
+        print(f"\nResults successfully saved to {args.output} (Commit: {sha}, Branch: {branch})")
         
     elif args.compare is not None:
         num_args = len(args.compare)
@@ -393,9 +418,22 @@ def main():
         with open(pr_path) as f:
             pr_data = json.load(f)
             
+        base_meta = {
+            "commit_sha": base_data.get("commit_sha", "unknown"),
+            "branch": base_data.get("branch", "unknown"),
+            "timestamp": base_data.get("timestamp", "unknown"),
+            "file": base_path
+        }
+        pr_meta = {
+            "commit_sha": pr_data.get("commit_sha", "unknown"),
+            "branch": pr_data.get("branch", "unknown"),
+            "timestamp": pr_data.get("timestamp", "unknown"),
+            "file": pr_path
+        }
+
         iterations = base_data.get("iterations", 20)
         comparison = perform_statistical_test(base_data["results"], pr_data["results"])
-        report = generate_markdown_report(comparison, iterations)
+        report = generate_markdown_report(comparison, iterations, base_meta, pr_meta)
         
         if args.output_md:
             with open(args.output_md, "w", encoding="utf-8") as f:
