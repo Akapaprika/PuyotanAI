@@ -18,6 +18,7 @@ namespace puyotan::search {
  *        - 【真の単一whileループ】lo/hi 統合による二重ループ・三項演算子の完全消滅
  *        - 【数学的最適化】分配法則による中間 AND/OR 消滅 (4命令削減)
  *        - 【1連鎖目ピンポイント消去】無関係な3色の andNot をスキップ (3命令削減)
+ *        - 【ゼロスキップ】発火点ゼロ時の GPR 展開完全バイパス (_mm_testz)
  *        - バイナリ極小化 (< 700 bytes / L1i ミス完全撲滅)
  */
 [[nodiscard]] inline int computeMaxPotentialScore(
@@ -51,6 +52,10 @@ namespace puyotan::search {
         );
 
         const __m128i valid_drops = _mm_and_si128(adj_c, drop_points_mask);
+
+        // ★ 発火可能点がゼロなら GPR ストアすら行わずに即座に次色へスキップ！
+        if (_mm_testz_si128(valid_drops, valid_drops))
+            continue;
 
         // GPR に 1 ストアで展開
         alignas(16) uint64_t drops[2];
