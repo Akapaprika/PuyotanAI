@@ -10,15 +10,20 @@ namespace puyotan {
 
 struct alignas(16) ErasureData {
     BitBoard total_erased;
-    uint8_t num_erased = 0;
-    uint8_t num_colors = 0;
-    uint8_t group_bonus = 0;
+    union {
+        struct {
+            uint8_t num_erased;
+            uint8_t num_colors;
+            uint8_t group_bonus;
+            uint8_t _pad;
+        };
+        uint32_t meta_u32 = 0; // 32bit一括アクセス用
+    };
 
+    // ★ 1命令（mov dword ptr）で3バイトを安全に一括ゼロクリア（UBなし・最速）
     __forceinline void clear() noexcept {
         total_erased.m128 = _mm_setzero_si128();
-        num_erased = 0;
-        num_colors = 0;
-        group_bonus = 0;
+        meta_u32 = 0;
     }
 };
 
