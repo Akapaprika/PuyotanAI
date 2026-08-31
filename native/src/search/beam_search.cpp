@@ -325,39 +325,53 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
             tl_current_beam.emplace_back(pr.field, item.score, next_accum, first, item.packed_heights, item.hash, item.has_fired_main);
         };
 
-        if (cfg.dbs_max_similar >= 1) {
-            std::sort(tl_candidates.begin(), tl_candidates.end(),
-                      [](const CandidateNode& a, const CandidateNode& b) noexcept {
-                          return a.score > b.score;
-                      });
+        // --- 候補選択・DBSフィルタリング (動的アダプティブ Top-K 最適化) ---
+        const auto candidate_cmp = [](const CandidateNode& a, const CandidateNode& b) noexcept {
+            return a.score > b.score;
+        };
 
+        if (cfg.dbs_max_similar >= 1) {
             tl_dbs_table.clear();
-            for (const auto& item : tl_candidates) {
+        }
+
+        const size_t total_cands = tl_candidates.size();
+        size_t processed_end     = 0;
+
+        while (static_cast<int>(tl_current_beam.size()) < keep && processed_end < total_cands) {
+            // 必要残数 × 2 (下限 2048) で最小限のチャンクサイズを算出
+            const size_t needed     = static_cast<size_t>(keep - static_cast<int>(tl_current_beam.size()));
+            const size_t chunk_size = std::max<size_t>(needed * 2, 2048);
+            const size_t next_end   = std::min(total_cands, processed_end + chunk_size);
+
+            if (next_end < total_cands) {
+                std::nth_element(tl_candidates.begin() + processed_end,
+                                 tl_candidates.begin() + next_end,
+                                 tl_candidates.end(),
+                                 candidate_cmp);
+            }
+
+            std::sort(tl_candidates.begin() + processed_end,
+                      tl_candidates.begin() + next_end,
+                      candidate_cmp);
+
+            for (size_t i = processed_end; i < next_end; ++i) {
+                const auto& item = tl_candidates[i];
                 if (tl_depth_dedup.checkAndInsert(item.hash))
                     continue;
 
-                if (tl_dbs_table.get_and_inc(item.packed_heights) < cfg.dbs_max_similar) {
-                    instantiate_node(item);
-                    if (static_cast<int>(tl_current_beam.size()) == keep) {
-                        break;
+                if (cfg.dbs_max_similar >= 1) {
+                    if (tl_dbs_table.get_and_inc(item.packed_heights) >= cfg.dbs_max_similar) {
+                        continue;
                     }
                 }
-            }
-        } else {
-            std::sort(tl_candidates.begin(), tl_candidates.end(),
-                      [](const CandidateNode& a, const CandidateNode& b) noexcept {
-                          return a.score > b.score;
-                      });
-
-            for (const auto& item : tl_candidates) {
-                if (tl_depth_dedup.checkAndInsert(item.hash))
-                    continue;
 
                 instantiate_node(item);
                 if (static_cast<int>(tl_current_beam.size()) == keep) {
                     break;
                 }
             }
+
+            processed_end = next_end;
         }
     }
 
