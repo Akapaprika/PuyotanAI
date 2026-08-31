@@ -116,7 +116,7 @@ def parse_beam_output(stdout, stderr, returncode, prefix="beam"):
     return metrics
 
 
-def collect_data(iterations, duration_engine, duration_light, duration_heavy, config_path=None):
+def collect_data(iter_engine, iter_light, iter_heavy, duration_engine, duration_light, duration_heavy, config_path=None):
     engine_path = find_executable(ENGINE_EXE)
     beam_path = find_executable(BEAM_EXE)
     
@@ -133,44 +133,46 @@ def collect_data(iterations, duration_engine, duration_light, duration_heavy, co
     if config_path and duration_heavy > 0:
         run_benchmark_once(beam_path, ["--duration", "2.0", "--config", config_path])
 
-    print(f"Starting {iterations} runs (Engine: {duration_engine}s, Light Beam: {duration_light}s, Heavy Beam: {duration_heavy}s)...")
+    print(f"Starting runs (Engine: {iter_engine} runs × {duration_engine}s, Light: {iter_light} runs × {duration_light}s, Heavy: {iter_heavy} runs × {duration_heavy}s)...")
     print("Order: [Engine × N] → [Light × N] → [Heavy × N] (block-based)")
 
     # --- Block 1: Engine ---
     engine_results = []
-    print(f"\n=== Engine Block ({iterations} runs) ===")
-    for i in range(iterations):
-        print(f"  Engine {i + 1}/{iterations}...")
-        stdout, stderr, code = run_benchmark_once(engine_path, ["--duration", str(duration_engine)])
-        engine_results.append(parse_engine_output(stdout, stderr, code))
-        time.sleep(3.0)
+    if duration_engine > 0 and iter_engine > 0:
+        print(f"\n=== Engine Block ({iter_engine} runs) ===")
+        for i in range(iter_engine):
+            print(f"  Engine {i + 1}/{iter_engine}...")
+            stdout, stderr, code = run_benchmark_once(engine_path, ["--duration", str(duration_engine)])
+            engine_results.append(parse_engine_output(stdout, stderr, code))
+            time.sleep(3.0)
 
     # --- Block 2: Beam Light ---
     light_results = []
-    if duration_light > 0:
-        print(f"\n=== Beam Light Block ({iterations} runs) ===")
+    if duration_light > 0 and iter_light > 0:
+        print(f"\n=== Beam Light Block ({iter_light} runs) ===")
         beam_light_args = ["--duration", str(duration_light), "--beam-width", "500", "--look-ahead", "10", "--dbs", "0"]
-        for i in range(iterations):
-            print(f"  Light {i + 1}/{iterations}...")
+        for i in range(iter_light):
+            print(f"  Light {i + 1}/{iter_light}...")
             stdout, stderr, code = run_benchmark_once(beam_path, beam_light_args)
             light_results.append(parse_beam_output(stdout, stderr, code, prefix="beam_light"))
             time.sleep(3.0)
 
     # --- Block 3: Beam Heavy ---
     heavy_results = []
-    if duration_heavy > 0 and config_path:
-        print(f"\n=== Beam Heavy Block ({iterations} runs) ===")
+    if duration_heavy > 0 and iter_heavy > 0 and config_path:
+        print(f"\n=== Beam Heavy Block ({iter_heavy} runs) ===")
         beam_heavy_args = ["--duration", str(duration_heavy), "--config", config_path]
-        for i in range(iterations):
-            print(f"  Heavy {i + 1}/{iterations}...")
+        for i in range(iter_heavy):
+            print(f"  Heavy {i + 1}/{iter_heavy}...")
             stdout, stderr, code = run_benchmark_once(beam_path, beam_heavy_args)
             heavy_results.append(parse_beam_output(stdout, stderr, code, prefix="beam_heavy"))
-            if i < iterations - 1:
+            if i < iter_heavy - 1:
                 time.sleep(3.0)
 
     # --- Merge per-iteration results ---
+    max_iters = max(len(engine_results), len(light_results), len(heavy_results), 1)
     results = []
-    for i in range(iterations):
+    for i in range(max_iters):
         combined = {}
         if i < len(engine_results):
             combined.update(engine_results[i])
@@ -358,7 +360,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--run", action="store_true", help="Run the benchmarks and save output")
     parser.add_argument("--compare", "-c", nargs="*", metavar="FILE", help="Compare benchmark results.")
-    parser.add_argument("--iterations", type=int, default=3, help="Number of repetitions to run (default: 3)")
+    parser.add_argument("--iterations", type=int, default=None, help="Global repetition override for all blocks")
+    parser.add_argument("--iterations-engine", type=int, default=5, help="Number of repetitions for engine benchmark (default: 5)")
+    parser.add_argument("--iterations-light", type=int, default=5, help="Number of repetitions for light beam search (default: 5)")
+    parser.add_argument("--iterations-heavy", type=int, default=3, help="Number of repetitions for heavy beam search (default: 3)")
     parser.add_argument("--duration-engine", type=float, default=5.0, help="Duration of engine benchmark in seconds (default: 5.0)")
     parser.add_argument("--duration-light", type=float, default=10.0, help="Duration of light beam search in seconds (default: 10.0)")
     parser.add_argument("--duration-heavy", type=float, default=240.0, help="Duration of heavy solo beam search in seconds (default: 240.0)")
@@ -372,15 +377,21 @@ def main():
         d_engine = args.duration if args.duration is not None else args.duration_engine
         d_light = args.duration if args.duration is not None else args.duration_light
         d_heavy = args.duration if args.duration is not None else args.duration_heavy
+
+        i_engine = args.iterations if args.iterations is not None else args.iterations_engine
+        i_light = args.iterations if args.iterations is not None else args.iterations_light
+        i_heavy = args.iterations if args.iterations is not None else args.iterations_heavy
         
         sha, branch = get_git_info()
-        results = collect_data(args.iterations, d_engine, d_light, d_heavy, args.config)
+        results = collect_data(i_engine, i_light, i_heavy, d_engine, d_light, d_heavy, args.config)
         with open(args.output, "w") as f:
             json.dump({
                 "timestamp": timestamp,
                 "commit_sha": sha,
                 "branch": branch,
-                "iterations": args.iterations, 
+                "iterations_engine": i_engine,
+                "iterations_light": i_light,
+                "iterations_heavy": i_heavy,
                 "duration_engine": d_engine,
                 "duration_light": d_light,
                 "duration_heavy": d_heavy,
