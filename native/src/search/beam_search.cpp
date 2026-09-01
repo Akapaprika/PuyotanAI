@@ -279,28 +279,28 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
                     }
                 }
 
-                int32_t pot_score = 0;
-                if (!tl_tt.get(child_hash, pot_score)) {
-                    pot_score = computeMaxPotentialScore(pr.field, next_packed_h);
-                    tl_tt.put(child_hash, pot_score);
-                }
-
-                int32_t eval;
-                if constexpr (std::is_same_v<EvaluatorType, SoloBeamEvaluator>) {
-                    eval = EvaluatorType::evaluateWithPotential(pr.field, cfg.eval_weights, next_packed_h, pot_score);
-                } else {
-                    eval = EvaluatorType::evaluateWithPotential(pr.field, cfg.eval_weights, next_packed_h, pot_score, &cfg.context);
-                }
-
                 const int32_t step_score = static_cast<int32_t>(pr.score);
                 const bool next_has_fired_main = parent_has_fired_main || (cfg.main_chain_threshold > 0 && step_score >= cfg.main_chain_threshold);
                 const int32_t next_accum = parent_accum + step_score;
 
-                // 本線大連鎖発火済みの場合はセカンドポテンシャルを加算しない（水増し防止）
+                // 本線大連鎖発火済みの場合はセカンドポテンシャルを加算しない（重計算を完全スキップ）
                 int32_t total_score;
                 if (next_has_fired_main) {
                     total_score = next_accum * cfg.eval_weights.potential_score_scale;
                 } else {
+                    int32_t pot_score = 0;
+                    if (!tl_tt.get(child_hash, pot_score)) {
+                        pot_score = computeMaxPotentialScore(pr.field, next_packed_h);
+                        tl_tt.put(child_hash, pot_score);
+                    }
+
+                    int32_t eval;
+                    if constexpr (std::is_same_v<EvaluatorType, SoloBeamEvaluator>) {
+                        eval = EvaluatorType::evaluateWithPotential(pr.field, cfg.eval_weights, next_packed_h, pot_score);
+                    } else {
+                        eval = EvaluatorType::evaluateWithPotential(pr.field, cfg.eval_weights, next_packed_h, pot_score, &cfg.context);
+                    }
+
                     total_score = next_accum * cfg.eval_weights.potential_score_scale + eval;
                 }
 
