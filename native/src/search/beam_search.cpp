@@ -20,15 +20,39 @@ namespace {
 
 inline thread_local Board tl_best_leaf_field;
 
-struct BeamNode {
-    Board field;
-    int32_t score;
-    int32_t accum_score;
-    int first_action;
-    uint32_t packed_heights;
-    uint64_t hash;
-    bool has_fired_main;
+struct alignas(16) BeamNode {
+    Board    field;                  // 96 bytes (alignas(16))
+    uint64_t hash;                   //  8 bytes
+    uint32_t packed_heights_and_act; //  4 bytes: [bit 0..23: packed_heights] [bit 24..31: first_action + 1]
+    uint32_t accum_and_flag;         //  4 bytes: [bit 0..30: accum_score]    [bit 31: has_fired_main]
+
+    BeamNode() noexcept = default;
+
+    __forceinline BeamNode(const Board& f, int32_t accum, int first_act,
+                           uint32_t packed_h, uint64_t h, bool fired_main) noexcept
+        : field(f),
+          hash(h),
+          packed_heights_and_act((packed_h & 0x00FFFFFFu) | (static_cast<uint32_t>(static_cast<uint8_t>(first_act + 1)) << 24)),
+          accum_and_flag((static_cast<uint32_t>(accum) & 0x7FFFFFFFu) | (static_cast<uint32_t>(fired_main) << 31))
+    {}
+
+    [[nodiscard]] __forceinline uint32_t packed_heights() const noexcept {
+        return packed_heights_and_act & 0x00FFFFFFu;
+    }
+
+    [[nodiscard]] __forceinline int first_action() const noexcept {
+        return static_cast<int>(packed_heights_and_act >> 24) - 1;
+    }
+
+    [[nodiscard]] __forceinline int32_t accum_score() const noexcept {
+        return static_cast<int32_t>(accum_and_flag & 0x7FFFFFFFu);
+    }
+
+    [[nodiscard]] __forceinline bool has_fired_main() const noexcept {
+        return (accum_and_flag >> 31) != 0;
+    }
 };
+static_assert(sizeof(BeamNode) == 112, "BeamNode must be exactly 112 bytes");
 
 // 24バイトの候補記述子
 struct CandidateNode {
@@ -196,7 +220,7 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
         tl_dbs_table.ensure_capacity(static_cast<std::size_t>(cfg.beam_width));
     }
 
-    tl_current_beam.emplace_back(player.field, 0, 0, -1, packed_heights_root, root_hash, false);
+    tl_current_beam.emplace_back(player.field, 0, -1, packed_heights_root, root_hash, false);
 
     int best_action = -1;
     int32_t best_score = -1000000000;
@@ -221,11 +245,11 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
 
         for (int p_idx = 0; p_idx < current_size; ++p_idx) {
             const auto& parent = tl_current_beam[p_idx];
-            const int32_t parent_accum = parent.accum_score;
-            const int parent_first_action = parent.first_action;
+            const int32_t parent_accum = parent.accum_score();
+            const int parent_first_action = parent.first_action();
             const uint64_t parent_hash = parent.hash;
-            const uint32_t parent_packed_heights = parent.packed_heights;
-            const bool parent_has_fired_main = parent.has_fired_main;
+            const uint32_t parent_packed_heights = parent.packed_heights();
+            const bool parent_has_fired_main = parent.has_fired_main();
 
             for (uint8_t a_idx = 0; a_idx < actions.size(); ++a_idx) {
                 const auto& entry = actions[a_idx];
@@ -318,11 +342,11 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
             const auto& act = actions[item.action_idx];
             
             PlaceResult pr;
-            simulatePlacement(parent.field, piece, act, parent.packed_heights, pr);
-            int first = (depth == 0) ? act.idx : parent.first_action;
-            int32_t next_accum = parent.accum_score + static_cast<int32_t>(pr.score);
+            simulatePlacement(parent.field, piece, act, parent.packed_heights(), pr);
+            int first = (depth == 0) ? act.idx : parent.first_action();
+            int32_t next_accum = parent.accum_score() + static_cast<int32_t>(pr.score);
 
-            tl_current_beam.emplace_back(pr.field, item.score, next_accum, first, item.packed_heights, item.hash, item.has_fired_main);
+            tl_current_beam.emplace_back(pr.field, next_accum, first, item.packed_heights, item.hash, item.has_fired_main);
         };
 
         // --- 候補選択・DBSフィルタリング (動的アダプティブ Top-K 最適化) ---
@@ -376,8 +400,7 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
     }
 
     if (best_action == -1 && !tl_current_beam.empty()) {
-        best_action = tl_current_beam[0].first_action;
-        best_score = tl_current_beam[0].score;
+        best_action = tl_current_beam[0].first_action();
     }
 
     if constexpr (HasFireBias) {
