@@ -27,7 +27,7 @@ public:
                     uint64_t z = x;
                     z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
                     z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
-                    table[c][col][row] = z ^ (z >> 31);
+                    table[c][col][row] = (row < config::Board::kHeight) ? (z ^ (z >> 31)) : 0ULL;
                 }
             }
         }

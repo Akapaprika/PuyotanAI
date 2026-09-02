@@ -264,19 +264,18 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
                 if (pr.dead)
                     continue;
 
-                const uint32_t next_packed_h = packHeights(pr.field);
-
+                uint32_t next_packed_h;
                 uint64_t child_hash;
-                if (pr.score > 0 || y_axis >= config::Board::kSpawnRow || y_sub >= config::Board::kSpawnRow) {
+                if (pr.score > 0) {
+                    next_packed_h = packHeights(pr.field);
                     child_hash = Zobrist::hashBoard(pr.field);
                 } else {
-                    child_hash = parent_hash;
-                    if (y_axis < config::Board::kHeight) {
-                        child_hash ^= Zobrist::xorPuyo(piece.axis, entry.ax, y_axis);
-                    }
-                    if (y_sub < config::Board::kHeight) {
-                        child_hash ^= Zobrist::xorPuyo(piece.sub, entry.sx, y_sub);
-                    }
+                    const uint32_t add_ax = static_cast<uint32_t>(y_axis < config::Board::kHeight) << (entry.ax << 2);
+                    const uint32_t add_sx = static_cast<uint32_t>(y_sub  < config::Board::kHeight) << (entry.sx << 2);
+                    next_packed_h = parent_packed_heights + add_ax + add_sx;
+
+                    child_hash = parent_hash ^ Zobrist::xorPuyo(piece.axis, entry.ax, y_axis)
+                                             ^ Zobrist::xorPuyo(piece.sub,  entry.sx, y_sub);
                 }
 
                 const int32_t step_score = static_cast<int32_t>(pr.score);
