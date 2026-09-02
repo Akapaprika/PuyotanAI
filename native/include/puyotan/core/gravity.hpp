@@ -8,14 +8,16 @@ class Gravity {
   public:
     static uint32_t execute(Board& board) noexcept;
 
-    /// ★ PTEST の CF フラグ機能により、ANDNOT を 1命令削減（5命令 → 4命令）
+    /// ★ epi16 を使用することで境界マスク処理を完全消滅
+    /// vpsrlw + vptest の実質 2命令（レイテンシ 2サイクル）で完結
     [[nodiscard]] static __forceinline bool canFall(const Board& board) noexcept {
         const __m128i occ = board.getOccupied().m128;
-        const __m128i shifted = _mm_srli_epi64(occ, 1);
-        const __m128i boundary = _mm_set1_epi64x(0x8000800080008000ULL);
-        const __m128i valid_shifted = _mm_andnot_si128(boundary, shifted);
+        
+        // 16bit単位でシフト。最上位ビット（15bit目）には自動で 0 が入るため境界破壊が起きない
+        const __m128i shifted = _mm_srli_epi16(occ, 1);
 
-        return _mm_testc_si128(occ, valid_shifted) == 0;
+        // (~occ & shifted) != 0 のとき CF=0（落下可能）
+        return _mm_testc_si128(occ, shifted) == 0;
     }
 };
 
