@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 project(PuyotanNative LANGUAGES CXX)
+if (MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    set(CMAKE_LINKER "lld-link")
+endif()
 
 # ---------------------------------------------------------
 # Global Settings (Standard C++23 and Include Path)
@@ -83,7 +86,7 @@ if (MSVC)
                     /clang:-funroll-loops
                     /clang:-fvectorize
                     /clang:-ffast-math
-                    /clang:-mllvm /clang:-inline-threshold=600
+                    /clang:-mllvm /clang:-inline-threshold=300
                     -Wno-everything
                 >
             )
