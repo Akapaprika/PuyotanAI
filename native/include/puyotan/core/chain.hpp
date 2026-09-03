@@ -204,43 +204,6 @@ class Chain {
         board.occupancy_.andNot(data.total_erased);
     }
 
-    [[nodiscard]] static __forceinline bool canFire(const Board& board,
-                                                uint32_t color_mask = kAllColorsMask) noexcept {
-        const __m128i chainable_mask = _mm_load_si128(reinterpret_cast<const __m128i*>(kChainableMask));
-
-        uint32_t temp_mask = color_mask & ((1u << config::Rule::kColors) - 1u);
-        while (temp_mask) {
-            const int i = std::countr_zero(temp_mask);
-            const Cell c = static_cast<Cell>(i);
-
-            const __m128i cb = _mm_and_si128(board.getBitboard(c).m128, chainable_mask);
-
-            const __m128i U = _mm_slli_epi64(cb, 1);
-            const __m128i D = _mm_srli_epi64(cb, 1);
-            const __m128i L = _mm_srli_si128(cb, 2);
-            const __m128i R = _mm_slli_si128(cb, 2);
-
-            if (_mm_testz_si128(cb, _mm_or_si128(U, L))) {
-                temp_mask &= (temp_mask - 1);
-                continue;
-            }
-
-            const __m128i X = _mm_or_si128(_mm_and_si128(U, D), _mm_and_si128(L, R));
-            const __m128i Y = _mm_and_si128(_mm_or_si128(U, D), _mm_or_si128(L, R));
-
-            const __m128i deg_ge2 = _mm_and_si128(cb, _mm_or_si128(X, Y));
-            const __m128i u_d2 = _mm_slli_epi64(deg_ge2, 1);
-            const __m128i l_d2 = _mm_srli_si128(deg_ge2, 2);
-
-            if (!_mm_testz_si128(deg_ge2, _mm_or_si128(_mm_and_si128(X, Y), _mm_or_si128(u_d2, l_d2)))) {
-                return true;
-            }
-
-            temp_mask &= (temp_mask - 1);
-        }
-        return false;
-    }
-
     static __forceinline void applySingleErasure(Board& board, Cell color, 
         const BitBoard& group, 
         const BitBoard& total_erased, 
