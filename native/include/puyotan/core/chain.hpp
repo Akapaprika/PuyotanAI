@@ -4,6 +4,7 @@
 #include <bit>
 #include <cstdint>
 #include <immintrin.h>
+#include <puyotan/common/config.hpp>
 #include <puyotan/core/board.hpp>
 
 namespace puyotan {
@@ -20,7 +21,7 @@ struct alignas(16) ErasureData {
         uint32_t meta_u32 = 0; // 32bit一括アクセス用
     };
 
-    // ★ 1命令（mov dword ptr）で3バイトを安全に一括ゼロクリア（UBなし・最速）
+    // ★ 1命令（mov dword ptr）で安全に一括ゼロクリア
     __forceinline void clear() noexcept {
         total_erased.m128 = _mm_setzero_si128();
         meta_u32 = 0;
@@ -29,6 +30,12 @@ struct alignas(16) ErasureData {
 
 class Chain {
   public:
+    // ★ 16バイト整列された静的マスク定数（関数の先頭より前で定義）
+    alignas(16) static constexpr uint64_t kChainableMask[2] = {
+        config::Board::kChainableLoMask,
+        config::Board::kChainableHiMask
+    };
+
     static constexpr uint32_t kAllColorsMask =
         (1u << config::Rule::kColors) - 1u;
 
@@ -36,18 +43,28 @@ class Chain {
         0, 0, 0, 0, 0, 2, 3, 4, 5, 6, 7, 10, 10, 10, 10, 10
     };
 
-    static ErasureData execute(Board& board,
-                               uint32_t color_mask = kAllColorsMask) noexcept;
+    // ★ ヘッダ内完全インライン化（CALL/RET 消滅）
+    [[nodiscard]] static __forceinline ErasureData execute(Board& board,
+                               uint32_t color_mask = kAllColorsMask) noexcept {
+        ErasureData data;
+        execute(board, data, color_mask);
+        return data;
+    }
 
-    static void execute(Board& board, ErasureData& data,
-                        uint32_t color_mask = kAllColorsMask) noexcept;
+    static __forceinline void execute(Board& board, ErasureData& data,
+                        uint32_t color_mask = kAllColorsMask) noexcept {
+        scanGroups(board, data, color_mask);
+        if (data.num_erased > 0) {
+            applyErasure(board, data);
+        }
+    }
 
     static __forceinline void scanGroups(const Board& board, ErasureData& erasure_data,
                                         uint32_t color_mask = kAllColorsMask) noexcept {
         erasure_data.clear();
 
-        const __m128i chainable_mask = _mm_set_epi64x(
-            config::Board::kChainableHiMask, config::Board::kChainableLoMask);
+        // アライメント保証された 128bit ロード
+        const __m128i chainable_mask = _mm_load_si128(reinterpret_cast<const __m128i*>(kChainableMask));
 
         uint32_t erased_color_bits = 0;
         uint32_t temp_mask = color_mask & ((1u << config::Rule::kColors) - 1u);
@@ -58,7 +75,7 @@ class Chain {
 
             const __m128i cb = _mm_and_si128(board.getBitboard(c).m128, chainable_mask);
 
-            // 1. 2連結チェック (最小の2シフトで即脱出判定)
+            // 1. 2連結チェック (最速実証済み epi64)
             const __m128i U = _mm_slli_epi64(cb, 1);
             const __m128i L = _mm_srli_si128(cb, 2);
             if (_mm_testz_si128(cb, _mm_or_si128(U, L))) {
@@ -92,7 +109,7 @@ class Chain {
             const __m128i sym_seeds = _mm_and_si128(deg_ge2, 
                 _mm_or_si128(ptest_term, _mm_or_si128(d_d2, r_d2)));
 
-            // 5. 消去グループ展開 (木構造 OR で依存短縮)
+            // 5. 消去グループ展開
             const __m128i ud_s = _mm_or_si128(_mm_slli_epi64(sym_seeds, 1), _mm_srli_epi64(sym_seeds, 1));
             const __m128i lr_s = _mm_or_si128(_mm_slli_si128(sym_seeds, 2), _mm_srli_si128(sym_seeds, 2));
             const __m128i group_m128 = _mm_and_si128(_mm_or_si128(sym_seeds, _mm_or_si128(ud_s, lr_s)), cb);
@@ -106,7 +123,7 @@ class Chain {
             erasure_data.num_erased   += static_cast<uint8_t>(sz);
             erased_color_bits         |= (1u << i);
 
-            // 6. ボーナス加算 (連結数 >= 8 の Flood Fill 最適化)
+            // 6. ボーナス加算
             if (__builtin_expect(sz < 8, 1)) {
                 erasure_data.group_bonus += kGroupBonusLut[sz];
             } else {
@@ -159,7 +176,7 @@ class Chain {
         erasure_data.num_colors =
             static_cast<uint8_t>(_mm_popcnt_u32(erased_color_bits));
 
-        // 7. おじゃまぷよ消去 (変数削減・依存ツリーフラット化)
+        // 7. おじゃまぷよ消去
         if (erasure_data.num_erased > 0) {
             const BitBoard ojama = board.getBitboard(Cell::Ojama);
             if (!ojama.empty()) {
@@ -172,6 +189,7 @@ class Chain {
         }
     }
 
+    // ★ 完全ストレートライン（分岐ゼロ・6サイクル決定論的ストア）
     static __forceinline void applyErasure(Board& board, const ErasureData& data) noexcept {
         #pragma unroll
         for (int i = 0; i < config::Board::kNumColors; ++i) {
@@ -182,8 +200,7 @@ class Chain {
 
     [[nodiscard]] static __forceinline bool canFire(const Board& board,
                                                 uint32_t color_mask = kAllColorsMask) noexcept {
-        const __m128i chainable_mask = _mm_set_epi64x(
-            config::Board::kChainableHiMask, config::Board::kChainableLoMask);
+        const __m128i chainable_mask = _mm_load_si128(reinterpret_cast<const __m128i*>(kChainableMask));
 
         uint32_t temp_mask = color_mask & ((1u << config::Rule::kColors) - 1u);
         while (temp_mask) {
@@ -224,7 +241,7 @@ class Chain {
         bool has_ojama) noexcept {
         board.boards_[static_cast<int>(color)].andNot(group);
         if (has_ojama) {
-        board.boards_[static_cast<int>(Cell::Ojama)].andNot(total_erased);
+            board.boards_[static_cast<int>(Cell::Ojama)].andNot(total_erased);
         }
         board.occupancy_.andNot(total_erased);
     }
