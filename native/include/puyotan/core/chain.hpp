@@ -75,22 +75,28 @@ class Chain {
 
             const __m128i cb = _mm_and_si128(board.getBitboard(c).m128, chainable_mask);
 
-            // 1. 2連結チェック (最速実証済み epi64)
+            // 1. 全方向シフトを同一クロックで一斉発行（FP0, FP1, FP2 を同時飽和）
             const __m128i U = _mm_slli_epi64(cb, 1);
+            const __m128i D = _mm_srli_epi64(cb, 1);
             const __m128i L = _mm_srli_si128(cb, 2);
+            const __m128i R = _mm_slli_si128(cb, 2);
+
+            // 2連結チェック (D, R はすでにレジスタに到着済み)
             if (_mm_testz_si128(cb, _mm_or_si128(U, L))) {
                 temp_mask &= (temp_mask - 1);
                 continue;
             }
 
-            const __m128i D = _mm_srli_epi64(cb, 1);
-            const __m128i R = _mm_slli_si128(cb, 2);
+            // 2. ブール束因数分解 (FP0/FP1 デュアルイシュー配置)
+            const __m128i v_and = _mm_and_si128(U, D);
+            const __m128i h_and = _mm_and_si128(L, R);
+            const __m128i v_or  = _mm_or_si128(U, D);
+            const __m128i h_or  = _mm_or_si128(L, R);
 
-            // 2. ブール束因数分解 (中間変数の寿命を最小化)
-            const __m128i X = _mm_or_si128(_mm_and_si128(U, D), _mm_and_si128(L, R));
-            const __m128i Y = _mm_and_si128(_mm_or_si128(U, D), _mm_or_si128(L, R));
+            const __m128i X = _mm_or_si128(v_and, h_and);
+            const __m128i Y = _mm_and_si128(v_or, h_or);
 
-            const __m128i XY_and = _mm_and_si128(X, Y);
+            const __m128i XY_and  = _mm_and_si128(X, Y);
             const __m128i deg_ge2 = _mm_and_si128(cb, _mm_or_si128(X, Y));
 
             // 3. 次数2以上が上または左に隣接しているか
@@ -210,14 +216,14 @@ class Chain {
             const __m128i cb = _mm_and_si128(board.getBitboard(c).m128, chainable_mask);
 
             const __m128i U = _mm_slli_epi64(cb, 1);
+            const __m128i D = _mm_srli_epi64(cb, 1);
             const __m128i L = _mm_srli_si128(cb, 2);
+            const __m128i R = _mm_slli_si128(cb, 2);
+
             if (_mm_testz_si128(cb, _mm_or_si128(U, L))) {
                 temp_mask &= (temp_mask - 1);
                 continue;
             }
-
-            const __m128i D = _mm_srli_epi64(cb, 1);
-            const __m128i R = _mm_slli_si128(cb, 2);
 
             const __m128i X = _mm_or_si128(_mm_and_si128(U, D), _mm_and_si128(L, R));
             const __m128i Y = _mm_and_si128(_mm_or_si128(U, D), _mm_or_si128(L, R));
