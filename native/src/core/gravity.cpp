@@ -14,12 +14,9 @@ uint32_t Gravity::execute(Board& board) noexcept {
             continue;
         }
 
-        const int total_cnt    = static_cast<int>(_mm_popcnt_u32(occ));
-        const uint16_t new_occ = static_cast<uint16_t>((1u << total_cnt) - 1u);
-
         // -------------------------------------------------------------
-        // パス 1: board.boards_ から直接読み込みつつスライドして lane に格納
-        // ★無駄な初期コピーを完全排除（95% はここだけで終了）
+        // ★ total_cnt も new_occ も丸ごと消滅！
+        // 穴を詰めるクリティカルパス（h1, g1, m1）だけに集中
         // -------------------------------------------------------------
         const int h1 = static_cast<int>(_tzcnt_u32(~occ));
         const uint32_t s1 = occ >> h1;
@@ -35,9 +32,6 @@ uint32_t Gravity::execute(Board& board) noexcept {
 
         occ = (occ & m1) | ((occ >> g1) & ~m1);
 
-        // -------------------------------------------------------------
-        // パス 2以降: 穴が2個以上ある場合のみ追加スライド（発生率 5% 未満）
-        // -------------------------------------------------------------
         while (((occ + 1) & occ) != 0) {
             const int h = static_cast<int>(_tzcnt_u32(~occ));
             const uint32_t s = occ >> h;
@@ -53,7 +47,7 @@ uint32_t Gravity::execute(Board& board) noexcept {
             occ = (occ & m) | ((occ >> g) & ~m);
         }
 
-        // 盤面更新と差分フラグ記録（1回のみ実行）
+        // 盤面更新
         #pragma unroll
         for (int i = 0; i < config::Board::kNumColors; ++i) {
             const uint16_t compacted = lane[i];
@@ -61,7 +55,8 @@ uint32_t Gravity::execute(Board& board) noexcept {
             board.boards_[i].cols[col] = compacted;
         }
 
-        board.occupancy_.cols[col] = new_occ;
+        // ★ 詰め終わった occ をそのまま書き込むだけ（計算コスト 0）
+        board.occupancy_.cols[col] = static_cast<uint16_t>(occ);
     }
 
     return fallen_mask;
