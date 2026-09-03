@@ -102,11 +102,9 @@ bool PuyotanMatch::setAction(int player_id, Action action) noexcept {
 }
 
 bool PuyotanMatch::canStepNextFrame() const noexcept {
-    const int playing = static_cast<int>(status_ == MatchStatus::Playing);
-    const int p0_ready = static_cast<int>(players_[0].current_action.action.type != ActionType::None);
-    const int p1_ready = static_cast<int>(players_[1].current_action.action.type != ActionType::None);
-
-    return (playing & p0_ready & p1_ready) != 0;
+    return (status_ == MatchStatus::Playing) &
+           (players_[0].current_action.action.type != ActionType::None) &
+           (players_[1].current_action.action.type != ActionType::None);
 }
 
 PuyoPiece PuyotanMatch::getPiece(int player_id, int index_offset) const noexcept {
@@ -115,9 +113,6 @@ PuyoPiece PuyotanMatch::getPiece(int player_id, int index_offset) const noexcept
 }
 
 void PuyotanMatch::stepNextFrame() noexcept {
-    if (!canStepNextFrame())
-        return;
-
     // ------------------------------------------------------------
     // Phase 1: 各プレイヤーのアクション進行 (完全に対称に実行)
     // ------------------------------------------------------------
