@@ -114,9 +114,9 @@ class Chain {
             const __m128i lr_s = _mm_or_si128(_mm_slli_si128(sym_seeds, 2), _mm_srli_si128(sym_seeds, 2));
             const __m128i group_m128 = _mm_and_si128(_mm_or_si128(sym_seeds, _mm_or_si128(ud_s, lr_s)), cb);
 
-            BitBoard group;
-            group.m128 = group_m128;
-            const int sz = group.popcount();
+            const uint64_t g_lo = _mm_cvtsi128_si64(group_m128);
+            const uint64_t g_hi = _mm_extract_epi64(group_m128, 1);
+            const int sz = static_cast<int>(_mm_popcnt_u64(g_lo) + _mm_popcnt_u64(g_hi));
 
             erasure_data.total_erased.m128 =
                 _mm_or_si128(erasure_data.total_erased.m128, group_m128);
@@ -156,7 +156,7 @@ class Chain {
                     if (sz2 < 8) {
                         erasure_data.group_bonus += kGroupBonusLut[sz2];
                     } else {
-                        BitBoard rem = group;
+                        BitBoard rem(group_m128);
                         rem.andNot(b_g1);
                         while (!rem.empty()) {
                             BitBoard g_rem = rem.extractLSB();

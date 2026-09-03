@@ -79,7 +79,9 @@ struct alignas(16) BitBoard {
     }
 
     [[nodiscard]] __forceinline int popcount() const noexcept {
-        return static_cast<int>(std::popcount(lo) + std::popcount(hi));
+        const uint64_t l = _mm_cvtsi128_si64(m128);
+        const uint64_t h = _mm_extract_epi64(m128, 1);
+        return static_cast<int>(_mm_popcnt_u64(l) + _mm_popcnt_u64(h));
     }
 
     [[nodiscard]] __forceinline BitBoard extractLSB() const noexcept {
