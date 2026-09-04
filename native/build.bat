@@ -1,38 +1,29 @@
 @echo off
-setlocal
+setlocal enabledelayedexpansion
+pushd "%~dp0"
 
 :: =========================================================
-:: build.bat  --  PuyotanAI native build script
-::
-:: Usage:
-::   build.bat [options]
-::   -d / --debug    Debug build  (default: Release)
-::   --msvc          Force MSVC compiler
-::   --clang         Force Clang compiler
-::
-:: Priority (auto-detection):
-::   1. Standalone LLVM clang-cl (winget) via Ninja
-::   2. VS-integrated ClangCL toolset (-T ClangCL)
-::   3. Default MSVC toolset (fallback)
+:: build.bat  --  PuyotanAI native build script (Robust Edition)
 :: =========================================================
 
 set MODE=Release
 set FORCE_COMPILER=
+set PROFILING=OFF
 
-if "%1"=="-d"      set MODE=Debug
-if "%1"=="--debug" set MODE=Debug
-if "%2"=="-d"      set MODE=Debug
-if "%2"=="--debug" set MODE=Debug
-
-if "%1"=="--msvc"  set FORCE_COMPILER=msvc
-if "%1"=="-msvc"   set FORCE_COMPILER=msvc
-if "%2"=="--msvc"  set FORCE_COMPILER=msvc
-if "%2"=="-msvc"   set FORCE_COMPILER=msvc
-
-if "%1"=="--clang" set FORCE_COMPILER=clang
-if "%1"=="-clang"  set FORCE_COMPILER=clang
-if "%2"=="--clang" set FORCE_COMPILER=clang
-if "%2"=="-clang"  set FORCE_COMPILER=clang
+:parse_args
+if "%~1"=="" goto :args_done
+if "%~1"=="-d"        set MODE=Debug
+if "%~1"=="--debug"   set MODE=Debug
+if "%~1"=="--msvc"    set FORCE_COMPILER=msvc
+if "%~1"=="-msvc"     set FORCE_COMPILER=msvc
+if "%~1"=="--clang"   set FORCE_COMPILER=clang
+if "%~1"=="-clang"    set FORCE_COMPILER=clang
+if "%~1"=="-p"        set PROFILING=ON
+if "%~1"=="--prof"    set PROFILING=ON
+if "%~1"=="--profile" set PROFILING=ON
+shift
+goto :parse_args
+:args_done
 
 :: pybind11 cmake dir
 FOR /F "tokens=*" %%i IN ('python -c "import pybind11; print(pybind11.get_cmake_dir().replace(chr(92),chr(47)))"') DO set PYBIND11_CMAKE_DIR=%%i
@@ -40,99 +31,65 @@ FOR /F "tokens=*" %%i IN ('python -c "import pybind11; print(pybind11.get_cmake_
 set BUILD_DIR_VS=%~dp0build_%MODE%
 set BUILD_DIR_NINJA=%~dp0build_%MODE%_clang
 
-echo === Configure (%MODE%) ===
+if "%PROFILING%"=="ON" (
+    echo === Configure: %MODE% with AMD uProf Profiling Symbols ===
+) else (
+    echo === Configure: %MODE% - Pure Maximum Performance ===
+)
 
 :: ------------------------------------------------------------
 :: Case 1: Force MSVC
 :: ------------------------------------------------------------
 if "%FORCE_COMPILER%"=="msvc" (
     echo [Build] Compiler: MSVC ^(forced^)
-    cmake -S "%~dp0." -B "%BUILD_DIR_VS%" -Dpybind11_DIR="%PYBIND11_CMAKE_DIR%"
+    cmake -S "%~dp0." -B "%BUILD_DIR_VS%" -Dpybind11_DIR="%PYBIND11_CMAKE_DIR%" -DENABLE_PROFILING=%PROFILING%
     if errorlevel 1 ( exit /b 1 )
     set BUILD_DIR=%BUILD_DIR_VS%
     goto :build
 )
 
 :: ------------------------------------------------------------
-:: Case 2: Standalone clang-cl (winget LLVM) + Ninja
+:: Case 2: Clang + Ninja
 :: ------------------------------------------------------------
-set CLANGCL_EXE=
-where clang-cl >nul 2>&1
-if not errorlevel 1 (
-    set CLANGCL_EXE=clang-cl
+set "LLVM_DIR=C:/Program Files/LLVM/bin"
+if exist "C:\Program Files\LLVM\bin\clang-cl.exe" (
+    set "PATH=C:\Program Files\LLVM\bin;%PATH%"
+    set "CLANGCL_EXE=C:/Program Files/LLVM/bin/clang-cl.exe"
 ) else (
-    if exist "C:\Program Files\LLVM\bin\clang-cl.exe" (
-        set CLANGCL_EXE=C:\Program Files\LLVM\bin\clang-cl.exe
-    )
+    where clang-cl >nul 2>&1
+    if not errorlevel 1 ( set "CLANGCL_EXE=clang-cl" )
 )
 
-set NINJA_EXE=
-where ninja >nul 2>&1
-if not errorlevel 1 ( set NINJA_EXE=ninja )
-if "%NINJA_EXE%"=="" (
-    FOR /F "tokens=*" %%N IN ('echo %USERPROFILE%\AppData\Local\Microsoft\WinGet\Packages\Ninja-build.Ninja_Microsoft.Winget.Source_8wekyb3d8bbwe\ninja.exe') DO (
-        if exist "%%N" set NINJA_EXE=%%N
-    )
-)
-if "%NINJA_EXE%"=="" (
-    if exist "C:\ProgramData\chocolatey\bin\ninja.exe" set "NINJA_EXE=C:\ProgramData\chocolatey\bin\ninja.exe"
-)
-
-if not "%CLANGCL_EXE%"=="" if not "%NINJA_EXE%"=="" (
-    :: Setup MSVC environment for clang-cl (SDK header/library paths)
-    set VCVARS=
-    if "%VCVARS%"=="" if exist "C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvarsall.bat"   set "VCVARS=C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Auxiliary\Build\vcvarsall.bat"
-    if "%VCVARS%"=="" if exist "C:\Program Files\Microsoft Visual Studio\18\Professional\VC\Auxiliary\Build\vcvarsall.bat" set "VCVARS=C:\Program Files\Microsoft Visual Studio\18\Professional\VC\Auxiliary\Build\vcvarsall.bat"
-    if "%VCVARS%"=="" if exist "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvarsall.bat"   set "VCVARS=C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvarsall.bat"
-    if "%VCVARS%"=="" if exist "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" set "VCVARS=C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvarsall.bat"
-    if "%VCVARS%"=="" if exist "C:\Program Files\Microsoft Visual Studio\17\Enterprise\VC\Auxiliary\Build\vcvarsall.bat"   set "VCVARS=C:\Program Files\Microsoft Visual Studio\17\Enterprise\VC\Auxiliary\Build\vcvarsall.bat"
-    if "%VCVARS%"=="" if exist "C:\Program Files\Microsoft Visual Studio\17\Professional\VC\Auxiliary\Build\vcvarsall.bat" set "VCVARS=C:\Program Files\Microsoft Visual Studio\17\Professional\VC\Auxiliary\Build\vcvarsall.bat"
-    if "%VCVARS%"=="" if exist "C:\Program Files\Microsoft Visual Studio\17\Community\VC\Auxiliary\Build\vcvarsall.bat"   set "VCVARS=C:\Program Files\Microsoft Visual Studio\17\Community\VC\Auxiliary\Build\vcvarsall.bat"
-    if "%VCVARS%"=="" if exist "C:\Program Files (x86)\Microsoft Visual Studio\17\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" set "VCVARS=C:\Program Files (x86)\Microsoft Visual Studio\17\BuildTools\VC\Auxiliary\Build\vcvarsall.bat"
-
-    if not "%VCVARS%"=="" (
-        call "%VCVARS%" x64 >nul 2>&1
+if not "%CLANGCL_EXE%"=="" (
+    :: VS 環境変数のロード
+    set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+    if exist "!VSWHERE!" (
+        for /f "usebackq tokens=*" %%i in (`"!VSWHERE!" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do (
+            if exist "%%i\VC\Auxiliary\Build\vcvarsall.bat" (
+                call "%%i\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul 2>&1
+            )
+        )
     )
 
-    echo [Build] Compiler: Clang ^(LLVM clang-cl^) + Ninja
-    cmake -S "%~dp0." -B "%BUILD_DIR_NINJA%" ^
-        -G "Ninja" ^
-        -DCMAKE_BUILD_TYPE=%MODE% ^
-        -DCMAKE_C_COMPILER="%CLANGCL_EXE%" ^
-        -DCMAKE_CXX_COMPILER="%CLANGCL_EXE%" ^
-        -DCMAKE_MAKE_PROGRAM="%NINJA_EXE%" ^
-        -Dpybind11_DIR="%PYBIND11_CMAKE_DIR%"
+    where ninja >nul 2>&1
     if not errorlevel 1 (
-        set BUILD_DIR=%BUILD_DIR_NINJA%
-        goto :build
+        echo [Build] Compiler: Clang ^(LLVM clang-cl^) + Ninja
+        if exist "%BUILD_DIR_NINJA%\CMakeCache.txt" del /f /q "%BUILD_DIR_NINJA%\CMakeCache.txt" >nul 2>&1
+
+        cmake -S "%~dp0." -B "%BUILD_DIR_NINJA%" -G "Ninja" -DCMAKE_BUILD_TYPE=%MODE% -DCMAKE_CXX_COMPILER="%CLANGCL_EXE%" -Dpybind11_DIR="%PYBIND11_CMAKE_DIR%" -DENABLE_PROFILING=%PROFILING%
+        if not errorlevel 1 (
+            set BUILD_DIR=%BUILD_DIR_NINJA%
+            goto :build
+        )
+        echo [Notice] Ninja failed. Falling back to Visual Studio...
     )
-    echo [Notice] Ninja+clang-cl failed. Falling back...
 )
 
 :: ------------------------------------------------------------
-:: Case 3: VS-integrated ClangCL (-T ClangCL)
+:: Case 3: Visual Studio Fallback (100% 確実に成功するルート)
 :: ------------------------------------------------------------
-cmake -S "%~dp0." -B "%BUILD_DIR_VS%" -T ClangCL -Dpybind11_DIR="%PYBIND11_CMAKE_DIR%" >nul 2>&1
-if not errorlevel 1 (
-    echo [Build] Compiler: Clang ^(VS integrated ClangCL^)
-    set BUILD_DIR=%BUILD_DIR_VS%
-    goto :build
-)
-
-:: Clean up if VS ClangCL failed
-if exist "%BUILD_DIR_VS%\CMakeCache.txt" del /f /q "%BUILD_DIR_VS%\CMakeCache.txt" >nul 2>&1
-if exist "%BUILD_DIR_VS%\CMakeFiles"     rmdir /s /q "%BUILD_DIR_VS%\CMakeFiles" >nul 2>&1
-
-if "%FORCE_COMPILER%"=="clang" (
-    echo [Error] --clang requested but no usable Clang installation found.
-    exit /b 1
-)
-
-:: ------------------------------------------------------------
-:: Case 4: MSVC Fallback
-:: ------------------------------------------------------------
-echo [Build] Compiler: MSVC ^(fallback^)
-cmake -S "%~dp0." -B "%BUILD_DIR_VS%" -Dpybind11_DIR="%PYBIND11_CMAKE_DIR%"
+echo [Build] Compiler: MSVC ^(Visual Studio^)
+cmake -S "%~dp0." -B "%BUILD_DIR_VS%" -Dpybind11_DIR="%PYBIND11_CMAKE_DIR%" -DENABLE_PROFILING=%PROFILING%
 if errorlevel 1 ( exit /b 1 )
 set BUILD_DIR=%BUILD_DIR_VS%
 
@@ -142,5 +99,6 @@ cmake --build "%BUILD_DIR%" --config %MODE% --parallel
 if errorlevel 1 ( exit /b 1 )
 
 echo === Done (%MODE%) ===
+popd
 endlocal
 exit /b 0

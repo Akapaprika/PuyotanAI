@@ -195,13 +195,9 @@ class BoardWidget(QWidget):
                     painter.setPen(pen)
 
     def _draw_cells(self, painter: QPainter, field, ox: int, oy: int, cell: int):
-        for row in range(_BOARD_ROWS):
-            for col in range(_BOARD_COLS):
-                c = field.get(col, row)
-                if c == p.Cell.Empty:
-                    continue
-                color = CELL_COLORS.get(c, QColor(255, 255, 255))
-                self._draw_puyo(painter, col, row, ox, oy, cell, color)
+        for puyo in field.get_active_puyos():
+            color = CELL_COLORS.get(puyo.color, QColor(255, 255, 255))
+            self._draw_puyo(painter, puyo.x, puyo.y, ox, oy, cell, color)
 
     def _draw_puyo(self, painter: QPainter, col: int, row: int,
                    ox: int, oy: int, cell: int, color: QColor, alpha: int = 255):

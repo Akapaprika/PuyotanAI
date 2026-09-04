@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 project(PuyotanNative LANGUAGES CXX)
+if (MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    set(CMAKE_LINKER "lld-link")
+endif()
 
 # ---------------------------------------------------------
 # Global Settings (Standard C++23 and Include Path)
@@ -14,7 +17,6 @@ include_directories(include)
 set(PYBIND11_FINDPYTHON ON)
 find_package(Python REQUIRED COMPONENTS Interpreter Development)
 find_package(pybind11 CONFIG REQUIRED)
-
 
 # ---------------------------------------------------------
 # Targets Definitions
@@ -44,6 +46,8 @@ target_link_libraries(puyotan_native PRIVATE puyotan_core puyotan_search)
 # ---------------------------------------------------------
 # Compile & Link Options (All Targets)
 # ---------------------------------------------------------
+option(ENABLE_PROFILING "Enable debug symbols (/Zi) for profiling tools like AMD uProf" OFF)
+
 set(ALL_TARGETS 
     puyotan_core 
     puyotan_search 
@@ -53,30 +57,36 @@ set(ALL_TARGETS
 )
 
 if (MSVC)
-    # Clear default exception handling flag (/EHsc) to avoid D9025 command-line override warnings
+    # Clear default flags to avoid warnings
     string(REPLACE "/EHsc" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
     string(REPLACE "/EHsc" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
+    string(REPLACE "/Ob2" "" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
 
     foreach(T IN LISTS ALL_TARGETS)
         set_property(TARGET ${T} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
-        set_property(TARGET ${T} PROPERTY INTERPROCEDURAL_OPTIMIZATION $<$<CONFIG:Release>:TRUE>)
         
         # Unified PCH application
         target_precompile_headers(${T} PRIVATE include/puyotan/pch.hpp)
         
         if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
             # -------------------------------------------------------------
-            # Clang-CL (LLVM) Optimization Flags
+            # Clang-CL (LLVM) Peak Optimization Flags
             # -------------------------------------------------------------
             target_compile_options(${T} PRIVATE
                 $<$<CONFIG:Debug>: /Od /Zi /RTC1 -Wno-everything >
                 $<$<CONFIG:Release>:
                     /O2 /arch:AVX2 /fp:fast /DNDEBUG /FS
+                    $<$<BOOL:${ENABLE_PROFILING}>:/Zi>
                     /clang:-O3
                     /clang:-march=znver1
+                    /clang:-flto=thin
+                    /clang:-fomit-frame-pointer
+                    /clang:-fstrict-aliasing
+                    /clang:-fno-math-errno
                     /clang:-funroll-loops
                     /clang:-fvectorize
                     /clang:-ffast-math
+                    /clang:-mllvm /clang:-inline-threshold=225
                     -Wno-everything
                 >
             )
@@ -88,7 +98,10 @@ if (MSVC)
                 /wd4267
                 /wd4819
                 $<$<CONFIG:Debug>: /Od /Zi /RTC1 /W4 /MP >
-                $<$<CONFIG:Release>: /O2 /Ot /Oy /arch:AVX2 /Gy /Gw /GF /fp:fast /Oi /DNDEBUG /MP /FS /Ob3 /GS- /Qspectre- /favor:AMD64 /Zi >
+                $<$<CONFIG:Release>:
+                    /O2 /Ot /Oy /arch:AVX2 /Gy /Gw /GF /fp:fast /Oi /DNDEBUG /MP /FS /Ob3 /GS- /Qspectre- /favor:AMD64
+                    $<$<BOOL:${ENABLE_PROFILING}>:/Zi>
+                >
             )
         endif()
     endforeach()
@@ -106,19 +119,29 @@ if (MSVC)
     # Re-enable Exception Handling for pybind11 module target
     target_compile_options(puyotan_native PRIVATE $<$<CONFIG:Release>: /EHsc >)
 
-    # Linker Options
+    # Linker Options (lld-link 用にクリーン化)
     set(LINK_TARGETS puyotan_native engine_benchmark beam_search_benchmark)
     foreach(LT IN LISTS LINK_TARGETS)
-        target_link_options(${LT} PRIVATE
-            $<$<CONFIG:Debug>: /DEBUG:FASTLINK >
-            $<$<CONFIG:Release>: /DEBUG /OPT:REF /OPT:ICF /INCREMENTAL:NO >
-        )
-        
-        # Unified Post-build copy commands
-        add_custom_command(TARGET ${LT} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_SOURCE_DIR}/dist
-            COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${LT}> ${CMAKE_SOURCE_DIR}/dist/
-        )
+        if (ENABLE_PROFILING)
+            target_link_options(${LT} PRIVATE
+                $<$<CONFIG:Debug>: /DEBUG:FASTLINK >
+                $<$<CONFIG:Release>: /DEBUG /OPT:REF /OPT:ICF /INCREMENTAL:NO >
+            )
+            add_custom_command(TARGET ${LT} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_SOURCE_DIR}/dist
+                COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${LT}> ${CMAKE_SOURCE_DIR}/dist/
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_PDB_FILE:${LT}> ${CMAKE_SOURCE_DIR}/dist/
+            )
+        else()
+            target_link_options(${LT} PRIVATE
+                $<$<CONFIG:Debug>: /DEBUG:FASTLINK >
+                $<$<CONFIG:Release>: /DEBUG:NONE /OPT:REF /OPT:ICF /INCREMENTAL:NO >
+            )
+            add_custom_command(TARGET ${LT} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_SOURCE_DIR}/dist
+                COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:${LT}> ${CMAKE_SOURCE_DIR}/dist/
+            )
+        endif()
     endforeach()
 else()
     # GCC / Native Clang (Linux / macOS)
@@ -126,7 +149,7 @@ else()
         set_property(TARGET ${T} PROPERTY INTERPROCEDURAL_OPTIMIZATION $<$<CONFIG:Release>:TRUE>)
         target_precompile_headers(${T} PRIVATE include/puyotan/pch.hpp)
         target_compile_options(${T} PRIVATE
-            $<$<CONFIG:Release>: -O3 -flto -march=native -ffast-math -funroll-loops -DNDEBUG >
+            $<$<CONFIG:Release>: -O3 -flto=thin -march=native -ffast-math -funroll-loops -fomit-frame-pointer -DNDEBUG >
         )
     endforeach()
 endif()

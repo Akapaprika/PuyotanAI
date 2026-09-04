@@ -1,3 +1,4 @@
+from __future__ import annotations
 from enum import Enum
 from typing import Optional, Tuple
 
@@ -13,10 +14,7 @@ from .beam_agents import (
 
 
 class PlayerMode(str, Enum):
-    """
-    Type-safe enumeration for player agent modes.
-    Inherits from str so that it formats cleanly in UI and serializes naturally.
-    """
+    """Type-safe enumeration for player agent modes."""
     HUMAN = "Human"
     AI    = "AI"
     EMPTY = "Empty (Solo)"
@@ -26,11 +24,7 @@ class PlayerMode(str, Enum):
 
 
 class AgentFactory:
-    """
-    Translates player mode selections into concrete Agent instances.
-    """
-
-    # Aliases for backward compatibility
+    """Translates player mode selections into concrete Agent instances."""
     MODE_HUMAN = PlayerMode.HUMAN
     MODE_AI = PlayerMode.AI
     MODE_EMPTY_SOLO = PlayerMode.EMPTY
@@ -43,10 +37,7 @@ class AgentFactory:
 
     @classmethod
     def get_modes(cls, allow_empty: bool = True) -> list[PlayerMode]:
-        """Return available player modes, optionally filtering out Empty."""
-        if allow_empty:
-            return list(cls.MODES)
-        return [m for m in cls.MODES if m != PlayerMode.EMPTY]
+        return list(cls.MODES) if allow_empty else [m for m in cls.MODES if m != PlayerMode.EMPTY]
 
     @classmethod
     def create_agent(
@@ -57,66 +48,26 @@ class AgentFactory:
         depth: int | None = None,
         dbs: int | None = None,
     ) -> Tuple[Optional[BasePlayerAgent], Optional[str]]:
-        """
-        Instantiate an agent configured with the given mode.
-        If is_solo is True (e.g. playing against Empty), PlayerMode.AI instantiates a SoloBeamAgent.
-        Returns (agent, error_message).
-        """
-        # Convert string to PlayerMode if standard value
+        """Instantiate an agent configured with the given mode."""
         if isinstance(mode, str):
+            # Backward-compatible legacy strings
+            if mode in ("AI: VS Beam (Gaze / Defense)", "AI: VS Beam (No Gaze)"):
+                return VsBeamAgent(enable_attack_search=(mode == "AI: VS Beam (Gaze / Defense)"),
+                                   beam_width=width, look_ahead=depth, dbs_max_similar=dbs), None
+            if mode == "AI: BeamSearch (Solo / Normal)":
+                return SoloBeamAgent(beam_width=width, look_ahead=depth, dbs_max_similar=dbs), None
             try:
-                mode_enum = PlayerMode(mode)
+                mode = PlayerMode(mode)
             except ValueError:
-                mode_enum = None
-        else:
-            mode_enum = mode
+                return None, f"Unknown mode: {mode}"
 
-        # Primary standard modes
-        if mode_enum == PlayerMode.HUMAN:
+        if mode == PlayerMode.HUMAN:
             return HumanPlayerAgent(), None
-        elif mode_enum == PlayerMode.EMPTY:
+        elif mode == PlayerMode.EMPTY:
             return EmptyPlayerAgent(), None
-        elif mode_enum == PlayerMode.AI:
-            if is_solo:
-                return (
-                    SoloBeamAgent(
-                        beam_width=width,
-                        look_ahead=depth,
-                        dbs_max_similar=dbs,
-                    ),
-                    None,
-                )
-            else:
-                return (
-                    VsBeamAgent(
-                        enable_attack_search=True,
-                        beam_width=width,
-                        look_ahead=depth,
-                        dbs_max_similar=dbs,
-                    ),
-                    None,
-                )
+        elif mode == PlayerMode.AI:
+            agent_cls = SoloBeamAgent if is_solo else VsBeamAgent
+            return agent_cls(beam_width=width, look_ahead=depth, dbs_max_similar=dbs), None
 
-        # Backward-compatible string aliases
-        if mode in ("AI: VS Beam (Gaze / Defense)", "AI: VS Beam (No Gaze)"):
-            enable_attack = (mode == "AI: VS Beam (Gaze / Defense)")
-            return (
-                VsBeamAgent(
-                    enable_attack_search=enable_attack,
-                    beam_width=width,
-                    look_ahead=depth,
-                    dbs_max_similar=dbs,
-                ),
-                None,
-            )
-        elif mode == "AI: BeamSearch (Solo / Normal)":
-            return (
-                SoloBeamAgent(
-                    beam_width=width,
-                    look_ahead=depth,
-                    dbs_max_similar=dbs,
-                ),
-                None,
-            )
-        else:
-            return None, f"Unknown mode: {mode}"
+        return None, f"Unknown mode: {mode}"
+

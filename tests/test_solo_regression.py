@@ -2,8 +2,8 @@
 tests/test_solo_regression.py
 
 ソロAIのリグレッションテスト（回帰テスト）スクリプト。
-固定標準パラメータ: Seed=1, BeamWidth=15000, LookAhead=25, DBS=6 で50手分実行し、
-ゴールドマスター（基準データ）と100%完全一致するかどうかを厳格に判定します。
+本番設定 (beam_config.json) をロードし、Seed=1 で50手分のゲーム進行を実行して、
+ゴールドマスター（基準データ）と50手すべてが100%完全一致するかどうかを厳格に判定します。
 """
 import os
 import sys
@@ -20,29 +20,20 @@ if str(_NATIVE_DIST) not in sys.path:
 
 import puyotan_native as p
 
-# 回帰テスト用 固定標準パラメータ
-BENCH_BEAM_WIDTH = 15000
-BENCH_LOOK_AHEAD = 25
-BENCH_DBS = 6
-
 
 def run_50step_simulation(seed: int = 1, num_moves: int = 50):
-    """Seed=1 で固定パラメータ (BW=15000, LA=25) で50手分のソロビームサーチを実行し、記録を返す。"""
+    """Seed=1 で beam_config.json の本番設定をロードして50手分のソロビームサーチを実行し、記録を返す。"""
     match = p.PuyotanMatch(seed)
     match.start()
     pass_act = p.Action(p.ActionType.PASS, 0, p.Rotation.Up)
 
-    # 固定設定の構築
-    cfg = p.SoloBeamConfig()
-    cfg.beam_width = BENCH_BEAM_WIDTH
-    cfg.look_ahead = BENCH_LOOK_AHEAD
-    cfg.dbs_max_similar = BENCH_DBS
-    cfg.full_beam_depth = 2
-    cfg.min_beam_width_ratio = 1.0  # 基準はテーパリング減衰なし（均一幅）
+    # 本番設定 (beam_config.json) のロード
+    config_json_path = _PROJECT_ROOT / "native" / "resources" / "beam_config.json"
+    cfg = p.load_solo_config(str(config_json_path))
 
     records = []
 
-    print(f"[Regression Test] Seed={seed}, BW={BENCH_BEAM_WIDTH}, LA={BENCH_LOOK_AHEAD}: Running {num_moves} moves...")
+    print(f"[Regression Test] Seed={seed}, BW={cfg.beam_width}, LA={cfg.look_ahead}, DBS={cfg.dbs_max_similar}, Margin={cfg.dynamic_lookahead_margin}: Running {num_moves} moves...")
 
     for move in range(1, num_moves + 1):
         player = match.getPlayer(0)
@@ -71,6 +62,8 @@ def run_50step_simulation(seed: int = 1, num_moves: int = 50):
             if mask & 1:
                 break
             if mask & 2:
+                match.getPlayer(1).active_ojama = 0
+                match.getPlayer(1).non_active_ojama = 0
                 match.setAction(1, pass_act)
             match.stepNextFrame()
 
@@ -129,6 +122,7 @@ def verify_against_golden():
         return True
     else:
         print(f" [FAIL] Found {mismatches} mismatches!")
+        assert mismatches == 0, f"Found {mismatches} mismatches against golden master!"
         return False
 
 

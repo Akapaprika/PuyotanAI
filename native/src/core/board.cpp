@@ -1,66 +1,81 @@
-#include <algorithm>
+#include <bit>
 #include <cassert>
 #include <puyotan/core/board.hpp>
 
 namespace puyotan {
-Cell Board::get(int x, int y) const noexcept {
-    const int idx = x >> 2;
-    const int shift = ((x & 3) << 4) | y;
 
-    // Red(0) のロードをスキップし、他の色と占有状況のみをロード
-    const int b1 = static_cast<int>(((&boards_[1].lo)[idx] >> shift) & 1);
-    const int b2 = static_cast<int>(((&boards_[2].lo)[idx] >> shift) & 1);
-    const int b3 = static_cast<int>(((&boards_[3].lo)[idx] >> shift) & 1);
-    const int b4 = static_cast<int>(((&boards_[4].lo)[idx] >> shift) & 1);
-    const int occ = static_cast<int>(((&occupancy_.lo)[idx] >> shift) & 1);
+// ★【最適化】実際のぷよ数（popcount）ピッタリで vector を一発確保
+std::vector<Board::ActivePuyo> Board::getActivePuyos() const noexcept {
+    std::vector<ActivePuyo> result;
+    result.reserve(occupancy_.popcount());
 
-    // 分岐もループも使わない完全等価な状態方程式
-    // - 空 (occ=0) なら、式は 5 * (1 - 0) = 5 (Cell::Empty) となる
-    // - 赤 (occ=1, 他が0) なら、式は 0 + 5 * 0 = 0 (Cell::Red) となる
-    // - 他の色 (occ=1) なら、各ビットに対応するインデックス (1〜4) に収束する
-    const int color = (b1 * 1) + (b2 * 2) + (b3 * 3) + (b4 * 4) + (5 * (1 - occ));
-    return static_cast<Cell>(color);
+    for (int ci = 0; ci < config::Board::kNumColors; ++ci) {
+        const Cell color = static_cast<Cell>(ci);
+        const BitBoard& bb = boards_[ci];
+        for (int x = 0; x < config::Board::kWidth; ++x) {
+            uint32_t col_bits = bb.cols[x] & config::Board::kVisibleColMask;
+            while (col_bits) {
+                const int y = std::countr_zero(col_bits);
+                result.push_back({x, y, color});
+                col_bits &= (col_bits - 1);
+            }
+        }
+    }
+    return result;
 }
 
+// ★【最適化】occupancy_ が 0 なら即 Cell::Empty をリターン（5色走査を完全スキップ）
+Cell Board::get(int x, int y) const noexcept {
+    assert(x >= 0 && x < config::Board::kWidth);
+    assert(y >= 0 && y < config::Board::kHeight + 1);
+
+    const uint16_t mask = static_cast<uint16_t>(1U << y);
+    if ((occupancy_.cols[x] & mask) == 0) {
+        return Cell::Empty;
+    }
+
+    for (int ci = 0; ci < config::Board::kNumColors; ++ci) {
+        if (boards_[ci].cols[x] & mask) {
+            return static_cast<Cell>(ci);
+        }
+    }
+    return Cell::Empty;
+}
+
+// ★【最適化】既に何か置かれていた場合のみ他色をクリア
 void Board::set(int x, int y, Cell color) noexcept {
     assert(color != Cell::Empty);
-    const int idx = x >> 2;
-    const int shift = ((x & 3) << 4) | y;
-    const uint64_t bit = 1ULL << shift;
-    const uint64_t clear_mask = ~bit;
+    assert(x >= 0 && x < config::Board::kWidth);
+    assert(y >= 0 && y < config::Board::kHeight + 1);
 
-    // 共用体の構成要素である lo のポインタを経由させることで、
-    // キャストを使わず安全かつ高速に連続メモリアクセスを行います。
-    for (auto& bb : boards_) {
-        (&bb.lo)[idx] &= clear_mask;
+    const uint16_t bit = static_cast<uint16_t>(1U << y);
+    const uint16_t clear_mask = static_cast<uint16_t>(~bit);
+
+    if ((occupancy_.cols[x] & bit) != 0) {
+        for (auto& bb : boards_) {
+            bb.cols[x] &= clear_mask;
+        }
     }
 
-    (&boards_[toIndex(color)].lo)[idx] |= bit;
-    (&occupancy_.lo)[idx] |= bit;
+    boards_[toIndex(color)].cols[x] |= bit;
+    occupancy_.cols[x] |= bit;
 }
 
+// ★【最適化】最初から空なら何もしない（無駄な 5色クリアを完全スキップ）
 void Board::clear(int x, int y) noexcept {
+    assert(x >= 0 && x < config::Board::kWidth);
+    assert(y >= 0 && y < config::Board::kHeight + 1);
+
+    const uint16_t bit = static_cast<uint16_t>(1U << y);
+    if ((occupancy_.cols[x] & bit) == 0) {
+        return;
+    }
+
+    const uint16_t clear_mask = static_cast<uint16_t>(~bit);
     for (auto& bb : boards_) {
-        bb.clear(x, y);
+        bb.cols[x] &= clear_mask;
     }
-    occupancy_.clear(x, y);
+    occupancy_.cols[x] &= clear_mask;
 }
 
-void Board::placePiece(int col, Cell color) noexcept {
-    assert(col >= 0 && col < config::Board::kWidth);
-    set(col, config::Board::kSpawnRow, color);
-}
-
-
-
-void Board::setBitboard(Cell color, const BitBoard& bb) noexcept {
-    boards_[toIndex(color)] = bb;
-}
-
-void Board::updateOccupancyFromBoards() noexcept {
-    occupancy_ = boards_[0];
-    for (int i = 1; i < config::Board::kNumColors; ++i) {
-        occupancy_ |= boards_[i];
-    }
-}
 } // namespace puyotan

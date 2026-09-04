@@ -3,7 +3,6 @@
 #include <utility>
 #include <puyotan/engine/match.hpp>
 #include <puyotan/search/beam_config.hpp>
-#include <puyotan/search/beam_evaluator.hpp>
 
 namespace puyotan::search {
 
@@ -22,5 +21,7 @@ std::pair<int, int32_t> vsBeamSearch(const PuyotanPlayer& player,
                                      const Tsumo&         tsumo,
                                      const VsBeamConfig&  cfg,
                                      BeamSearchSession*   session = nullptr) noexcept;
+
+Board getBestLeafField() noexcept;
 
 } // namespace puyotan::search

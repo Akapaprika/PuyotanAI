@@ -169,8 +169,13 @@ class MainWindow(QMainWindow):
         return page
 
     # ------------------------------------------------------------------
-    # Keyboard routing
+    # Keyboard & Focus routing
     # ------------------------------------------------------------------
+    def mousePressEvent(self, event) -> None:
+        if self._stack.currentIndex() == self._PAGE_GAME:
+            self.setFocus()
+        super().mousePressEvent(event)
+
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if self._stack.currentIndex() == self._PAGE_GAME:
             if not self.ctrl.handle_key(Qt.Key(event.key())):
@@ -191,6 +196,7 @@ class MainWindow(QMainWindow):
         self._status_bar.set_seed(seed)
         self.vm.restart()
         self._stack.setCurrentIndex(self._PAGE_GAME)
+        self.setFocus()
         self._timer.start()
         self._refresh()
 

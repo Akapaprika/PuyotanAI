@@ -1,124 +1,65 @@
-#include <algorithm>
+#include <immintrin.h>
 #include <puyotan/core/gravity.hpp>
 
 namespace puyotan {
-// Mask covering bits 0 through kTotalRows-1 (one column lane: 15 bits = rows
-// 0-14)
-static constexpr uint32_t kColLaneMask = (1u << config::Board::kTotalRows) - 1;
 
-// ---------------------------------------------------------------------------
-// High-Speed Software PEXT (SWAR)
-// On AMD Zen 1/1+/2 CPUs (e.g. 3020e), the hardware _pext_u32 is microcoded
-// and takes >250 cycles. This fallback uses BLSI/BLSR equivalents to extract
-// bits in ~10 cycles per column, completely bypassing the hardware latency.
-// ---------------------------------------------------------------------------
-/**
- * @brief High-Speed Software PEXT (SWAR fallback).
- *
- * Efficiently extracts bits from 'val' based on 'mask'.
- * On AMD Zen 1/2 CPUs (e.g. 3020e), the hardware _pext_u32 is microcoded
- * and takes >250 cycles. This fallback uses BLSI/BLSR equivalents to extract
- * bits in ~10 cycles per column.
- *
- * @param val Value to extract from.
- * @param mask Mask defining which bits to extract.
- * @return Compacted bits.
- */
-static __forceinline uint32_t pext_u16_swar(uint32_t val,
-                                            uint32_t mask) noexcept {
-    uint32_t res = 0;
-    int shift = 0;
-    while (mask) {
-        // Isolate lowest set bit (BLSI equivalent)
-        const uint32_t lowest = mask & (0u - mask);
-
-        // Branchless check: if val matches the lowest mask bit, shift a 1 into
-        // res
-        res |= ((val & lowest) != 0) << shift;
-
-        ++shift;
-        // Clear lowest set bit (BLSR equivalent)
-        mask &= (mask - 1);
-    }
-    return res;
-}
-
-// ---------------------------------------------------------------------------
-// Per-column PEXT compaction helper.
-// UseHi: compile-time flag selecting boards[i].hi (true) or boards[i].lo
-// (false).
-//        This replaces the reinterpret_cast+stride pointer arithmetic,
-//        giving the compiler full aliasing information at zero runtime cost.
-// ---------------------------------------------------------------------------
-/**
- * @brief Helper to compact puyos in columns and update all color planes.
- *
- * @tparam NUM_COLS Number of columns to process (4 for Lo, 2 for Hi).
- * @tparam UseHi Boolean selecting whether to access .hi or .lo segments.
- * @param occ_word Pointer to the occupancy segment.
- * @param boards Pointer to the array of per-color BitBoards.
- * @return Bitmask of colors that fell during compaction.
- */
-template <int NUM_COLS, bool UseHi>
-static __forceinline uint32_t
-compactCols(uint64_t* __restrict occ_word,
-            BitBoard* __restrict boards) noexcept {
+uint32_t Gravity::execute(Board& board) noexcept {
     uint32_t fallen_mask = 0;
-    for (int local = 0; local < NUM_COLS; ++local) {
-        const int shift = local * config::Board::kBitsPerCol;
 
-        const uint32_t occ_lane =
-            static_cast<uint32_t>(*occ_word >> shift) & kColLaneMask;
-        if (((occ_lane + 1) & occ_lane) == 0)
+    for (int col = 0; col < config::Board::kWidth; ++col) {
+        uint32_t occ = board.occupancy_.cols[col];
+
+        // 隙間がない列（下から詰まっている、または空列）は 1命令で即スキップ
+        if (((occ + 1) & occ) == 0) {
             continue;
-
-        // ここから下は、実際に「隙間があり、落下（圧縮）が必要な列」のみが通過する
-        const int cnt = _mm_popcnt_u32(occ_lane);
-        const uint32_t full_occ = (1u << cnt) - 1u;
-        const uint32_t new_occ = full_occ & config::Board::kVisibleColMask;
-
-        const uint64_t clear = ~(static_cast<uint64_t>(kColLaneMask) << shift);
-
-        for (int i = 0; i < config::Board::kNumColors; ++i) {
-            uint64_t& cw = UseHi ? boards[i].hi : boards[i].lo;
-            const uint32_t lane =
-                static_cast<uint32_t>(cw >> shift) & kColLaneMask;
-            if (lane == 0)
-                continue;
-
-            // Bypass the microcoded BMI2 _pext_u32 on Zen architectures
-            const uint32_t compacted = pext_u16_swar(lane, occ_lane) & new_occ;
-            fallen_mask |= (compacted != lane) << i;
-            cw = (cw & clear) | (static_cast<uint64_t>(compacted) << shift);
         }
 
-        *occ_word =
-            (*occ_word & clear) | (static_cast<uint64_t>(new_occ) << shift);
+        // -------------------------------------------------------------
+        // ★ total_cnt も new_occ も丸ごと消滅！
+        // 穴を詰めるクリティカルパス（h1, g1, m1）だけに集中
+        // -------------------------------------------------------------
+        const int h1 = static_cast<int>(_tzcnt_u32(~occ));
+        const uint32_t s1 = occ >> h1;
+        const int g1 = static_cast<int>(_tzcnt_u32(s1));
+        const uint32_t m1 = (1u << h1) - 1u;
+
+        uint16_t lane[config::Board::kNumColors];
+        #pragma unroll
+        for (int i = 0; i < config::Board::kNumColors; ++i) {
+            const uint32_t orig = board.boards_[i].cols[col];
+            lane[i] = static_cast<uint16_t>((orig & m1) | ((orig >> g1) & ~m1));
+        }
+
+        occ = (occ & m1) | ((occ >> g1) & ~m1);
+
+        while (((occ + 1) & occ) != 0) {
+            const int h = static_cast<int>(_tzcnt_u32(~occ));
+            const uint32_t s = occ >> h;
+            const int g = static_cast<int>(_tzcnt_u32(s));
+            const uint32_t m = (1u << h) - 1u;
+
+            #pragma unroll
+            for (int i = 0; i < config::Board::kNumColors; ++i) {
+                const uint32_t mid = lane[i];
+                lane[i] = static_cast<uint16_t>((mid & m) | ((mid >> g) & ~m));
+            }
+
+            occ = (occ & m) | ((occ >> g) & ~m);
+        }
+
+        // 盤面更新
+        #pragma unroll
+        for (int i = 0; i < config::Board::kNumColors; ++i) {
+            const uint16_t compacted = lane[i];
+            fallen_mask |= static_cast<uint32_t>(compacted != board.boards_[i].cols[col]) << i;
+            board.boards_[i].cols[col] = compacted;
+        }
+
+        // ★ 詰め終わった occ をそのまま書き込むだけ（計算コスト 0）
+        board.occupancy_.cols[col] = static_cast<uint16_t>(occ);
     }
+
     return fallen_mask;
 }
 
-uint32_t Gravity::execute(Board& board) noexcept {
-    const uint32_t m1 = compactCols<config::Board::kColsInLo, false>(
-        &board.occupancy_.lo, board.boards_.data());
-
-    const uint32_t m2 = compactCols<config::Board::kColsInHi, true>(
-        &board.occupancy_.hi, board.boards_.data());
-
-    return m1 | m2;
-}
-
-bool Gravity::canFall(const Board& board) noexcept {
-    const __m128i occ = board.getOccupied().m128;
-    const __m128i shifted = _mm_srli_epi64(occ, 1);
-    const __m128i boundary = _mm_set1_epi64x(0x8000800080008000ULL);
-
-    // shifted & ~boundary & ~occ
-    const __m128i can_fall_bits =
-        _mm_andnot_si128(occ, _mm_andnot_si128(boundary, shifted));
-
-    // _mm_testz_si128 returns 1 if all bits are 0. We want true if ANY bit
-    // is 1.
-    return !_mm_testz_si128(can_fall_bits, can_fall_bits);
-}
 } // namespace puyotan

@@ -3,13 +3,17 @@
     "_comment_beam_width": "探索中に保持する最大盤面数（処理速度と探索精度のトレードオフ）",
     "beam_width": 40000,
     "_comment_look_ahead": "ツモの先読み手数量（ソロ部門用の深い先読み）",
-    "look_ahead": 30,
-    "_comment_dbs_max_similar": "同一高さプロファイル(packHeights)を持つ盤面の最大許容重複件数 (0でDBS無効, 1以上でDBS有効)",
+    "look_ahead": 40,
+    "_comment_dbs_max_similar": "同一高さプロファイル(packHeights)を持つ盤面の最大許容重複件数 (0でDBS無効, 1〜65535でDBS有効)",
     "dbs_max_similar": 6,
     "_comment_full_beam_depth": "ビーム幅を100%保持する探索深さ（0〜N手目）",
     "full_beam_depth": 2,
     "_comment_min_beam_width_ratio": "最終手（look_ahead-1）時点でのビーム幅の到達比率 (1.0で減衰なし, 0.1で10%にテーパー縮小)",
-    "min_beam_width_ratio": 0.01,
+    "min_beam_width_ratio": 0.2,
+    "_comment_main_chain_threshold": "本線大連鎖とみなす最小得点。発火後はセカンドポテンシャルの合算を遮断 (0で無効化, 20000等で有効化)",
+    "main_chain_threshold": 20000,
+    "_comment_dynamic_lookahead_margin": "空きマス連動の先読み深さマージン (90-ぷよ数)/2。盤面満杯付近で深さを自動縮小 (0で無効化, 90推奨)",
+    "dynamic_lookahead_margin": 90,
     "eval_weights": {
       "_comment_potential_score_scale": "ポテンシャル連鎖スコアへの整数乗数。1 = 素点そのままを使用。",
       "potential_score_scale": 1
@@ -20,8 +24,16 @@
     "beam_width": 15000,
     "_comment_look_ahead": "ツモの先読み手数量（対戦時の攻撃猶予に合わせるため浅めが推奨）",
     "look_ahead": 25,
-    "_comment_dbs_max_similar": "同一高さプロファイル(packHeights)を持つ盤面の最大許容重複件数 (0でDBS無効, 1以上でDBS有効)",
+    "_comment_dbs_max_similar": "同一高さプロファイル(packHeights)を持つ盤面の最大許容重複件数 (0でDBS無効, 1〜65535でDBS有効)",
     "dbs_max_similar": 6,
+    "_comment_full_beam_depth": "ビーム幅を100%保持する探索深さ（0〜N手目）",
+    "full_beam_depth": 2,
+    "_comment_min_beam_width_ratio": "最終手（look_ahead-1）時点でのビーム幅の到達比率 (1.0で減衰なし, 0.1で10%にテーパー縮小)",
+    "min_beam_width_ratio": 0.01,
+    "_comment_main_chain_threshold": "本線大連鎖とみなす最小得点。発火後はセカンドポテンシャルの合算を遮断 (0で無効化, 20000等で有効化)",
+    "main_chain_threshold": 20000,
+    "_comment_dynamic_lookahead_margin": "空きマス連動の先読み深さマージン (90-ぷよ数)/2。盤面満杯付近で深さを自動縮小 (0で無効化, 90推奨)",
+    "dynamic_lookahead_margin": 0,
     "eval_weights": {
       "_comment_potential_score_scale": "ポテンシャル連鎖スコアへの整数乗数。1 = 素点そのままを使用。",
       "potential_score_scale": 1,
@@ -33,52 +45,6 @@
       "buried_penalty": -100,
       "_comment_fire_bias": "発火判断のバイアス係数（小数）。fire_bias × 発火スコア > ビームスコア のとき即時発火を選択。\n                        > 1.0: 発火を積極的に選ぶ / == 1.0: 等価比較 / < 1.0: 継続を優先\n                        内部では *1000 して整数比較するため、切り捨て誤差あり（最大1/1000）。",
       "fire_bias": 0.97
-    }
-  },
-  "enemy": {
-    "_comment_beam_width": "探索中に保持する最大盤面数（処理速度と探索精度のトレードオフ）",
-    "beam_width": 15000,
-    "_comment_look_ahead": "ツモの先読み手数量（対戦時の攻撃猶予に合わせるため浅めが推奨）",
-    "look_ahead": 25,
-    "_comment_dbs_max_similar": "同一高さプロファイル(packHeights)を持つ盤面の最大許容重複件数 (0でDBS無効, 1以上でDBS有効)",
-    "dbs_max_similar": 6,
-    "eval_weights": {
-      "_comment_potential_score_scale": "ポテンシャル連鎖スコアへの整数乗数。1 = 素点そのままを使用。",
-      "potential_score_scale": 1,
-      "_comment_connectivity_bonus": "同色隣接が2つ以上あるぷよ1個あたりのボーナス（整数, 点）。",
-      "connectivity_bonus": 20,
-      "_comment_isolated_penalty": "同色隣接ゼロの孤立ぷよ1個あたりのペナルティ（整数, 点, 負の値）。",
-      "isolated_penalty": -40,
-      "_comment_buried_penalty": "おじゃまの下に埋もれた色ぷよ1個あたりのペナルティ（整数, 点, 負の値）。",
-      "buried_penalty": -100,
-      "_comment_fire_bias": "発火判断のバイアス係数（小数）。fire_bias × 発火スコア > ビームスコア のとき即時発火を選択。\n                        > 1.0: 発火を積極的に選ぶ / == 1.0: 等価比較 / < 1.0: 継続を優先\n                        内部では *1000 して整数比較するため、切り捨て誤差あり（最大1/1000）。",
-      "fire_bias": 0.97
-    }
-  },
-  "negamax": {
-    "depth": 4,
-    "candidate_n": 22,
-    "interior_candidate_n": 11,
-    "chain_cutoff_enabled": true,
-    "use_interior_beam_config": true,
-    "interior_beam_width": 1500,
-    "interior_look_ahead": 3,
-    "interior_dbs_max_similar": 6
-  },
-  "abs": {
-    "depth": 6,
-    "chain_cutoff_enabled": true,
-    "my_category_budgets": {
-      "build": 3000,
-      "crush": 1500,
-      "strike": 1000,
-      "evade": 500
-    },
-    "opp_category_budgets": {
-      "build": 2000,
-      "crush": 1000,
-      "strike": 500,
-      "evade": 300
     }
   }
 }

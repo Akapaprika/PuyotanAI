@@ -1,11 +1,8 @@
-#include <optional>
 #include <puyotan/common/config.hpp>
 #include <puyotan/common/types.hpp>
 #include <puyotan/core/board.hpp>
 #include <puyotan/core/chain.hpp>
-#include <puyotan/core/gravity.hpp>
 #include <puyotan/engine/match.hpp>
-#include <puyotan/engine/scorer.hpp>
 #include <puyotan/engine/tsumo.hpp>
 #include <puyotan/search/beam_config_loader.hpp>
 #include <puyotan/search/beam_evaluator.hpp>
@@ -48,20 +45,24 @@ PYBIND11_MODULE(puyotan_native, m) {
     pybind11::class_<BitBoard>(m, "BitBoard")
         .def(pybind11::init<>())
         .def(pybind11::init<uint64_t, uint64_t>())
-        .def_readwrite("lo", &BitBoard::lo)
-        .def_readwrite("hi", &BitBoard::hi)
         .def("get", &BitBoard::get)
         .def("set", &BitBoard::set)
         .def("clear", &BitBoard::clear)
         .def("empty", &BitBoard::empty)
         .def("popcount", &BitBoard::popcount);
 
+    pybind11::class_<Board::ActivePuyo>(m, "ActivePuyo")
+        .def_readonly("x", &Board::ActivePuyo::x)
+        .def_readonly("y", &Board::ActivePuyo::y)
+        .def_readonly("color", &Board::ActivePuyo::color);
+
     pybind11::class_<Board>(m, "Board")
         .def(pybind11::init<>())
         .def("get", &Board::get)
         .def("set", &Board::set)
         .def("clear", &Board::clear)
-        .def("placePiece", &Board::placePiece)
+        .def("getActivePuyos", &Board::getActivePuyos)
+        .def("get_active_puyos", &Board::getActivePuyos)
         .def("getBitboard", &Board::getBitboard)
         .def("getOccupied", &Board::getOccupied);
 
@@ -70,29 +71,19 @@ PYBIND11_MODULE(puyotan_native, m) {
             "erased", [](const ErasureData& d) { return d.num_erased > 0; })
         .def_readwrite("num_erased", &ErasureData::num_erased)
         .def_readwrite("num_colors", &ErasureData::num_colors)
-        .def_readwrite("num_groups", &ErasureData::num_groups)
-        .def_property_readonly("group_sizes", [](const ErasureData& d) {
-            return std::vector<int>(d.group_sizes.begin(),
-                                    d.group_sizes.begin() + d.num_groups);
-        });
-
-    pybind11::class_<Gravity>(m, "Gravity")
-        .def_static("execute", &Gravity::execute);
+        .def_readwrite("group_bonus", &ErasureData::group_bonus);
 
     pybind11::class_<Chain>(m, "Chain")
-        .def_static("execute", &Chain::execute, pybind11::arg("board"),
-                    pybind11::arg("color_mask") = 0x0F);
+        .def_static("execute", [](Board &board) {
+            return Chain::execute(board);
+        });
 
     // =========================================================================
     // Engine
     // =========================================================================
-    pybind11::class_<Scorer>(m, "Scorer")
-        .def_static("calculateStepScore", &Scorer::calculateStepScore);
-
     pybind11::class_<Tsumo>(m, "Tsumo")
         .def(pybind11::init<uint32_t>(), pybind11::arg("seed") = 0)
         .def("get", &Tsumo::get)
-        .def("setSeed", &Tsumo::setSeed)
         .def_property_readonly("seed", &Tsumo::getSeed)
         .def("clone", [](const Tsumo& t) { return Tsumo(t); });
 
@@ -139,9 +130,6 @@ PYBIND11_MODULE(puyotan_native, m) {
     pybind11::class_<PuyotanMatch>(m, "PuyotanMatch")
         .def(pybind11::init<uint32_t>(), pybind11::arg("seed") = 0)
         .def("clone", [](const PuyotanMatch& m) { return PuyotanMatch(m); })
-        .def_static("runBatch", &PuyotanMatch::runBatch,
-                    pybind11::arg("num_games"), pybind11::arg("seed") = 1,
-                    pybind11::call_guard<pybind11::gil_scoped_release>())
         .def("start", &PuyotanMatch::start)
         .def("setAction", &PuyotanMatch::setAction)
         .def("canStepNextFrame", &PuyotanMatch::canStepNextFrame)
@@ -168,14 +156,6 @@ PYBIND11_MODULE(puyotan_native, m) {
     m.def("get_rl_action", &getRLAction, pybind11::arg("idx"),
           "Convert a flat RL action index to an Action (col, rotation). "
           "Returns Pass action for out-of-range indices.");
-
-    // -- Rule & Score Constants (Single Source of Truth) --
-    m.attr("kRuleColors")       = config::Rule::kColors;
-    m.attr("kRuleConnectCount") = config::Rule::kConnectCount;
-    m.attr("kDeathCol")         = config::Rule::kDeathCol;
-    m.attr("kDeathRow")         = config::Rule::kDeathRow;
-    m.attr("kTargetScore")      = config::Score::kTargetScore;
-    m.attr("kAllClearBonus")    = config::Score::kAllClearBonus;
 
     // =========================================================================
     // Beam Search
@@ -227,23 +207,29 @@ PYBIND11_MODULE(puyotan_native, m) {
 
     pybind11::class_<search::SoloBeamConfig>(m, "SoloBeamConfig")
         .def(pybind11::init<>())
-        .def_readwrite("beam_width",            &search::SoloBeamConfig::beam_width)
-        .def_readwrite("look_ahead",            &search::SoloBeamConfig::look_ahead)
-        .def_readwrite("dbs_max_similar",       &search::SoloBeamConfig::dbs_max_similar)
-        .def_readwrite("full_beam_depth",       &search::SoloBeamConfig::full_beam_depth)
-        .def_readwrite("min_beam_width_ratio",   &search::SoloBeamConfig::min_beam_width_ratio)
-        .def_readwrite("eval_weights",          &search::SoloBeamConfig::eval_weights);
+        .def_readwrite("beam_width",               &search::SoloBeamConfig::beam_width)
+        .def_readwrite("look_ahead",               &search::SoloBeamConfig::look_ahead)
+        .def_readwrite("dbs_max_similar",          &search::SoloBeamConfig::dbs_max_similar)
+        .def_readwrite("full_beam_depth",          &search::SoloBeamConfig::full_beam_depth)
+        .def_readwrite("min_beam_width_ratio",     &search::SoloBeamConfig::min_beam_width_ratio)
+        .def_readwrite("main_chain_threshold",     &search::SoloBeamConfig::main_chain_threshold)
+        .def_readwrite("dynamic_lookahead_margin", &search::SoloBeamConfig::dynamic_lookahead_margin)
+        .def_readwrite("eval_weights",             &search::SoloBeamConfig::eval_weights)
+        .def("recompute_beam_widths",              &search::SoloBeamConfig::recompute_beam_widths);
 
     pybind11::class_<search::VsBeamConfig>(m, "VsBeamConfig")
         .def(pybind11::init<>())
-        .def_readwrite("beam_width",            &search::VsBeamConfig::beam_width)
-        .def_readwrite("look_ahead",            &search::VsBeamConfig::look_ahead)
-        .def_readwrite("dbs_max_similar",       &search::VsBeamConfig::dbs_max_similar)
-        .def_readwrite("full_beam_depth",       &search::VsBeamConfig::full_beam_depth)
-        .def_readwrite("min_beam_width_ratio",   &search::VsBeamConfig::min_beam_width_ratio)
-        .def_readwrite("enable_attack_search",  &search::VsBeamConfig::enable_attack_search)
-        .def_readwrite("eval_weights",          &search::VsBeamConfig::eval_weights)
-        .def_readwrite("context",               &search::VsBeamConfig::context);
+        .def_readwrite("beam_width",               &search::VsBeamConfig::beam_width)
+        .def_readwrite("look_ahead",               &search::VsBeamConfig::look_ahead)
+        .def_readwrite("dbs_max_similar",          &search::VsBeamConfig::dbs_max_similar)
+        .def_readwrite("full_beam_depth",          &search::VsBeamConfig::full_beam_depth)
+        .def_readwrite("min_beam_width_ratio",     &search::VsBeamConfig::min_beam_width_ratio)
+        .def_readwrite("main_chain_threshold",     &search::VsBeamConfig::main_chain_threshold)
+        .def_readwrite("dynamic_lookahead_margin", &search::VsBeamConfig::dynamic_lookahead_margin)
+        .def_readwrite("enable_attack_search",     &search::VsBeamConfig::enable_attack_search)
+        .def_readwrite("eval_weights",             &search::VsBeamConfig::eval_weights)
+        .def_readwrite("context",                  &search::VsBeamConfig::context)
+        .def("recompute_beam_widths",              &search::VsBeamConfig::recompute_beam_widths);
 
     m.def("load_solo_config", &search::BeamConfigLoader::loadSolo, pybind11::arg("path"),
           "Load SoloBeamConfig from JSON");
@@ -264,6 +250,9 @@ PYBIND11_MODULE(puyotan_native, m) {
         pybind11::arg("player"), pybind11::arg("tsumo"),
         pybind11::arg("cfg"), pybind11::arg("session") = nullptr,
         "Run Solo beam search with a SoloBeamConfig. Returns (RL action index, expected score).");
+
+    m.def("get_best_leaf_field", &search::getBestLeafField,
+          "Get the best leaf node board from the most recent beam search.");
 
     // Pure VS beam search
     m.def(

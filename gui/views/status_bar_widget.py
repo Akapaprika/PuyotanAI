@@ -50,6 +50,7 @@ class StatusBarWidget(QWidget):
         seed_lbl.setStyleSheet("font-size: 9pt; color: #94a3b8;")
         seed_col.addWidget(seed_lbl)
         self._seed_spin = QDoubleSpinBox()
+        self._seed_spin.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._seed_spin.setDecimals(0)
         self._seed_spin.setRange(1, 2147483647)
         self._seed_spin.setValue(initial_seed)
@@ -69,6 +70,7 @@ class StatusBarWidget(QWidget):
         lbl.setStyleSheet("font-size: 9pt; color: #94a3b8;")
         speed_col.addWidget(lbl)
         self._interval_spin = QSpinBox()
+        self._interval_spin.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._interval_spin.setRange(1, 9999)
         self._interval_spin.setSingleStep(50)
         self._interval_spin.setValue(initial_interval_ms)
@@ -87,6 +89,7 @@ class StatusBarWidget(QWidget):
 
         # ── Right: restart button ────────────────────────────────────────
         self._restart_btn = QPushButton("⟳ RESTART")
+        self._restart_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._restart_btn.setStyleSheet("font-size: 9pt; font-weight: bold; padding: 4px 10px;")
         self._restart_btn.setToolTip("Restart the match from scratch")
         self._restart_btn.clicked.connect(self.restart_requested.emit)

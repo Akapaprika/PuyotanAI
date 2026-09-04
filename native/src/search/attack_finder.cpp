@@ -40,7 +40,8 @@ std::vector<AttackCandidate> collectAttackCandidates(
     current_layer.push_back({field, 0, -1, 0});
 
     for (int d = 0; d < max_depth; ++d) {
-        PuyoPiece piece = tsumo.get(tsumo_base + d);
+        int32_t piece_idx = tsumo_base + d;
+        PuyoPiece piece = tsumo.get(piece_idx);
         const bool is_zoro = (piece.axis == piece.sub);
         const auto& actions = is_zoro ? getZoroActions() : getPutActions();
 

@@ -10,18 +10,20 @@ class GameplayController:
     """
     KEY_BINDINGS = {
         0: {
-            "left":  Qt.Key.Key_Left,
-            "right": Qt.Key.Key_Right,
-            "rot_r": Qt.Key.Key_Up,
-            "rot_l": Qt.Key.Key_Z,
-            "drop":  Qt.Key.Key_Down,
-        },
-        1: {
+            # 1P (画面左): キーボード左側の WASD + Q
             "left":  Qt.Key.Key_A,
             "right": Qt.Key.Key_D,
             "rot_r": Qt.Key.Key_W,
             "rot_l": Qt.Key.Key_Q,
             "drop":  Qt.Key.Key_S,
+        },
+        1: {
+            # 2P (画面右): 矢印キー + ? (左回転) / _ (右回転) ※上キーは無反応
+            "left":  Qt.Key.Key_Left,
+            "right": Qt.Key.Key_Right,
+            "drop":  Qt.Key.Key_Down,
+            "rot_l": (Qt.Key.Key_Slash, Qt.Key.Key_Question),
+            "rot_r": (Qt.Key.Key_Backslash, Qt.Key.Key_Underscore),
         },
     }
 
@@ -44,8 +46,12 @@ class GameplayController:
         for pid, bindings in self.KEY_BINDINGS.items():
             if not self._is_human(pid):
                 continue
-            for action, bound_key in bindings.items():
-                if key == bound_key:
+            for action, bound_keys in bindings.items():
+                if isinstance(bound_keys, (list, tuple, set)):
+                    if key in bound_keys:
+                        self._dispatch(pid, action)
+                        return True
+                elif key == bound_keys:
                     self._dispatch(pid, action)
                     return True
         return False
