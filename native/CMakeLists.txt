@@ -86,7 +86,7 @@ if (MSVC)
                     /clang:-funroll-loops
                     /clang:-fvectorize
                     /clang:-ffast-math
-                    /clang:-mllvm /clang:-inline-threshold=300
+                    /clang:-mllvm /clang:-inline-threshold=225
                     -Wno-everything
                 >
             )
