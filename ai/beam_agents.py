@@ -94,7 +94,13 @@ class SoloBeamAgent(_BaseBeamAgent):
                  look_ahead: int | None = None,
                  dbs_max_similar: int | None = None) -> None:
         super().__init__(beam_width, look_ahead, dbs_max_similar)
+        self._pv_plan = p.SoloPvPlan() if hasattr(p, "SoloPvPlan") else None
         self.reload_config()
+
+    def reset(self) -> None:
+        super().reset()
+        if self._pv_plan is not None:
+            self._pv_plan.reset()
 
     def reload_config(self) -> None:
         cfg = p.load_solo_config(CONFIG_PATH)
@@ -107,7 +113,11 @@ class SoloBeamAgent(_BaseBeamAgent):
         cfg         = self._cfg
 
         def worker():
-            res = p.solo_beam_search(player_snap, tsumo_snap, cfg, self._session)
+            # 1手完全先読み + PVキャッシュ・計画追従 (PV-Guided Solo Beam Search)
+            if hasattr(p, "solo_beam_search_pv") and self._pv_plan is not None:
+                res = p.solo_beam_search_pv(player_snap, tsumo_snap, cfg, self._pv_plan)
+            else:
+                res = p.solo_beam_search(player_snap, tsumo_snap, cfg, self._session)
             self._store_result(res)
 
         self._launch(worker)
