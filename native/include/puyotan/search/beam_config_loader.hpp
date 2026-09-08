@@ -125,6 +125,8 @@ class BeamConfigLoader {
             cfg.pv_elite_count = section["pv_elite_count"].get<int>();
         if (section.contains("elite_keep") && section["elite_keep"].is_number_integer())
             cfg.elite_keep = section["elite_keep"].get<int>();
+        if (section.contains("micro_ply") && section["micro_ply"].is_number_integer())
+            cfg.micro_ply = std::max(1, section["micro_ply"].get<int>());
         if (section.contains("eval_weights") && section["eval_weights"].is_object())
             applyPatch(cfg.eval_weights, section["eval_weights"]);
         cfg.recompute_beam_widths();
@@ -156,6 +158,7 @@ class BeamConfigLoader {
         solo["dbs_max_similar"]          = cfg.dbs_max_similar;
         solo["pv_elite_count"]           = cfg.pv_elite_count;
         solo["elite_keep"]               = cfg.elite_keep;
+        solo["micro_ply"]                = cfg.micro_ply;
         solo["full_beam_depth"]          = cfg.full_beam_depth;
         solo["min_beam_width_ratio"]     = cfg.min_beam_width_ratio;
         solo["main_chain_threshold"]     = cfg.main_chain_threshold;

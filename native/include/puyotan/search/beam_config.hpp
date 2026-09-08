@@ -89,6 +89,7 @@ struct SoloBeamConfig {
     int   dbs_max_similar      = 0;
     int   pv_elite_count       = 1;
     int   elite_keep           = 0;  ///< DBS/dedup をスキップして無条件保護するTop-Nノード数 (0で無効)
+    int   micro_ply            = 1;  ///< 候補評価時に展開する手数 (1=ポテンシャル評価, 2=2手先見, 3+=N手先見)
     int   full_beam_depth        = 2;
     float min_beam_width_ratio   = 1.0f;
     int   main_chain_threshold   = 20000;

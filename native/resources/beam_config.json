@@ -10,6 +10,8 @@
     "pv_elite_count": 1,
     "_comment_elite_keep": "毎深さのビーム選定時にDBS/dedupを完全スキップして無条件保護するTop-Nノード数 (0で無効, 1〜20推奨)",
     "elite_keep": 10,
+    "_comment_micro_ply": "候補評価時に展開する手数。1=1手ポテンシャル評価(PV追従有効), 2=2手先見, 3=3手先見(計算量 22^N 倍)",
+    "micro_ply": 1,
     "_comment_full_beam_depth": "ビーム幅を100%保持する探索深さ（0〜N手目）",
     "full_beam_depth": 2,
     "_comment_min_beam_width_ratio": "最終手（look_ahead-1）時点でのビーム幅の到達比率 (1.0で減衰なし, 0.1で10%にテーパー縮小)",

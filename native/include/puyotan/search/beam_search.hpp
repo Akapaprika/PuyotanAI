@@ -14,18 +14,8 @@ std::pair<int, int32_t> soloBeamSearch(const PuyotanPlayer& player,
                                        const SoloBeamConfig& cfg,
                                        BeamSearchSession*   session = nullptr) noexcept;
 
-std::pair<int, int32_t> soloBeamSearchSliding2Ply(const PuyotanPlayer& player,
-                                                 const Tsumo&         tsumo,
-                                                 const SoloBeamConfig& cfg) noexcept;
-
-inline std::pair<int, int32_t> soloBeamSearch2Ply(const PuyotanPlayer& player,
-                                                  const Tsumo&         tsumo,
-                                                  const SoloBeamConfig& cfg) noexcept {
-    return soloBeamSearchSliding2Ply(player, tsumo, cfg);
-}
-
 /**
- * @brief Runs a 1-ply beam search with PV (Principal Variation) caching and plan-following for Solo mode.
+ * @brief Runs a micro_ply beam search with PV (Principal Variation) caching and plan-following for Solo mode.
  */
 std::pair<int, int32_t> soloBeamSearchPV(const PuyotanPlayer& player,
                                         const Tsumo&         tsumo,
