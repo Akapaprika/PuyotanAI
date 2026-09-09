@@ -168,6 +168,15 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("isStagnated", &search::BeamSearchSession::isStagnated)
         .def("reset", &search::BeamSearchSession::reset);
 
+    // SoloPvPlan (multi-turn PV route tracking and plan commitment)
+    pybind11::class_<search::SoloPvPlan>(m, "SoloPvPlan")
+        .def(pybind11::init<>())
+        .def("reset", &search::SoloPvPlan::reset)
+        .def("has_plan", &search::SoloPvPlan::has_plan)
+        .def("best_score", &search::SoloPvPlan::best_score)
+        .def_readonly("planned_tsumo_pos", &search::SoloPvPlan::planned_tsumo_pos)
+        .def_readonly("occupied_at_build", &search::SoloPvPlan::occupied_at_build);
+
     // VsEvalContext (live match state snapshot for VS evaluation)
     pybind11::class_<search::VsEvalContext>(m, "VsEvalContext")
         .def(pybind11::init<>())
@@ -210,6 +219,9 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("beam_width",               &search::SoloBeamConfig::beam_width)
         .def_readwrite("look_ahead",               &search::SoloBeamConfig::look_ahead)
         .def_readwrite("dbs_max_similar",          &search::SoloBeamConfig::dbs_max_similar)
+        .def_readwrite("pv_elite_count",           &search::SoloBeamConfig::pv_elite_count)
+        .def_readwrite("elite_keep",               &search::SoloBeamConfig::elite_keep)
+        .def_readwrite("micro_ply",                &search::SoloBeamConfig::micro_ply)
         .def_readwrite("full_beam_depth",          &search::SoloBeamConfig::full_beam_depth)
         .def_readwrite("min_beam_width_ratio",     &search::SoloBeamConfig::min_beam_width_ratio)
         .def_readwrite("main_chain_threshold",     &search::SoloBeamConfig::main_chain_threshold)
@@ -250,6 +262,19 @@ PYBIND11_MODULE(puyotan_native, m) {
         pybind11::arg("player"), pybind11::arg("tsumo"),
         pybind11::arg("cfg"), pybind11::arg("session") = nullptr,
         "Run Solo beam search with a SoloBeamConfig. Returns (RL action index, expected score).");
+
+    // Solo beam search with PV cache & plan-following
+    m.def(
+        "solo_beam_search_pv",
+        [](const PuyotanPlayer& player, const Tsumo& tsumo,
+           const search::SoloBeamConfig& cfg,
+           search::SoloPvPlan* plan) {
+            pybind11::gil_scoped_release release;
+            return search::soloBeamSearchPV(player, tsumo, cfg, plan);
+        },
+        pybind11::arg("player"), pybind11::arg("tsumo"),
+        pybind11::arg("cfg"), pybind11::arg("plan") = nullptr,
+        "Run Solo 1-Ply beam search with PV cache & plan-following. Returns (RL action index, expected score).");
 
     m.def("get_best_leaf_field", &search::getBestLeafField,
           "Get the best leaf node board from the most recent beam search.");

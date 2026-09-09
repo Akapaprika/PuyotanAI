@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <vector>
 #include <puyotan/search/eval_weights.hpp>
 
 namespace puyotan::search {
@@ -48,6 +49,39 @@ struct BeamSearchSession {
 };
 
 /**
+ * @struct SoloPvRoute
+ * @brief Represents a single planned Principal Variation (PV) action sequence.
+ */
+struct SoloPvRoute {
+    std::vector<uint8_t> actions;   ///< Flat RL action indices from root depth to leaf
+    int32_t              score = 0; ///< Expected potential/accum score at leaf
+};
+
+/**
+ * @struct SoloPvPlan
+ * @brief Multi-turn PV plan cache and tracker for Solo beam search.
+ */
+struct SoloPvPlan {
+    std::vector<SoloPvRoute> routes;
+    int                      planned_tsumo_pos = -1;
+    int                      occupied_at_build = 0;
+
+    void reset() noexcept {
+        routes.clear();
+        planned_tsumo_pos = -1;
+        occupied_at_build = 0;
+    }
+
+    [[nodiscard]] bool has_plan() const noexcept {
+        return !routes.empty() && planned_tsumo_pos >= 0;
+    }
+
+    [[nodiscard]] int32_t best_score() const noexcept {
+        return routes.empty() ? 0 : routes[0].score;
+    }
+};
+
+/**
  * @struct SoloBeamConfig
  * @brief Parameters controlling solo beam search behaviour.
  */
@@ -55,6 +89,9 @@ struct SoloBeamConfig {
     int   beam_width           = 500;
     int   look_ahead           = 3;
     int   dbs_max_similar      = 0;
+    int   pv_elite_count       = 1;
+    int   elite_keep           = 0;  ///< DBS/dedup をスキップして無条件保護するTop-Nノード数 (0で無効)
+    int   micro_ply            = 1;  ///< 候補評価時に展開する手数 (1=ポテンシャル評価, 2=2手先見, 3+=N手先見)
     int   full_beam_depth        = 2;
     float min_beam_width_ratio   = 1.0f;
     int   main_chain_threshold   = 20000;

@@ -15,6 +15,14 @@ std::pair<int, int32_t> soloBeamSearch(const PuyotanPlayer& player,
                                        BeamSearchSession*   session = nullptr) noexcept;
 
 /**
+ * @brief Runs a micro_ply beam search with PV (Principal Variation) caching and plan-following for Solo mode.
+ */
+std::pair<int, int32_t> soloBeamSearchPV(const PuyotanPlayer& player,
+                                        const Tsumo&         tsumo,
+                                        const SoloBeamConfig& cfg,
+                                        SoloPvPlan*          plan = nullptr) noexcept;
+
+/**
  * @brief Runs a beam search from the given player state and returns the best RL action index and its expected score for VS mode.
  */
 std::pair<int, int32_t> vsBeamSearch(const PuyotanPlayer& player,
