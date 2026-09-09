@@ -90,7 +90,8 @@ struct SoloBeamConfig {
     int   look_ahead           = 3;
     int   dbs_max_similar      = 0;
     int   dbs_max_similar_end  = 0;     ///< DBS終盤到達許容件数 (0で無効・固定値運用)
-    int   dbs_ramp_depth       = 0;     ///< DBSが終盤許容値に到達する深さ (0で無効)
+    int   dbs_empty_threshold_high = 55; ///< DBSが開始値(最小)となる空きマス数の閾値 (78マス中)
+    int   dbs_empty_threshold_low  = 18; ///< DBSが終盤値(最大)となる空きマス数の閾値 (78マス中)
     bool  dbs_auto_fill        = true;  ///< ビーム枠が埋まらなかった場合にDBSを自動緩和して埋めるか
     int   pv_elite_count       = 1;
     int   elite_keep           = 0;  ///< DBS/dedup をスキップして無条件保護するTop-Nノード数 (0で無効)
@@ -104,20 +105,30 @@ struct SoloBeamConfig {
 
     SoloBeamConfig() noexcept { recompute_beam_widths(); }
 
-    [[nodiscard]] int get_dbs_limit(int depth) const noexcept {
+    [[nodiscard]] int get_dbs_limit_by_empty(int empty_cells) const noexcept {
         if (dbs_max_similar <= 0) return 0;
-        if (dbs_max_similar_end <= dbs_max_similar || dbs_ramp_depth <= 0) {
+        if (dbs_max_similar_end <= dbs_max_similar) {
             return dbs_max_similar;
         }
-        const int progress = std::min(depth, dbs_ramp_depth);
-        return dbs_max_similar + (dbs_max_similar_end - dbs_max_similar) * progress / dbs_ramp_depth;
+        if (empty_cells >= dbs_empty_threshold_high) return dbs_max_similar;
+        if (empty_cells <= dbs_empty_threshold_low)  return dbs_max_similar_end;
+
+        const int span = dbs_empty_threshold_high - dbs_empty_threshold_low;
+        if (span <= 0) return dbs_max_similar_end;
+
+        const int progress = dbs_empty_threshold_high - empty_cells;
+        return dbs_max_similar + (dbs_max_similar_end - dbs_max_similar) * progress / span;
     }
 
     void recompute_beam_widths() noexcept {
         look_ahead = std::clamp(look_ahead, 1, 64);
         dbs_max_similar = std::clamp(dbs_max_similar, 0, 65535);
         dbs_max_similar_end = std::clamp(dbs_max_similar_end, 0, 65535);
-        dbs_ramp_depth = std::clamp(dbs_ramp_depth, 0, 64);
+        dbs_empty_threshold_high = std::clamp(dbs_empty_threshold_high, 0, 78);
+        dbs_empty_threshold_low  = std::clamp(dbs_empty_threshold_low, 0, 78);
+        if (dbs_empty_threshold_low > dbs_empty_threshold_high) {
+            std::swap(dbs_empty_threshold_low, dbs_empty_threshold_high);
+        }
         const int max_lookahead = look_ahead;
         if (min_beam_width_ratio < 1.0f && look_ahead > 1) {
             const float max_decay_steps = static_cast<float>(look_ahead - 1 - full_beam_depth);
@@ -146,7 +157,8 @@ struct VsBeamConfig {
     int   look_ahead           = 3;
     int   dbs_max_similar      = 0;
     int   dbs_max_similar_end  = 0;
-    int   dbs_ramp_depth       = 0;
+    int   dbs_empty_threshold_high = 55;
+    int   dbs_empty_threshold_low  = 18;
     bool  dbs_auto_fill        = true;
     int   full_beam_depth        = 2;
     float min_beam_width_ratio   = 1.0f;
@@ -159,20 +171,30 @@ struct VsBeamConfig {
 
     VsBeamConfig() noexcept { recompute_beam_widths(); }
 
-    [[nodiscard]] int get_dbs_limit(int depth) const noexcept {
+    [[nodiscard]] int get_dbs_limit_by_empty(int empty_cells) const noexcept {
         if (dbs_max_similar <= 0) return 0;
-        if (dbs_max_similar_end <= dbs_max_similar || dbs_ramp_depth <= 0) {
+        if (dbs_max_similar_end <= dbs_max_similar) {
             return dbs_max_similar;
         }
-        const int progress = std::min(depth, dbs_ramp_depth);
-        return dbs_max_similar + (dbs_max_similar_end - dbs_max_similar) * progress / dbs_ramp_depth;
+        if (empty_cells >= dbs_empty_threshold_high) return dbs_max_similar;
+        if (empty_cells <= dbs_empty_threshold_low)  return dbs_max_similar_end;
+
+        const int span = dbs_empty_threshold_high - dbs_empty_threshold_low;
+        if (span <= 0) return dbs_max_similar_end;
+
+        const int progress = dbs_empty_threshold_high - empty_cells;
+        return dbs_max_similar + (dbs_max_similar_end - dbs_max_similar) * progress / span;
     }
 
     void recompute_beam_widths() noexcept {
         look_ahead = std::clamp(look_ahead, 1, 64);
         dbs_max_similar = std::clamp(dbs_max_similar, 0, 65535);
         dbs_max_similar_end = std::clamp(dbs_max_similar_end, 0, 65535);
-        dbs_ramp_depth = std::clamp(dbs_ramp_depth, 0, 64);
+        dbs_empty_threshold_high = std::clamp(dbs_empty_threshold_high, 0, 78);
+        dbs_empty_threshold_low  = std::clamp(dbs_empty_threshold_low, 0, 78);
+        if (dbs_empty_threshold_low > dbs_empty_threshold_high) {
+            std::swap(dbs_empty_threshold_low, dbs_empty_threshold_high);
+        }
         const int max_lookahead = look_ahead;
         if (min_beam_width_ratio < 1.0f && look_ahead > 1) {
             const float max_decay_steps = static_cast<float>(look_ahead - 1 - full_beam_depth);
@@ -201,7 +223,8 @@ struct MatchBeamConfig {
     int   look_ahead           = 5;
     int   dbs_max_similar      = 0;
     int   dbs_max_similar_end  = 0;
-    int   dbs_ramp_depth       = 0;
+    int   dbs_empty_threshold_high = 55;
+    int   dbs_empty_threshold_low  = 18;
     bool  dbs_auto_fill        = true;
     int   full_beam_depth        = 2;
     float min_beam_width_ratio   = 1.0f;
@@ -212,20 +235,30 @@ struct MatchBeamConfig {
 
     MatchBeamConfig() noexcept { recompute_beam_widths(); }
 
-    [[nodiscard]] int get_dbs_limit(int depth) const noexcept {
+    [[nodiscard]] int get_dbs_limit_by_empty(int empty_cells) const noexcept {
         if (dbs_max_similar <= 0) return 0;
-        if (dbs_max_similar_end <= dbs_max_similar || dbs_ramp_depth <= 0) {
+        if (dbs_max_similar_end <= dbs_max_similar) {
             return dbs_max_similar;
         }
-        const int progress = std::min(depth, dbs_ramp_depth);
-        return dbs_max_similar + (dbs_max_similar_end - dbs_max_similar) * progress / dbs_ramp_depth;
+        if (empty_cells >= dbs_empty_threshold_high) return dbs_max_similar;
+        if (empty_cells <= dbs_empty_threshold_low)  return dbs_max_similar_end;
+
+        const int span = dbs_empty_threshold_high - dbs_empty_threshold_low;
+        if (span <= 0) return dbs_max_similar_end;
+
+        const int progress = dbs_empty_threshold_high - empty_cells;
+        return dbs_max_similar + (dbs_max_similar_end - dbs_max_similar) * progress / span;
     }
 
     void recompute_beam_widths() noexcept {
         look_ahead = std::clamp(look_ahead, 1, 64);
         dbs_max_similar = std::clamp(dbs_max_similar, 0, 65535);
         dbs_max_similar_end = std::clamp(dbs_max_similar_end, 0, 65535);
-        dbs_ramp_depth = std::clamp(dbs_ramp_depth, 0, 64);
+        dbs_empty_threshold_high = std::clamp(dbs_empty_threshold_high, 0, 78);
+        dbs_empty_threshold_low  = std::clamp(dbs_empty_threshold_low, 0, 78);
+        if (dbs_empty_threshold_low > dbs_empty_threshold_high) {
+            std::swap(dbs_empty_threshold_low, dbs_empty_threshold_high);
+        }
         const int max_lookahead = look_ahead;
         if (min_beam_width_ratio < 1.0f && look_ahead > 1) {
             const float max_decay_steps = static_cast<float>(look_ahead - 1 - full_beam_depth);

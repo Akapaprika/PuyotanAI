@@ -123,6 +123,17 @@ struct PlaceResult {
     bool dead;
 };
 
+// 6列 × 4bit の各列高さを合算 (1ns未満のビット演算)
+[[nodiscard]] __forceinline int countOccupiedFromHeights(uint32_t h) noexcept {
+    return (h & 0xFu) + ((h >> 4) & 0xFu) + ((h >> 8) & 0xFu) +
+           ((h >> 12) & 0xFu) + ((h >> 16) & 0xFu) + ((h >> 20) & 0xFu);
+}
+
+// 78マス基準の真の空きマス数
+[[nodiscard]] __forceinline int getEmptyCellsFromHeights(uint32_t h) noexcept {
+    return std::max(0, 78 - countOccupiedFromHeights(h));
+}
+
 // =========================================================================
 // simulatePlacement: 連鎖シミュレーション (ルール完全準拠)
 // =========================================================================
@@ -399,8 +410,8 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
             return a.score > b.score;
         };
 
-        const int dbs_limit = (static_cast<int>(tl_candidates.size()) > target_beam_width) ? cfg.get_dbs_limit(depth) : 0;
-        if (dbs_limit >= 1) {
+        const bool dbs_active = (static_cast<int>(tl_candidates.size()) > target_beam_width) && (cfg.dbs_max_similar >= 1 || cfg.dbs_max_similar_end >= 1);
+        if (dbs_active) {
             tl_dbs_table.clear();
         }
 
@@ -429,8 +440,10 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
                 if (tl_depth_dedup.checkAndInsert(item.hash))
                     continue;
 
-                if (dbs_limit >= 1) {
-                    if (tl_dbs_table.get_and_inc(item.packed_heights) >= dbs_limit) {
+                if (dbs_active) {
+                    const int empty_cells = getEmptyCellsFromHeights(item.packed_heights);
+                    const int cand_dbs_limit = cfg.get_dbs_limit_by_empty(empty_cells);
+                    if (cand_dbs_limit >= 1 && tl_dbs_table.get_and_inc(item.packed_heights) >= cand_dbs_limit) {
                         item._pad[1] = 1; // DBSでのみ弾かれた有効なユニーク盤面
                         continue;
                     }
@@ -721,8 +734,8 @@ std::pair<int, int32_t> soloBeamSearchPV(const PuyotanPlayer& player,
         tl_current_beam.clear();
         tl_pv_tree_trace[depth].clear();
 
-        const int dbs_limit = (static_cast<int>(tl_candidates.size()) > target_beam_width) ? cfg.get_dbs_limit(depth) : 0;
-        if (dbs_limit >= 1) {
+        const bool dbs_active = (static_cast<int>(tl_candidates.size()) > target_beam_width) && (cfg.dbs_max_similar >= 1 || cfg.dbs_max_similar_end >= 1);
+        if (dbs_active) {
             tl_dbs_table.clear();
         }
 
@@ -768,7 +781,7 @@ std::pair<int, int32_t> soloBeamSearchPV(const PuyotanPlayer& player,
                     tl_depth_dedup.checkAndInsert(item.hash);
                 }
 
-                if (dbs_limit >= 1) {
+                if (dbs_active) {
                     tl_dbs_table.get_and_inc(item.packed_heights);
                 }
 
@@ -786,13 +799,17 @@ std::pair<int, int32_t> soloBeamSearchPV(const PuyotanPlayer& player,
             const bool is_pv_elite = (item._pad[0] != 0);
             if (!is_pv_elite) {
                 if (tl_depth_dedup.checkAndInsert(item.hash)) continue;
-                if (dbs_limit >= 1 && tl_dbs_table.get_and_inc(item.packed_heights) >= dbs_limit) {
-                    item._pad[1] = 1; // DBSでのみ弾かれた有効なユニーク盤面
-                    continue;
+                if (dbs_active) {
+                    const int empty_cells = getEmptyCellsFromHeights(item.packed_heights);
+                    const int cand_dbs_limit = cfg.get_dbs_limit_by_empty(empty_cells);
+                    if (cand_dbs_limit >= 1 && tl_dbs_table.get_and_inc(item.packed_heights) >= cand_dbs_limit) {
+                        item._pad[1] = 1; // DBSでのみ弾かれた有効なユニーク盤面
+                        continue;
+                    }
                 }
             } else {
                 tl_depth_dedup.checkAndInsert(item.hash);
-                if (dbs_limit >= 1) {
+                if (dbs_active) {
                     tl_dbs_table.get_and_inc(item.packed_heights);
                 }
             }

@@ -82,7 +82,8 @@ class BeamConfigLoader {
         getInt  ("look_ahead",               cfg.look_ahead);
         getInt  ("dbs_max_similar",          cfg.dbs_max_similar);
         getInt  ("dbs_max_similar_end",      cfg.dbs_max_similar_end);
-        getInt  ("dbs_ramp_depth",           cfg.dbs_ramp_depth);
+        getInt  ("dbs_empty_threshold_high", cfg.dbs_empty_threshold_high);
+        getInt  ("dbs_empty_threshold_low",  cfg.dbs_empty_threshold_low);
         getBool ("dbs_auto_fill",            cfg.dbs_auto_fill);
         getInt  ("full_beam_depth",          cfg.full_beam_depth);
         getFloat("min_beam_width_ratio",     cfg.min_beam_width_ratio);
@@ -194,7 +195,8 @@ class BeamConfigLoader {
         solo["look_ahead"]               = cfg.look_ahead;
         solo["dbs_max_similar"]          = cfg.dbs_max_similar;
         solo["dbs_max_similar_end"]      = cfg.dbs_max_similar_end;
-        solo["dbs_ramp_depth"]           = cfg.dbs_ramp_depth;
+        solo["dbs_empty_threshold_high"] = cfg.dbs_empty_threshold_high;
+        solo["dbs_empty_threshold_low"]  = cfg.dbs_empty_threshold_low;
         solo["dbs_auto_fill"]            = cfg.dbs_auto_fill;
         solo["pv_elite_count"]           = cfg.pv_elite_count;
         solo["elite_keep"]               = cfg.elite_keep;
@@ -220,7 +222,8 @@ class BeamConfigLoader {
         vs["look_ahead"]               = cfg.look_ahead;
         vs["dbs_max_similar"]          = cfg.dbs_max_similar;
         vs["dbs_max_similar_end"]      = cfg.dbs_max_similar_end;
-        vs["dbs_ramp_depth"]           = cfg.dbs_ramp_depth;
+        vs["dbs_empty_threshold_high"] = cfg.dbs_empty_threshold_high;
+        vs["dbs_empty_threshold_low"]  = cfg.dbs_empty_threshold_low;
         vs["dbs_auto_fill"]            = cfg.dbs_auto_fill;
         vs["full_beam_depth"]          = cfg.full_beam_depth;
         vs["min_beam_width_ratio"]     = cfg.min_beam_width_ratio;
@@ -256,7 +259,8 @@ class BeamConfigLoader {
         match_sec["look_ahead"]               = cfg.look_ahead;
         match_sec["dbs_max_similar"]          = cfg.dbs_max_similar;
         match_sec["dbs_max_similar_end"]      = cfg.dbs_max_similar_end;
-        match_sec["dbs_ramp_depth"]           = cfg.dbs_ramp_depth;
+        match_sec["dbs_empty_threshold_high"] = cfg.dbs_empty_threshold_high;
+        match_sec["dbs_empty_threshold_low"]  = cfg.dbs_empty_threshold_low;
         match_sec["dbs_auto_fill"]            = cfg.dbs_auto_fill;
         match_sec["full_beam_depth"]          = cfg.full_beam_depth;
         match_sec["min_beam_width_ratio"]     = cfg.min_beam_width_ratio;
