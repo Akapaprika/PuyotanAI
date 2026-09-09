@@ -174,7 +174,8 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def("reset", &search::SoloPvPlan::reset)
         .def("has_plan", &search::SoloPvPlan::has_plan)
         .def("best_score", &search::SoloPvPlan::best_score)
-        .def_readonly("planned_tsumo_pos", &search::SoloPvPlan::planned_tsumo_pos);
+        .def_readonly("planned_tsumo_pos", &search::SoloPvPlan::planned_tsumo_pos)
+        .def_readonly("occupied_at_build", &search::SoloPvPlan::occupied_at_build);
 
     // VsEvalContext (live match state snapshot for VS evaluation)
     pybind11::class_<search::VsEvalContext>(m, "VsEvalContext")

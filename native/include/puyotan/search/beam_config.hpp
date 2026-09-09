@@ -64,10 +64,12 @@ struct SoloPvRoute {
 struct SoloPvPlan {
     std::vector<SoloPvRoute> routes;
     int                      planned_tsumo_pos = -1;
+    int                      occupied_at_build = 0;
 
     void reset() noexcept {
         routes.clear();
         planned_tsumo_pos = -1;
+        occupied_at_build = 0;
     }
 
     [[nodiscard]] bool has_plan() const noexcept {

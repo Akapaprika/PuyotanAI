@@ -519,8 +519,10 @@ std::pair<int, int32_t> soloBeamSearchPV(const PuyotanPlayer& player,
 
     if (plan && plan->has_plan()) {
         const int occupied_now = player.field.getOccupied().popcount();
-        if (cfg.main_chain_threshold > 0 && occupied_now < 16 && plan->best_score() >= cfg.main_chain_threshold) {
-            // 盤面がほぼ更地なのに前回の本線高得点計画が残っている場合はセカンド開始のためリセット
+        const bool chain_fired = (plan->occupied_at_build >= 32) &&
+                                 (plan->occupied_at_build - occupied_now >= 16);
+        if (cfg.main_chain_threshold > 0 && chain_fired && plan->best_score() >= cfg.main_chain_threshold) {
+            // 大連鎖が発火して盤面のぷよが急減したため、セカンド開始に向けて古い計画をリセット
             plan->reset();
         }
     }
@@ -841,8 +843,10 @@ std::pair<int, int32_t> soloBeamSearchPV(const PuyotanPlayer& player,
         }
         if (!plan->routes.empty()) {
             plan->planned_tsumo_pos = tsumo_base + 1;
+            plan->occupied_at_build = player.field.getOccupied().popcount();
         } else {
             plan->planned_tsumo_pos = -1;
+            plan->occupied_at_build = 0;
         }
     }
 
