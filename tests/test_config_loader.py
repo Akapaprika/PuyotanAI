@@ -19,6 +19,12 @@ def test_load_solo_config():
     assert cfg.look_ahead > 0
     assert hasattr(cfg, "full_beam_depth")
     assert hasattr(cfg, "min_beam_width_ratio")
+    assert hasattr(cfg, "dbs_max_similar_end")
+    assert hasattr(cfg, "dbs_ramp_depth")
+    assert hasattr(cfg, "dbs_auto_fill")
+    assert hasattr(cfg, "get_dbs_limit")
+    assert cfg.dbs_auto_fill is True
+    assert cfg.get_dbs_limit(0) == cfg.dbs_max_similar
 
 def test_load_vs_config():
     cfg = p.load_vs_config(_CONFIG_PATH)

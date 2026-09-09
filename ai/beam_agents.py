@@ -39,10 +39,16 @@ class _BaseBeamAgent(_AsyncSearchMixin, BasePlayerAgent):
     def __init__(self,
                  beam_width: int | None = None,
                  look_ahead: int | None = None,
-                 dbs_max_similar: int | None = None) -> None:
+                 dbs_max_similar: int | None = None,
+                 dbs_max_similar_end: int | None = None,
+                 dbs_ramp_depth: int | None = None,
+                 dbs_auto_fill: bool | None = None) -> None:
         self._beam_width = beam_width
         self._look_ahead = look_ahead
         self._dbs_max_similar = dbs_max_similar
+        self._dbs_max_similar_end = dbs_max_similar_end
+        self._dbs_ramp_depth = dbs_ramp_depth
+        self._dbs_auto_fill = dbs_auto_fill
         self._session = p.BeamSearchSession()
         self._last_result: tuple[int, float] | None = None
         self._cfg: Any = None
@@ -55,6 +61,12 @@ class _BaseBeamAgent(_AsyncSearchMixin, BasePlayerAgent):
             cfg.look_ahead = self._look_ahead
         if self._dbs_max_similar is not None and self._dbs_max_similar >= 0:
             cfg.dbs_max_similar = self._dbs_max_similar
+        if self._dbs_max_similar_end is not None and self._dbs_max_similar_end >= 0 and hasattr(cfg, 'dbs_max_similar_end'):
+            cfg.dbs_max_similar_end = self._dbs_max_similar_end
+        if self._dbs_ramp_depth is not None and self._dbs_ramp_depth >= 0 and hasattr(cfg, 'dbs_ramp_depth'):
+            cfg.dbs_ramp_depth = self._dbs_ramp_depth
+        if self._dbs_auto_fill is not None and hasattr(cfg, 'dbs_auto_fill'):
+            cfg.dbs_auto_fill = self._dbs_auto_fill
         if hasattr(cfg, 'recompute_beam_widths'):
             cfg.recompute_beam_widths()
 

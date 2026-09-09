@@ -262,7 +262,7 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
     tl_candidates.clear();
     tl_candidates.reserve(static_cast<std::size_t>(cfg.beam_width) * kNumRLActions);
 
-    if (cfg.dbs_max_similar >= 1) {
+    if (cfg.dbs_max_similar >= 1 || cfg.dbs_max_similar_end >= 1) {
         tl_dbs_table.ensure_capacity(static_cast<std::size_t>(cfg.beam_width));
     }
 
@@ -399,7 +399,8 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
             return a.score > b.score;
         };
 
-        if (cfg.dbs_max_similar >= 1) {
+        const int dbs_limit = (static_cast<int>(tl_candidates.size()) > target_beam_width) ? cfg.get_dbs_limit(depth) : 0;
+        if (dbs_limit >= 1) {
             tl_dbs_table.clear();
         }
 
@@ -424,23 +425,37 @@ std::pair<int, int32_t> beamSearchImpl(const PuyotanPlayer& player,
                       candidate_cmp);
 
             for (size_t i = processed_end; i < next_end; ++i) {
-                const auto& item = tl_candidates[i];
+                auto& item = tl_candidates[i];
                 if (tl_depth_dedup.checkAndInsert(item.hash))
                     continue;
 
-                if (cfg.dbs_max_similar >= 1) {
-                    if (tl_dbs_table.get_and_inc(item.packed_heights) >= cfg.dbs_max_similar) {
+                if (dbs_limit >= 1) {
+                    if (tl_dbs_table.get_and_inc(item.packed_heights) >= dbs_limit) {
+                        item._pad[1] = 1; // DBSでのみ弾かれた有効なユニーク盤面
                         continue;
                     }
                 }
 
                 instantiate_node(item);
+                item._pad[1] = 2; // 採用済み
                 if (static_cast<int>(tl_current_beam.size()) == keep) {
                     break;
                 }
             }
 
             processed_end = next_end;
+        }
+
+        // 枯渇時フォールバック（DBS で弾かれた次点候補でビーム枠を100%埋める）
+        if (cfg.dbs_auto_fill && static_cast<int>(tl_current_beam.size()) < keep) {
+            for (size_t i = 0; i < processed_end; ++i) {
+                if (static_cast<int>(tl_current_beam.size()) >= keep) break;
+                auto& item = tl_candidates[i];
+                if (item._pad[1] == 1) {
+                    instantiate_node(item);
+                    item._pad[1] = 2;
+                }
+            }
         }
     }
 
@@ -562,7 +577,7 @@ std::pair<int, int32_t> soloBeamSearchPV(const PuyotanPlayer& player,
     tl_candidates.clear();
     tl_candidates.reserve(static_cast<std::size_t>(cfg.beam_width) * kNumRLActions);
 
-    if (cfg.dbs_max_similar >= 1) {
+    if (cfg.dbs_max_similar >= 1 || cfg.dbs_max_similar_end >= 1) {
         tl_dbs_table.ensure_capacity(static_cast<std::size_t>(cfg.beam_width));
     }
 
@@ -706,7 +721,8 @@ std::pair<int, int32_t> soloBeamSearchPV(const PuyotanPlayer& player,
         tl_current_beam.clear();
         tl_pv_tree_trace[depth].clear();
 
-        if (cfg.dbs_max_similar >= 1) {
+        const int dbs_limit = (static_cast<int>(tl_candidates.size()) > target_beam_width) ? cfg.get_dbs_limit(depth) : 0;
+        if (dbs_limit >= 1) {
             tl_dbs_table.clear();
         }
 
@@ -716,66 +732,7 @@ std::pair<int, int32_t> soloBeamSearchPV(const PuyotanPlayer& player,
             return a.action_idx < b.action_idx;
         });
 
-        // ★ Phase 1: elite_keep 枠 — DBS を完全スキップして上位N個を無条件保護
-        const int elite_n = std::min(cfg.elite_keep, keep);
-        int elite_added = 0;
-        if (elite_n > 0) {
-            for (const auto& item : tl_candidates) {
-                if (elite_added >= elite_n) break;
-                const bool is_pv = (item._pad[0] != 0);
-                if (!is_pv) {
-                    if (tl_depth_dedup.checkAndInsert(item.hash)) continue;
-                } else {
-                    tl_depth_dedup.checkAndInsert(item.hash);
-                }
-
-                if (cfg.dbs_max_similar >= 1) {
-                    tl_dbs_table.get_and_inc(item.packed_heights);
-                }
-
-                const auto& parent = tl_prev_beam[item.parent_idx];
-                const auto& act = actions[item.action_idx];
-                PlaceResult pr;
-                simulatePlacement(parent.field, piece, act, parent.packed_heights(), pr);
-
-                int first = (depth == 0) ? act.idx : parent.first_action();
-                int32_t next_accum = parent.accum_score() + (parent.has_fired_main() ? 0 : static_cast<int32_t>(pr.score));
-
-                const uint32_t new_node_idx = static_cast<uint32_t>(tl_current_beam.size());
-                tl_current_beam.emplace_back(pr.field, next_accum, first, item.packed_heights, item.hash, item.has_fired_main);
-                tl_pv_tree_trace[depth].push_back({ item.parent_idx, static_cast<uint8_t>(act.idx) });
-
-                // PVノードなら追跡インデックスも更新
-                if (is_pv) {
-                    const int r = static_cast<int>(item._pad[0]) - 1;
-                    if (r >= 0 && r < static_cast<int>(next_pv_target_parent_idx.size())) {
-                        if (next_pv_target_parent_idx[r] == -1) {
-                            next_pv_target_parent_idx[r] = static_cast<int>(new_node_idx);
-                        }
-                    }
-                }
-
-                ++elite_added;
-            }
-        }
-
-        // ★ Phase 2: 残り枠 — PV elite（DBS スキップ）＋ 通常フィルタ
-        for (const auto& item : tl_candidates) {
-            if (static_cast<int>(tl_current_beam.size()) >= keep) break;
-            const bool is_pv_elite = (item._pad[0] != 0);
-
-            if (!is_pv_elite) {
-                if (tl_depth_dedup.checkAndInsert(item.hash)) continue;
-                if (cfg.dbs_max_similar >= 1 && tl_dbs_table.get_and_inc(item.packed_heights) >= cfg.dbs_max_similar) {
-                    continue;
-                }
-            } else {
-                tl_depth_dedup.checkAndInsert(item.hash);
-                if (cfg.dbs_max_similar >= 1) {
-                    tl_dbs_table.get_and_inc(item.packed_heights);
-                }
-            }
-
+        auto instantiate_node = [&](const CandidateNode& item, bool is_pv_elite) {
             const auto& parent = tl_prev_beam[item.parent_idx];
             const auto& act = actions[item.action_idx];
             PlaceResult pr;
@@ -794,6 +751,63 @@ std::pair<int, int32_t> soloBeamSearchPV(const PuyotanPlayer& player,
                     if (next_pv_target_parent_idx[r] == -1) {
                         next_pv_target_parent_idx[r] = static_cast<int>(new_node_idx);
                     }
+                }
+            }
+        };
+
+        // ★ Phase 1: elite_keep 枠 — DBS を完全スキップして上位N個を無条件保護
+        const int elite_n = std::min(cfg.elite_keep, keep);
+        int elite_added = 0;
+        if (elite_n > 0) {
+            for (auto& item : tl_candidates) {
+                if (elite_added >= elite_n) break;
+                const bool is_pv = (item._pad[0] != 0);
+                if (!is_pv) {
+                    if (tl_depth_dedup.checkAndInsert(item.hash)) continue;
+                } else {
+                    tl_depth_dedup.checkAndInsert(item.hash);
+                }
+
+                if (dbs_limit >= 1) {
+                    tl_dbs_table.get_and_inc(item.packed_heights);
+                }
+
+                instantiate_node(item, is_pv);
+                item._pad[1] = 2;
+                ++elite_added;
+            }
+        }
+
+        // ★ Phase 2: 残り枠 — PV elite（DBS スキップ）＋ 通常フィルタ
+        for (auto& item : tl_candidates) {
+            if (static_cast<int>(tl_current_beam.size()) >= keep) break;
+            if (item._pad[1] == 2) continue;
+
+            const bool is_pv_elite = (item._pad[0] != 0);
+            if (!is_pv_elite) {
+                if (tl_depth_dedup.checkAndInsert(item.hash)) continue;
+                if (dbs_limit >= 1 && tl_dbs_table.get_and_inc(item.packed_heights) >= dbs_limit) {
+                    item._pad[1] = 1; // DBSでのみ弾かれた有効なユニーク盤面
+                    continue;
+                }
+            } else {
+                tl_depth_dedup.checkAndInsert(item.hash);
+                if (dbs_limit >= 1) {
+                    tl_dbs_table.get_and_inc(item.packed_heights);
+                }
+            }
+
+            instantiate_node(item, is_pv_elite);
+            item._pad[1] = 2;
+        }
+
+        // ★ Phase 3: 枯渇時フォールバック（DBS で弾かれた次点候補でビーム枠を100%埋める）
+        if (cfg.dbs_auto_fill && static_cast<int>(tl_current_beam.size()) < keep) {
+            for (auto& item : tl_candidates) {
+                if (static_cast<int>(tl_current_beam.size()) >= keep) break;
+                if (item._pad[1] == 1) {
+                    instantiate_node(item, false);
+                    item._pad[1] = 2;
                 }
             }
         }

@@ -74,9 +74,16 @@ class BeamConfigLoader {
             if (section.contains(k) && section[k].is_number())
                 dst = section[k].template get<float>();
         };
+        auto getBool  = [&](const char* k, bool& dst) {
+            if (section.contains(k) && section[k].is_boolean())
+                dst = section[k].template get<bool>();
+        };
         getInt  ("beam_width",               cfg.beam_width);
         getInt  ("look_ahead",               cfg.look_ahead);
         getInt  ("dbs_max_similar",          cfg.dbs_max_similar);
+        getInt  ("dbs_max_similar_end",      cfg.dbs_max_similar_end);
+        getInt  ("dbs_ramp_depth",           cfg.dbs_ramp_depth);
+        getBool ("dbs_auto_fill",            cfg.dbs_auto_fill);
         getInt  ("full_beam_depth",          cfg.full_beam_depth);
         getFloat("min_beam_width_ratio",     cfg.min_beam_width_ratio);
         getInt  ("main_chain_threshold",     cfg.main_chain_threshold);
@@ -186,6 +193,9 @@ class BeamConfigLoader {
         solo["beam_width"]               = cfg.beam_width;
         solo["look_ahead"]               = cfg.look_ahead;
         solo["dbs_max_similar"]          = cfg.dbs_max_similar;
+        solo["dbs_max_similar_end"]      = cfg.dbs_max_similar_end;
+        solo["dbs_ramp_depth"]           = cfg.dbs_ramp_depth;
+        solo["dbs_auto_fill"]            = cfg.dbs_auto_fill;
         solo["pv_elite_count"]           = cfg.pv_elite_count;
         solo["elite_keep"]               = cfg.elite_keep;
         solo["micro_ply"]                = cfg.micro_ply;
@@ -209,6 +219,9 @@ class BeamConfigLoader {
         vs["beam_width"]               = cfg.beam_width;
         vs["look_ahead"]               = cfg.look_ahead;
         vs["dbs_max_similar"]          = cfg.dbs_max_similar;
+        vs["dbs_max_similar_end"]      = cfg.dbs_max_similar_end;
+        vs["dbs_ramp_depth"]           = cfg.dbs_ramp_depth;
+        vs["dbs_auto_fill"]            = cfg.dbs_auto_fill;
         vs["full_beam_depth"]          = cfg.full_beam_depth;
         vs["min_beam_width_ratio"]     = cfg.min_beam_width_ratio;
         vs["main_chain_threshold"]     = cfg.main_chain_threshold;
@@ -242,6 +255,9 @@ class BeamConfigLoader {
         match_sec["beam_width"]               = cfg.beam_width;
         match_sec["look_ahead"]               = cfg.look_ahead;
         match_sec["dbs_max_similar"]          = cfg.dbs_max_similar;
+        match_sec["dbs_max_similar_end"]      = cfg.dbs_max_similar_end;
+        match_sec["dbs_ramp_depth"]           = cfg.dbs_ramp_depth;
+        match_sec["dbs_auto_fill"]            = cfg.dbs_auto_fill;
         match_sec["full_beam_depth"]          = cfg.full_beam_depth;
         match_sec["min_beam_width_ratio"]     = cfg.min_beam_width_ratio;
         match_sec["main_chain_threshold"]     = cfg.main_chain_threshold;
