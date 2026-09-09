@@ -3,13 +3,15 @@
 #include <cstdint>
 #include <vector>
 
+#include <immintrin.h>
+#include <puyotan/common/config.hpp>
 #include <puyotan/common/types.hpp>
 #include <puyotan/core/board.hpp>
 #include <puyotan/engine/match.hpp>
 #include <puyotan/search/action_table.hpp>
 #include <puyotan/search/beam_config.hpp>
-#include <puyotan/search/beam_evaluator.hpp>
 #include <puyotan/search/match_search.hpp>
+#include <puyotan/search/potential_score.hpp>
 
 namespace puyotan::search {
 namespace {
@@ -31,42 +33,174 @@ struct MatchCandidate {
     uint8_t _pad;
 };
 
-// 評価関数: 自分目線での優劣スコアを算出
-inline int32_t evaluateMatch(const PuyotanMatch& match, int my_id, const MatchBeamConfig& cfg) noexcept {
-    const MatchStatus st = match.getStatus();
-    const int enemy_id = 1 - my_id;
-    const PuyotanPlayer& me = match.getPlayer(my_id);
-    const PuyotanPlayer& enemy = match.getPlayer(enemy_id);
+// ────────────────────────────────────────────────────────────────────────────
+// 盤面品質スコア（連結ボーナス・孤立ペナルティ・埋没ペナルティ）
+// ────────────────────────────────────────────────────────────────────────────
+inline int32_t boardQuality(const Board& board, const MatchBeamEvalWeights& w) noexcept {
+    int32_t r = 0;
 
-    if (st != MatchStatus::Playing) {
-        if ((my_id == 0 && st == MatchStatus::WinP1) || (my_id == 1 && st == MatchStatus::WinP2)) {
-            // 自分の勝利
-            return 10000000 + (me.score - enemy.score);
-        } else if ((my_id == 0 && st == MatchStatus::WinP2) || (my_id == 1 && st == MatchStatus::WinP1)) {
-            // 自分の敗北
-            return -10000000 + (me.score - enemy.score);
-        } else {
-            // 引き分け
-            return -5000000;
-        }
+    __m128i all_has2 = _mm_setzero_si128();
+    __m128i all_iso  = _mm_setzero_si128();
+
+    for (int c = 0; c < config::Rule::kColors; ++c) {
+        const BitBoard& bb = board.getBitboard(static_cast<Cell>(c));
+        if (bb.empty())
+            continue;
+
+        const __m128i bbm = bb.m128;
+        const __m128i U = _mm_slli_epi64(bbm, 1);
+        const __m128i D = _mm_srli_epi64(bbm, 1);
+        const __m128i L = _mm_srli_si128(bbm, 2);
+        const __m128i R = _mm_slli_si128(bbm, 2);
+
+        const __m128i UD = _mm_or_si128(U, D);
+        const __m128i LR = _mm_or_si128(L, R);
+
+        // >= 2 same-color neighbors
+        const __m128i has2 = _mm_and_si128(bbm,
+            _mm_or_si128(_mm_or_si128(_mm_and_si128(U, D), _mm_and_si128(L, R)),
+                         _mm_and_si128(UD, LR)));
+        all_has2 = _mm_or_si128(all_has2, has2);
+
+        // Isolated: no same-color neighbors
+        const __m128i iso_m = _mm_andnot_si128(_mm_or_si128(UD, LR), bbm);
+        all_iso = _mm_or_si128(all_iso, iso_m);
     }
 
-    // 盤面形状 & ポテンシャル評価 (VsBeamEvaluator)
-    const uint32_t my_h = packHeights(me.field);
-    const int32_t my_eval = VsBeamEvaluator::evaluate(me.field, cfg.eval_weights, my_h);
+    const BitBoard b_has2(all_has2);
+    const BitBoard b_iso(all_iso);
 
-    const uint32_t enemy_h = packHeights(enemy.field);
-    const int32_t enemy_eval = VsBeamEvaluator::evaluate(enemy.field, cfg.eval_weights, enemy_h);
+    r += b_has2.popcount() * w.connectivity_bonus;
+    r += b_iso.popcount()  * w.isolated_penalty;
 
-    // おじゃまペナルティ & ボーナス (おじゃま1個 = 70点換算)
-    const int32_t my_ojama_penalty = static_cast<int32_t>(me.active_ojama) * 140 +
-                                     static_cast<int32_t>(me.non_active_ojama) * 70;
-    const int32_t enemy_ojama_bonus = static_cast<int32_t>(enemy.active_ojama) * 140 +
-                                      static_cast<int32_t>(enemy.non_active_ojama) * 70;
+    // Buried under ojama
+    const BitBoard& oj = board.getBitboard(Cell::Ojama);
+    if (!oj.empty()) {
+        __m128i s_reg = oj.m128;
+        s_reg = _mm_or_si128(s_reg, _mm_srli_epi64(s_reg, 1));
+        s_reg = _mm_or_si128(s_reg, _mm_srli_epi64(s_reg, 2));
+        s_reg = _mm_or_si128(s_reg, _mm_srli_epi64(s_reg, 4));
+        s_reg = _mm_or_si128(s_reg, _mm_srli_epi64(s_reg, 8));
 
-    // スコア差分 + 盤面ポテンシャル差分 + おじゃま差分
-    return (me.score - me.used_score) + my_eval - my_ojama_penalty
-         - ((enemy.score - enemy.used_score) + enemy_eval - enemy_ojama_bonus);
+        const __m128i all_colored = _mm_andnot_si128(oj.m128, board.getOccupied().m128);
+        const BitBoard buried_bb(_mm_and_si128(all_colored, s_reg));
+        r += buried_bb.popcount() * w.buried_penalty;
+    }
+
+    return r;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 高さ危険ペナルティ：上段（危険閾値より上の列）の本数に比例
+// ────────────────────────────────────────────────────────────────────────────
+inline int32_t heightDangerPenalty(const Board& board, const MatchBeamEvalWeights& w) noexcept {
+    // BitBoard では各列が epi16 の 1ワードに対応。occupied の各列の最上ビット位置が高さ。
+    // 危険閾値 h_thresh を超えた列数をカウント。
+    // occupied の epi16 各ワードをフラグとして使い、bit popcount で代替。
+    // 簡易実装：packHeights の各列高さと比較
+    const BitBoard& occ = board.getOccupied();
+    if (occ.empty()) return 0;
+
+    // 各列の高さを計算（epi16 の各ワードのビット数 = 列のぷよ数 = 高さ）
+    const __m128i occ_m = occ.m128;
+    // epi16 の各16bit ワードのbit countで列高さを得る（popcnt16相当をepi8で実行）
+    // まず各バイトのbit count → 2バイトずつ加算
+    const __m128i lut = _mm_set_epi8(4,3,3,2,3,2,2,1,3,2,2,1,2,1,1,0);
+    const __m128i lo_nibbles = _mm_and_si128(occ_m, _mm_set1_epi8(0x0F));
+    const __m128i hi_nibbles = _mm_srli_epi16(_mm_and_si128(occ_m, _mm_set1_epi8(static_cast<char>(0xF0))), 4);
+    const __m128i cnt8 = _mm_add_epi8(_mm_shuffle_epi8(lut, lo_nibbles),
+                                       _mm_shuffle_epi8(lut, hi_nibbles));
+    // 各epi16の高さ = 2バイトの和（madd with 1）
+    const __m128i col_heights = _mm_maddubs_epi16(cnt8, _mm_set1_epi8(1));
+
+    // height_danger_threshold を超えた列をカウント（比較はepi16符号付き）
+    const __m128i thresh = _mm_set1_epi16(static_cast<int16_t>(w.height_danger_threshold));
+    const __m128i over   = _mm_cmpgt_epi16(col_heights, thresh);
+    // over の各-1ワードを1に変換してカウント
+    const __m128i ones = _mm_and_si128(over, _mm_set1_epi16(1));
+    // 水平加算
+    const __m128i sum16 = _mm_add_epi16(ones, _mm_srli_si128(ones, 2));
+    const __m128i sum32 = _mm_add_epi32(
+        _mm_cvtepi16_epi32(sum16),
+        _mm_cvtepi16_epi32(_mm_srli_si128(sum16, 8))
+    );
+    const __m128i sum64 = _mm_add_epi32(sum32, _mm_srli_si128(sum32, 4));
+    const int danger_cols = _mm_cvtsi128_si32(sum64);
+
+    return danger_cols * w.height_danger_penalty;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 対数量子化ポテンシャル：raw スコアを対数スケールで比較
+// log2 近似を整数演算で実現 (MSB位置 = ビット長 - 1)
+// ────────────────────────────────────────────────────────────────────────────
+inline int32_t logQuantizePotential(int32_t raw_pot, int32_t scale) noexcept {
+    if (raw_pot <= 0) return 0;
+    // ilog2(x) = bit_width - 1 (C++20 std::bit_width)
+    // 対数スケール: 各連鎖段階の相対差を線形比較するより log で圧縮
+    const int bits = 32 - __builtin_clz(static_cast<unsigned>(raw_pot)); // = floor(log2(x)) + 1
+    // 量子化: log2 段ごとに scale 点、小数部を残余で補間
+    const int32_t floor_log = bits - 1;
+    const int32_t next_pow2 = 1 << bits;
+    // 線形補間: [2^n, 2^(n+1)) の範囲を [n*scale, (n+1)*scale) に写像
+    const int32_t frac = (raw_pot * scale) / next_pow2; // [0, scale)
+    return floor_log * scale + frac;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// メイン評価関数（Match 全体を見た自分目線スコア）
+// ────────────────────────────────────────────────────────────────────────────
+inline int32_t evaluateMatch(const PuyotanMatch& match, int my_id, const MatchBeamConfig& cfg) noexcept {
+    const MatchStatus st = match.getStatus();
+    const MatchBeamEvalWeights& w = cfg.eval_weights;
+    const int enemy_id = 1 - my_id;
+    const PuyotanPlayer& me    = match.getPlayer(my_id);
+    const PuyotanPlayer& enemy = match.getPlayer(enemy_id);
+
+    // ── 終局判定 ────────────────────────────────────────────────────────────
+    if (st != MatchStatus::Playing) {
+        const bool my_win  = (my_id == 0 && st == MatchStatus::WinP1)
+                          || (my_id == 1 && st == MatchStatus::WinP2);
+        const bool my_loss = (my_id == 0 && st == MatchStatus::WinP2)
+                          || (my_id == 1 && st == MatchStatus::WinP1);
+        if (my_win)  return  w.win_score  + (me.score - enemy.score);
+        if (my_loss) return -w.win_score  + (me.score - enemy.score);
+        return w.draw_score;
+    }
+
+    // ── ポテンシャルスコア（対数量子化差分）────────────────────────────────
+    const uint32_t my_h     = packHeights(me.field);
+    const uint32_t enemy_h  = packHeights(enemy.field);
+    const int32_t my_raw_pot    = computeMaxPotentialScore(me.field, my_h);
+    const int32_t enemy_raw_pot = computeMaxPotentialScore(enemy.field, enemy_h);
+    const int32_t my_log_pot    = logQuantizePotential(my_raw_pot,    w.potential_score_scale * 1000);
+    const int32_t enemy_log_pot = logQuantizePotential(enemy_raw_pot, w.potential_score_scale * 1000);
+    const int32_t pot_diff = my_log_pot - enemy_log_pot;
+
+    // ── 盤面形質差分（連結・孤立・埋没）────────────────────────────────────
+    const int32_t my_quality    = boardQuality(me.field, w);
+    const int32_t enemy_quality = boardQuality(enemy.field, w);
+    const int32_t quality_diff  = my_quality - enemy_quality;
+
+    // ── おじゃまペナルティ / ボーナス ───────────────────────────────────────
+    // 落下確定おじゃま: 二乗ペナルティ（緊急度に応じて急増）
+    const int32_t my_ao    = static_cast<int32_t>(me.active_ojama);
+    const int32_t enemy_ao = static_cast<int32_t>(enemy.active_ojama);
+    const int32_t my_ojama_active_pen    = w.active_ojama_coeff * my_ao    * my_ao;
+    const int32_t enemy_ojama_active_bon = w.active_ojama_coeff * enemy_ao * enemy_ao;
+
+    // 保留おじゃま: 線形ペナルティ
+    const int32_t my_ojama_pending_pen    = w.pending_ojama_penalty * static_cast<int32_t>(me.non_active_ojama);
+    const int32_t enemy_ojama_pending_bon = w.pending_ojama_penalty * static_cast<int32_t>(enemy.non_active_ojama);
+
+    const int32_t ojama_diff = - my_ojama_active_pen    + enemy_ojama_active_bon
+                               - my_ojama_pending_pen   + enemy_ojama_pending_bon;
+
+    // ── 高さ危険ペナルティ（自分のみ）──────────────────────────────────────
+    const int32_t height_pen = heightDangerPenalty(me.field, w);
+
+    // ── 合計スコア ─────────────────────────────────────────────────────────
+    return pot_diff + quality_diff + ojama_diff + height_pen;
 }
 
 } // namespace

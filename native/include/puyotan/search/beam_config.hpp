@@ -176,7 +176,7 @@ struct MatchBeamConfig {
     float min_beam_width_ratio   = 1.0f;
     int   main_chain_threshold   = 20000;
     int   dynamic_lookahead_margin = 0;
-    VsBeamEvalWeights eval_weights;
+    MatchBeamEvalWeights eval_weights;
     std::array<int, 64> target_beam_widths{};
 
     MatchBeamConfig() noexcept { recompute_beam_widths(); }

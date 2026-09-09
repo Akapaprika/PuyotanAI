@@ -58,4 +58,40 @@ struct VsEvalContext {
     uint16_t   my_non_active_ojama    = 0;              // my ojama still cancelable
 };
 
+/**
+ * @struct MatchBeamEvalWeights
+ * @brief Tunable weights for the Match-simulation beam search evaluation function.
+ *
+ * 評価式（自分目線での優位スコア）:
+ *   score = logPot(me) - logPot(enemy)          // 対数量子化ポテンシャル差
+ *         + w_board * (boardQuality(me) - boardQuality(enemy))  // 盤面形質差
+ *         - w_ojama_active  * C * (me.active_ojama^2)           // 落下確定おじゃま 二乗ペナルティ
+ *         - w_ojama_pending * me.non_active_ojama               // 保留おじゃまペナルティ
+ *         + w_ojama_active  * C * (enemy.active_ojama^2)        // 相手への同等ボーナス
+ *         + w_ojama_pending * enemy.non_active_ojama            // 相手の保留ボーナス
+ *         - w_height * dangerHeight(me)                         // 盤面高さ危険ペナルティ
+ */
+struct MatchBeamEvalWeights {
+    // --- Potential score (log-quantized) ---
+    int32_t potential_score_scale   = 1;   ///< ポテンシャルスコアのスケール係数
+    int32_t log_pot_base_permille   = 1000; ///< log量子化の底 (1000 = log base 自然, 実際はint近似)
+
+    // --- Board quality (self - enemy) ---
+    int32_t connectivity_bonus      = 15;   ///< 連結ぷよボーナス (per puyo with >=2 neighbors)
+    int32_t isolated_penalty        = -30;  ///< 孤立ぷよペナルティ (per isolated puyo)
+    int32_t buried_penalty          = -80;  ///< おじゃま下の埋没ペナルティ (per buried colored puyo)
+
+    // --- Ojama pressure (quadratic for active, linear for pending) ---
+    int32_t active_ojama_coeff      = 70;   ///< C: 落下確定おじゃま二乗係数 (score = -C * n^2)
+    int32_t pending_ojama_penalty   = 40;   ///< 保留おじゃまペナルティ (per ojama)
+
+    // --- Height danger (my field) ---
+    int32_t height_danger_threshold = 10;   ///< 危険とみなす最低高さ (0-indexed, 10 = row 11)
+    int32_t height_danger_penalty   = -300; ///< 危険列1本あたりのペナルティ
+
+    // --- Terminal state scores ---
+    int32_t win_score               = 10000000;  ///< 勝利確定スコア
+    int32_t draw_score              = -5000000;  ///< 引き分けスコア（やや不利）
+};
+
 } // namespace puyotan::search

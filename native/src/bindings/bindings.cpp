@@ -215,6 +215,20 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def(pybind11::init<>())
         .def_readwrite("potential_score_scale", &search::SoloBeamEvalWeights::potential_score_scale);
 
+    pybind11::class_<search::MatchBeamEvalWeights>(m, "MatchBeamEvalWeights")
+        .def(pybind11::init<>())
+        .def_readwrite("potential_score_scale",   &search::MatchBeamEvalWeights::potential_score_scale)
+        .def_readwrite("log_pot_base_permille",   &search::MatchBeamEvalWeights::log_pot_base_permille)
+        .def_readwrite("connectivity_bonus",      &search::MatchBeamEvalWeights::connectivity_bonus)
+        .def_readwrite("isolated_penalty",        &search::MatchBeamEvalWeights::isolated_penalty)
+        .def_readwrite("buried_penalty",          &search::MatchBeamEvalWeights::buried_penalty)
+        .def_readwrite("active_ojama_coeff",      &search::MatchBeamEvalWeights::active_ojama_coeff)
+        .def_readwrite("pending_ojama_penalty",   &search::MatchBeamEvalWeights::pending_ojama_penalty)
+        .def_readwrite("height_danger_threshold", &search::MatchBeamEvalWeights::height_danger_threshold)
+        .def_readwrite("height_danger_penalty",   &search::MatchBeamEvalWeights::height_danger_penalty)
+        .def_readwrite("win_score",               &search::MatchBeamEvalWeights::win_score)
+        .def_readwrite("draw_score",              &search::MatchBeamEvalWeights::draw_score);
+
     pybind11::class_<search::SoloBeamConfig>(m, "SoloBeamConfig")
         .def(pybind11::init<>())
         .def_readwrite("beam_width",               &search::SoloBeamConfig::beam_width)

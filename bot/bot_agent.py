@@ -46,7 +46,7 @@ import puyotan_native as p
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from ai import SoloBeamAgent, VsBeamAgent
+from ai import SoloBeamAgent, MatchBeamAgent, VsBeamAgent
 from bot.firebase_client import FirebaseClient, num_to_base64s
 from bot.game_sync import GameState, cpp_action_to_js, js_action_to_cpp
 
@@ -99,14 +99,14 @@ class PuyotanBot:
         # 送信済みフレームの追跡（プレイヤーIDごと）
         self._submitted: dict[int, set[int]] = {0: set(), 1: set()}
 
-        # AI エージェントの初期化（ソロなら SoloBeamAgent、VSなら相手注視・反撃対応の VsBeamAgent）
+        # AI エージェントの初期化（ソロなら SoloBeamAgent、VSなら試合丸ごとシミュレーションの MatchBeamAgent）
         bw = beam_width if beam_width > 0 else None
         la = look_ahead if look_ahead > 0 else None
         if self.is_solo:
             self._agents = {0: SoloBeamAgent(beam_width=bw, look_ahead=la)}
         else:
             self._agents = {
-                pid: VsBeamAgent(enable_attack_search=True, beam_width=bw, look_ahead=la)
+                pid: MatchBeamAgent(beam_width=bw, look_ahead=la)
                 for pid in self.bot_players
             }
 

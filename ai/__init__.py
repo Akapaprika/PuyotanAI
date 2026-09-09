@@ -10,6 +10,7 @@ from .beam_agents import (
     EmptyPlayerAgent,
     SoloBeamAgent,
     VsBeamAgent,
+    MatchBeamAgent,
     BeamSearchAgent,
     VsBeamSearchAgent,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "EmptyPlayerAgent",
     "SoloBeamAgent",
     "VsBeamAgent",
+    "MatchBeamAgent",
     "BeamSearchAgent",
     "VsBeamSearchAgent",
     "AgentFactory",
