@@ -7,6 +7,7 @@
 #include <puyotan/search/beam_config_loader.hpp>
 #include <puyotan/search/beam_evaluator.hpp>
 #include <puyotan/search/beam_search.hpp>
+#include <puyotan/search/match_search.hpp>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -243,12 +244,29 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("context",                  &search::VsBeamConfig::context)
         .def("recompute_beam_widths",              &search::VsBeamConfig::recompute_beam_widths);
 
+    pybind11::class_<search::MatchBeamConfig>(m, "MatchBeamConfig")
+        .def(pybind11::init<>())
+        .def_readwrite("beam_width",               &search::MatchBeamConfig::beam_width)
+        .def_readwrite("look_ahead",               &search::MatchBeamConfig::look_ahead)
+        .def_readwrite("dbs_max_similar",          &search::MatchBeamConfig::dbs_max_similar)
+        .def_readwrite("full_beam_depth",          &search::MatchBeamConfig::full_beam_depth)
+        .def_readwrite("min_beam_width_ratio",     &search::MatchBeamConfig::min_beam_width_ratio)
+        .def_readwrite("main_chain_threshold",     &search::MatchBeamConfig::main_chain_threshold)
+        .def_readwrite("dynamic_lookahead_margin", &search::MatchBeamConfig::dynamic_lookahead_margin)
+        .def_readwrite("eval_weights",             &search::MatchBeamConfig::eval_weights)
+        .def("recompute_beam_widths",              &search::MatchBeamConfig::recompute_beam_widths);
+
     m.def("load_solo_config", &search::BeamConfigLoader::loadSolo, pybind11::arg("path"),
           "Load SoloBeamConfig from JSON");
 
     m.def("load_vs_config", &search::BeamConfigLoader::loadVs, pybind11::arg("path"),
           "Load VsBeamConfig from JSON");
 
+    m.def("load_match_config", &search::BeamConfigLoader::loadMatch, pybind11::arg("path"),
+          "Load MatchBeamConfig from JSON");
+
+    m.def("save_match_config", &search::BeamConfigLoader::saveMatch, pybind11::arg("path"), pybind11::arg("cfg"),
+          "Save MatchBeamConfig to JSON");
 
     // Pure Solo beam search
     m.def(
@@ -291,5 +309,16 @@ PYBIND11_MODULE(puyotan_native, m) {
         pybind11::arg("player"), pybind11::arg("tsumo"),
         pybind11::arg("cfg"), pybind11::arg("session") = nullptr,
         "Run VS beam search with a VsBeamConfig. Returns (RL action index, expected score).");
+
+    // Match-simulation-based beam search
+    m.def(
+        "match_beam_search",
+        [](const PuyotanMatch& match, int my_id,
+           const search::MatchBeamConfig& cfg) {
+            pybind11::gil_scoped_release release;
+            return search::matchBeamSearch(match, my_id, cfg);
+        },
+        pybind11::arg("match"), pybind11::arg("my_id"), pybind11::arg("cfg"),
+        "Run Match-simulation-based beam search. Returns (RL action index, expected score).");
 }
 } // namespace puyotan

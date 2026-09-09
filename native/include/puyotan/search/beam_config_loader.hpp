@@ -146,6 +146,19 @@ class BeamConfigLoader {
         return cfg;
     }
 
+    static MatchBeamConfig loadMatch(const std::string& path) {
+        MatchBeamConfig cfg{};
+        nlohmann::json j = getJson(path);
+        if (j.is_discarded() || j.empty() || !j.contains("vs_match") || !j["vs_match"].is_object())
+            return cfg;
+        const auto& section = j["vs_match"];
+        loadCommonSection(cfg, section);
+        if (section.contains("eval_weights") && section["eval_weights"].is_object())
+            applyPatch(cfg.eval_weights, section["eval_weights"]);
+        cfg.recompute_beam_widths();
+        return cfg;
+    }
+
     // ── Save ─────────────────────────────────────────────────────────────────
 
     static void saveSolo(const std::string& path, const SoloBeamConfig& cfg) {
@@ -187,6 +200,38 @@ class BeamConfigLoader {
 
         const auto& w = cfg.eval_weights;
         auto& ew = vs["eval_weights"];
+        ew["potential_score_scale"]           = w.potential_score_scale;
+        ew["connectivity_bonus"]              = w.connectivity_bonus;
+        ew["isolated_penalty"]                = w.isolated_penalty;
+        ew["buried_penalty"]                  = w.buried_penalty;
+        ew["fire_bias"]                       = w.fire_bias_permille / 1000.0;
+        ew["incoming_ojama_penalty"]          = w.incoming_ojama_penalty;
+        ew["incoming_threat_bias"]            = w.incoming_threat_bias_permille / 1000.0;
+        ew["counter_attack_bias"]             = w.counter_attack_bias_permille / 1000.0;
+        ew["timing_advantage_bias"]           = w.timing_advantage_bias_permille / 1000.0;
+        ew["urgency_weight"]                  = w.urgency_weight_permille / 1000.0;
+        ew["lethal_danger_scale"]             = w.lethal_danger_scale;
+        ew["effective_strike_multiplier"]     = w.effective_strike_multiplier_permille / 1000.0;
+
+        { std::ofstream ofs(path); ofs << j.dump(2); }
+        updateCache(path, j);
+    }
+
+    static void saveMatch(const std::string& path, const MatchBeamConfig& cfg) {
+        nlohmann::json j = getJson(path);
+        if (j.empty() || j.is_discarded()) j = nlohmann::json::object();
+
+        auto& match_sec = j["vs_match"];
+        match_sec["beam_width"]               = cfg.beam_width;
+        match_sec["look_ahead"]               = cfg.look_ahead;
+        match_sec["dbs_max_similar"]          = cfg.dbs_max_similar;
+        match_sec["full_beam_depth"]          = cfg.full_beam_depth;
+        match_sec["min_beam_width_ratio"]     = cfg.min_beam_width_ratio;
+        match_sec["main_chain_threshold"]     = cfg.main_chain_threshold;
+        match_sec["dynamic_lookahead_margin"] = cfg.dynamic_lookahead_margin;
+
+        const auto& w = cfg.eval_weights;
+        auto& ew = match_sec["eval_weights"];
         ew["potential_score_scale"]           = w.potential_score_scale;
         ew["connectivity_bonus"]              = w.connectivity_bonus;
         ew["isolated_penalty"]                = w.isolated_penalty;

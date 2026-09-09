@@ -169,6 +169,37 @@ class VsBeamAgent(_BaseBeamAgent):
         self._launch(worker)
 
 
+class MatchBeamAgent(_BaseBeamAgent):
+    """Match Simulation-based Adversarial Beam Search Agent (1v1 Match mode)."""
+
+    def __init__(self,
+                 beam_width: int | None = None,
+                 look_ahead: int | None = None,
+                 dbs_max_similar: int | None = None) -> None:
+        super().__init__(beam_width, look_ahead, dbs_max_similar)
+        self.reload_config()
+
+    def reload_config(self) -> None:
+        if hasattr(p, "load_match_config"):
+            cfg = p.load_match_config(CONFIG_PATH)
+        else:
+            cfg = p.MatchBeamConfig()
+        self._apply_overrides(cfg)
+        self._cfg = cfg
+
+    def _start_search(self, match: Any, player_id: int) -> None:
+        native_match = getattr(match, "match", match)
+        match_snap = native_match.clone()
+        cfg = self._cfg
+
+        def worker():
+            res = p.match_beam_search(match_snap, player_id, cfg)
+            self._store_result(res)
+
+        self._launch(worker)
+
+
 # Backward-compatibility aliases
 BeamSearchAgent = SoloBeamAgent
 VsBeamSearchAgent = VsBeamAgent
+

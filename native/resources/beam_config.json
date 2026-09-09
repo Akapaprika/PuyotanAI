@@ -52,5 +52,28 @@
       "_comment_fire_bias": "発火判断のバイアス係数（小数）。fire_bias × 発火スコア > ビームスコア のとき即時発火を選択。\n                        > 1.0: 発火を積極的に選ぶ / == 1.0: 等価比較 / < 1.0: 継続を優先\n                        内部では *1000 して整数比較するため、切り捨て誤差あり（最大1/1000）。",
       "fire_bias": 0.97
     }
+  },
+  "vs_match": {
+    "_comment_beam_width": "探索中に保持する最大盤面数（試合シミュレーション用ノード数）",
+    "beam_width": 5000,
+    "_comment_look_ahead": "ツモの先読み手数量（自分の手数）",
+    "look_ahead": 5,
+    "_comment_dbs_max_similar": "同一高さプロファイルを持つ盤面の最大許容重複件数 (0で無効)",
+    "dbs_max_similar": 0,
+    "_comment_full_beam_depth": "ビーム幅を100%保持する探索深さ（0〜N手目）",
+    "full_beam_depth": 2,
+    "_comment_min_beam_width_ratio": "最終手時点でのビーム幅の到達比率",
+    "min_beam_width_ratio": 1.0,
+    "_comment_main_chain_threshold": "本線大連鎖とみなす最小得点",
+    "main_chain_threshold": 20000,
+    "_comment_dynamic_lookahead_margin": "空きマス連動の先読み深さマージン",
+    "dynamic_lookahead_margin": 0,
+    "eval_weights": {
+      "potential_score_scale": 1,
+      "connectivity_bonus": 20,
+      "isolated_penalty": -40,
+      "buried_penalty": -100,
+      "fire_bias": 0.97
+    }
   }
 }
