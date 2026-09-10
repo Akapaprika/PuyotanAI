@@ -131,26 +131,51 @@ inline int32_t heightDangerPenalty(const Board& board, const MatchBeamEvalWeight
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// 対数量子化ポテンシャル：raw スコアを対数スケールで比較
-// log2 近似を整数演算で実現 (MSB位置 = ビット長 - 1)
+float sqrtPotential(int32_t raw_pot) noexcept {
+    if (raw_pot <= 0) return 0.0f;
+    return std::sqrt(static_cast<float>(raw_pot));
+}
+
 // ────────────────────────────────────────────────────────────────────────────
-inline int32_t logQuantizePotential(int32_t raw_pot, int32_t scale) noexcept {
-    if (raw_pot <= 0) return 0;
-    // ilog2(x) = bit_width - 1 (C++20 std::bit_width)
-    // 対数スケール: 各連鎖段階の相対差を線形比較するより log で圧縮
-    const int bits = 32 - __builtin_clz(static_cast<unsigned>(raw_pot)); // = floor(log2(x)) + 1
-    // 量子化: log2 段ごとに scale 点、小数部を残余で補間
-    const int32_t floor_log = bits - 1;
-    const int32_t next_pow2 = 1 << bits;
-    // 線形補間: [2^n, 2^(n+1)) の範囲を [n*scale, (n+1)*scale) に写像
-    const int32_t frac = (raw_pot * scale) / next_pow2; // [0, scale)
-    return floor_log * scale + frac;
+// 盤面静穏状態判定（連鎖中・アクション中・おじゃま保留・確定が一切ない状態）
+// ────────────────────────────────────────────────────────────────────────────
+inline bool isMatchQuiescent(const PuyotanMatch& m) noexcept {
+    if (m.getStatus() != MatchStatus::Playing) return true;
+    const auto& p0 = m.getPlayer(0);
+    const auto& p1 = m.getPlayer(1);
+    const bool p0_busy = (p0.chain_count > 0) ||
+                         (p0.current_action.action.type != ActionType::None);
+    const bool p1_busy = (p1.chain_count > 0) ||
+                         (p1.current_action.action.type != ActionType::None);
+    if (p0_busy || p1_busy) return false;
+    if (p0.active_ojama > 0 || p1.active_ojama > 0 ||
+        p0.non_active_ojama > 0 || p1.non_active_ojama > 0) {
+        return false;
+    }
+    return true;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 連鎖・おじゃま決着関数（置いた結果時点まで同期進行させて決着させる）
+// ────────────────────────────────────────────────────────────────────────────
+inline void resolveMatchToCleanState(PuyotanMatch& m, int max_steps = 80) noexcept {
+    for (int s = 0; s < max_steps; ++s) {
+        if (isMatchQuiescent(m)) break;
+        int mask = m.getDecisionMask();
+        if (mask & 1) {
+            m.setAction(0, Action{ActionType::Pass});
+        }
+        if (mask & 2) {
+            m.setAction(1, Action{ActionType::Pass});
+        }
+        m.stepUntilDecision();
+    }
 }
 
 // ────────────────────────────────────────────────────────────────────────────
 // メイン評価関数（Match 全体を見た自分目線スコア）
 // ────────────────────────────────────────────────────────────────────────────
-inline int32_t evaluateMatch(const PuyotanMatch& match, int my_id, const MatchBeamConfig& cfg) noexcept {
+inline int32_t evaluateMatchRaw(const PuyotanMatch& match, int my_id, const MatchBeamConfig& cfg) noexcept {
     const MatchStatus st = match.getStatus();
     const MatchBeamEvalWeights& w = cfg.eval_weights;
     const int enemy_id = 1 - my_id;
@@ -168,39 +193,81 @@ inline int32_t evaluateMatch(const PuyotanMatch& match, int my_id, const MatchBe
         return w.draw_score;
     }
 
-    // ── ポテンシャルスコア（対数量子化差分）────────────────────────────────
+    // ── ポテンシャルスコア（平方根正規化差分）──────────────────────────────────
     const uint32_t my_h     = packHeights(me.field);
     const uint32_t enemy_h  = packHeights(enemy.field);
     const int32_t my_raw_pot    = computeMaxPotentialScore(me.field, my_h);
     const int32_t enemy_raw_pot = computeMaxPotentialScore(enemy.field, enemy_h);
-    const int32_t my_log_pot    = logQuantizePotential(my_raw_pot,    w.potential_score_scale * 1000);
-    const int32_t enemy_log_pot = logQuantizePotential(enemy_raw_pot, w.potential_score_scale * 1000);
-    const int32_t pot_diff = my_log_pot - enemy_log_pot;
+    // 対数圧縮を廃止し、平方根で正規化（指数的増加を恩和しつつ大連鎖の優位性を正しく反映）
+    const int32_t my_sqrt_pot    = static_cast<int32_t>(sqrtPotential(my_raw_pot));
+    const int32_t enemy_sqrt_pot = static_cast<int32_t>(sqrtPotential(enemy_raw_pot));
+    const int32_t pot_diff = (my_sqrt_pot - enemy_sqrt_pot) * w.potential_score_scale;
 
-    // ── 盤面形質差分（連結・孤立・埋没）────────────────────────────────────
+    // ── 盤面形質差分（連結・孤立・埋没）──────────────────────────────────
     const int32_t my_quality    = boardQuality(me.field, w);
     const int32_t enemy_quality = boardQuality(enemy.field, w);
     const int32_t quality_diff  = my_quality - enemy_quality;
 
-    // ── おじゃまペナルティ / ボーナス ───────────────────────────────────────
-    // 落下確定おじゃま: 二乗ペナルティ（緊急度に応じて急増）
-    const int32_t my_ao    = static_cast<int32_t>(me.active_ojama);
-    const int32_t enemy_ao = static_cast<int32_t>(enemy.active_ojama);
-    const int32_t my_ojama_active_pen    = w.active_ojama_coeff * my_ao    * my_ao;
-    const int32_t enemy_ojama_active_bon = w.active_ojama_coeff * enemy_ao * enemy_ao;
+    // ── おじゃまペナルティ（自分のみ評価、相手へのおじゃま補正は0）────────────
+    // ぷよたんは後出し優位のため、相手へのおじゃま送付による加点を0にする。
+    // これにより平時における自発的な小連鎖の暴発を防ぎ、自分のおじゃま被弾回避・相殺に専念させる。
+    const int32_t my_ao = static_cast<int32_t>(me.active_ojama);
+    const int32_t my_ojama_active_pen  = w.active_ojama_coeff * my_ao * my_ao;
+    const int32_t my_ojama_pending_pen = w.pending_ojama_penalty * static_cast<int32_t>(me.non_active_ojama);
 
-    // 保留おじゃま: 線形ペナルティ
-    const int32_t my_ojama_pending_pen    = w.pending_ojama_penalty * static_cast<int32_t>(me.non_active_ojama);
-    const int32_t enemy_ojama_pending_bon = w.pending_ojama_penalty * static_cast<int32_t>(enemy.non_active_ojama);
+    const int32_t ojama_diff = - my_ojama_active_pen - my_ojama_pending_pen;
 
-    const int32_t ojama_diff = - my_ojama_active_pen    + enemy_ojama_active_bon
-                               - my_ojama_pending_pen   + enemy_ojama_pending_bon;
-
-    // ── 高さ危険ペナルティ（自分のみ）──────────────────────────────────────
+    // ── 高さ危険ペナルティ（自分のみ）────────────────────────────────────
     const int32_t height_pen = heightDangerPenalty(me.field, w);
 
-    // ── 合計スコア ─────────────────────────────────────────────────────────
-    return pot_diff + quality_diff + ojama_diff + height_pen;
+    // ── 平時発火ペナルティ ───────────────────────────────────────────────────────
+    // 相手からのおじゃま攻撃がない平時に自分が連鎖を発火するのは暇打ちなので消極的に扱う
+    int32_t reckless_pen = 0;
+    if (w.reckless_fire_penalty_permille > 0) {
+        const bool enemy_attacking = (enemy.chain_count > 0 ||
+                                      enemy.active_ojama > 0 ||
+                                      enemy.non_active_ojama > 0);
+        const bool i_am_firing = (me.chain_count > 0);
+        if (i_am_firing && !enemy_attacking) {
+            // 平時に発火中: 発火後の相手のポテンシャル超過をペナルティ化
+            reckless_pen = -w.reckless_fire_penalty_permille * my_sqrt_pot / 1000;
+        }
+    }
+
+    // ── 累積スコア差（非終局時は対応モード時のみ考慮）────────────────────
+    int32_t score_diff = 0;
+    if (w.actual_score_weight > 0) {
+        const bool enemy_attacking = (enemy.chain_count > 0 ||
+                                      enemy.active_ojama > 0 ||
+                                      enemy.non_active_ojama > 0);
+        if (enemy_attacking) {
+            // 対応モード（相手が攻撃中）では累積スコア差を考慮
+            score_diff = (me.score - enemy.score) * w.actual_score_weight / 100;
+        }
+    }
+
+    // ── 合計スコア ─────────────────────────────────────────────────────────────────
+    return pot_diff + quality_diff + ojama_diff + height_pen + reckless_pen + score_diff;
+}
+
+// 連鎖中やおじゃま保留中がある場合は「置いた結果が決着するまで」同期進行させてから評価する
+inline int32_t evaluateMatch(const PuyotanMatch& match, int my_id, const MatchBeamConfig& cfg) noexcept {
+    if (isMatchQuiescent(match)) {
+        return evaluateMatchRaw(match, my_id, cfg);
+    }
+    PuyotanMatch sim = match;
+    resolveMatchToCleanState(sim, 80);
+    return evaluateMatchRaw(sim, my_id, cfg);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 平時ビルドアップモード判定：相手から攻撃が一切ない平和時は true
+// ────────────────────────────────────────────────────────────────────────────
+inline bool isBuildupMode(const PuyotanMatch& match, int my_id) noexcept {
+    const auto& enemy = match.getPlayer(1 - my_id);
+    return enemy.chain_count == 0
+        && enemy.active_ojama == 0
+        && enemy.non_active_ojama == 0;
 }
 
 } // namespace
@@ -234,7 +301,10 @@ std::pair<int, int32_t> matchBeamSearch(const PuyotanMatch& match,
     std::vector<MatchCandidate> candidates;
     candidates.reserve(std::min(static_cast<size_t>(cfg.beam_width * 22), size_t{100000}));
 
-    for (int ply = 0; ply < look_ahead; ++ply) {
+    const int min_turns = look_ahead;
+    const int max_turns = std::max(min_turns + 25, 35);
+
+    for (int ply = 0; ply < max_turns; ++ply) {
         candidates.clear();
         const int target_width = (ply < static_cast<int>(cfg.target_beam_widths.size()) && cfg.target_beam_widths[ply] > 0)
                                      ? cfg.target_beam_widths[ply]
@@ -245,8 +315,11 @@ std::pair<int, int32_t> matchBeamSearch(const PuyotanMatch& match,
         for (uint32_t p_idx = 0; p_idx < static_cast<uint32_t>(current_beam.size()); ++p_idx) {
             const auto& parent = current_beam[p_idx];
 
-            if (parent.match.getStatus() != MatchStatus::Playing || parent.my_depth >= look_ahead) {
-                // 既に決着しているか、指定手数を打ち終えたノードはそのままパススルー
+            // 終了判定:
+            // 1. 勝敗が決着している (WinP1, WinP2, Draw)
+            // 2. 最低ターン数 (min_turns) 以上経過しており、かつ盤面が完全に静穏化（連鎖・おじゃま完了）している
+            if (parent.match.getStatus() != MatchStatus::Playing ||
+                (ply >= min_turns && isMatchQuiescent(parent.match))) {
                 candidates.push_back(MatchCandidate{
                     .score = parent.score,
                     .parent_idx = p_idx,
@@ -263,14 +336,137 @@ std::pair<int, int32_t> matchBeamSearch(const PuyotanMatch& match,
 
             const bool my_turn = (mask & (1 << my_id)) != 0;
             const bool enemy_turn = (mask & (1 << enemy_id)) != 0;
+            const bool is_extension = (ply >= min_turns);
 
-            if (my_turn && enemy_turn) {
-                // 両者同時手番: 自分22手 × 相手22手 = 484通り
-                for (uint8_t m_act = 0; m_act < kNumRLActions; ++m_act) {
+            if (is_extension) {
+                // ────────────────────────────────────────────────────────────
+                // ターン延長フェーズ:
+                // 連鎖やおじゃまの決着を見届けるため、新規着手分岐は行わずシミュレーションを進める
+                // ────────────────────────────────────────────────────────────
+                if (my_turn && enemy_turn) {
+                    // 自分は待機 (Pass)，相手は Min 手 (評価を最も下げる手)
+                    uint8_t worst_e_act = 0;
+                    int32_t worst_sc = 2000000000;
                     for (uint8_t e_act = 0; e_act < kNumRLActions; ++e_act) {
                         PuyotanMatch sim = parent.match;
-                        sim.setAction(my_id, getRLAction(m_act));
+                        sim.setAction(my_id, Action{ActionType::Pass});
                         sim.setAction(enemy_id, getRLAction(e_act));
+                        sim.stepUntilDecision();
+
+                        int32_t sc = evaluateMatch(sim, my_id, cfg);
+                        if (sc < worst_sc) {
+                            worst_sc = sc;
+                            worst_e_act = e_act;
+                        }
+                    }
+                    candidates.push_back(MatchCandidate{
+                        .score = worst_sc,
+                        .parent_idx = p_idx,
+                        .my_act = 254, // 254 = Pass
+                        .enemy_act = worst_e_act,
+                        .is_terminal = 0,
+                        ._pad = 0
+                    });
+                } else if (my_turn) {
+                    // 自分だけ手番: Pass して相手の連鎖・おじゃま落下を待つ
+                    PuyotanMatch sim = parent.match;
+                    sim.setAction(my_id, Action{ActionType::Pass});
+                    sim.stepUntilDecision();
+                    int32_t sc = evaluateMatch(sim, my_id, cfg);
+                    candidates.push_back(MatchCandidate{
+                        .score = sc,
+                        .parent_idx = p_idx,
+                        .my_act = 254, // 254 = Pass
+                        .enemy_act = 255,
+                        .is_terminal = 0,
+                        ._pad = 0
+                    });
+                } else if (enemy_turn) {
+                    // 相手だけ手番: 相手は Min 手
+                    uint8_t worst_e_act = 0;
+                    int32_t worst_sc = 2000000000;
+                    for (uint8_t e_act = 0; e_act < kNumRLActions; ++e_act) {
+                        PuyotanMatch sim = parent.match;
+                        sim.setAction(enemy_id, getRLAction(e_act));
+                        sim.stepUntilDecision();
+
+                        int32_t sc = evaluateMatch(sim, my_id, cfg);
+                        if (sc < worst_sc) {
+                            worst_sc = sc;
+                            worst_e_act = e_act;
+                        }
+                    }
+                    candidates.push_back(MatchCandidate{
+                        .score = worst_sc,
+                        .parent_idx = p_idx,
+                        .my_act = 255,
+                        .enemy_act = worst_e_act,
+                        .is_terminal = 0,
+                        ._pad = 0
+                    });
+                } else {
+                    // 決定待ちなし（試合進行中）
+                    PuyotanMatch sim = parent.match;
+                    sim.stepUntilDecision();
+                    int32_t sc = evaluateMatch(sim, my_id, cfg);
+                    candidates.push_back(MatchCandidate{
+                        .score = sc,
+                        .parent_idx = p_idx,
+                        .my_act = 255,
+                        .enemy_act = 255,
+                        .is_terminal = 0,
+                        ._pad = 0
+                    });
+                }
+            } else {
+                // ────────────────────────────────────────────────────────────
+                // 通常ターンフェーズ (ply < min_turns)
+                // ────────────────────────────────────────────────────────────
+                if (my_turn && enemy_turn) {
+                    // 平時モード判定：相手から攻撃が一切ない場合は平時ビルドアップモード
+                    const bool buildup = isBuildupMode(parent.match, my_id);
+
+                    for (uint8_t m_act = 0; m_act < kNumRLActions; ++m_act) {
+                        PuyotanMatch sim = parent.match;
+                        sim.setAction(my_id, getRLAction(m_act));
+
+                        if (buildup) {
+                            // 平時ビルドアップモード: 相手はPass固定（静かに積んでいると仮定）
+                            // 相手が次ターン発火してくるWorst-caseパニックを回避し、自分の連鎖構築に専念
+                            sim.setAction(enemy_id, Action{ActionType::Pass});
+                            sim.stepUntilDecision();
+                        } else {
+                            // 対応モード: 相手はMin手（自分にとって最悪な手）
+                            uint8_t worst_e_act = 0;
+                            int32_t worst_sc = 2000000000;
+                            for (uint8_t e_act = 0; e_act < kNumRLActions; ++e_act) {
+                                PuyotanMatch esim = parent.match;
+                                esim.setAction(my_id, getRLAction(m_act));
+                                esim.setAction(enemy_id, getRLAction(e_act));
+                                esim.stepUntilDecision();
+                                int32_t sc2 = evaluateMatch(esim, my_id, cfg);
+                                if (sc2 < worst_sc) { worst_sc = sc2; worst_e_act = e_act; }
+                            }
+                            sim.setAction(enemy_id, getRLAction(worst_e_act));
+                            sim.stepUntilDecision();
+                        }
+
+                        int32_t sc = evaluateMatch(sim, my_id, cfg);
+                        candidates.push_back(MatchCandidate{
+                            .score = sc,
+                            .parent_idx = p_idx,
+                            .my_act = m_act,
+                            .enemy_act = 255,
+                            .is_terminal = 0,
+                            ._pad = 0
+                        });
+                    }
+
+                } else if (my_turn) {
+                    // 自分だけ手番: 22通り展開 (Max)
+                    for (uint8_t m_act = 0; m_act < kNumRLActions; ++m_act) {
+                        PuyotanMatch sim = parent.match;
+                        sim.setAction(my_id, getRLAction(m_act));
                         sim.stepUntilDecision();
 
                         int32_t sc = evaluateMatch(sim, my_id, cfg);
@@ -278,59 +474,50 @@ std::pair<int, int32_t> matchBeamSearch(const PuyotanMatch& match,
                             .score = sc,
                             .parent_idx = p_idx,
                             .my_act = m_act,
-                            .enemy_act = e_act,
+                            .enemy_act = 255,
                             .is_terminal = 0,
                             ._pad = 0
                         });
                     }
-                }
-            } else if (my_turn) {
-                // 自分だけ手番: 22通り
-                for (uint8_t m_act = 0; m_act < kNumRLActions; ++m_act) {
-                    PuyotanMatch sim = parent.match;
-                    sim.setAction(my_id, getRLAction(m_act));
-                    sim.stepUntilDecision();
+                } else if (enemy_turn) {
+                    // 相手だけ手番: 相手は自分にとって最悪な手 (Min) を選ぶ
+                    uint8_t worst_e_act = 0;
+                    int32_t worst_sc = 2000000000;
 
-                    int32_t sc = evaluateMatch(sim, my_id, cfg);
+                    for (uint8_t e_act = 0; e_act < kNumRLActions; ++e_act) {
+                        PuyotanMatch sim = parent.match;
+                        sim.setAction(enemy_id, getRLAction(e_act));
+                        sim.stepUntilDecision();
+
+                        int32_t sc = evaluateMatch(sim, my_id, cfg);
+                        if (sc < worst_sc) {
+                            worst_sc = sc;
+                            worst_e_act = e_act;
+                        }
+                    }
+
                     candidates.push_back(MatchCandidate{
-                        .score = sc,
+                        .score = worst_sc,
                         .parent_idx = p_idx,
-                        .my_act = m_act,
-                        .enemy_act = 255,
+                        .my_act = 255,
+                        .enemy_act = worst_e_act,
                         .is_terminal = 0,
                         ._pad = 0
                     });
-                }
-            } else if (enemy_turn) {
-                // 相手だけ手番: 22通り
-                for (uint8_t e_act = 0; e_act < kNumRLActions; ++e_act) {
+                } else {
+                    // 決定待ちなし（試合進行中）
                     PuyotanMatch sim = parent.match;
-                    sim.setAction(enemy_id, getRLAction(e_act));
                     sim.stepUntilDecision();
-
                     int32_t sc = evaluateMatch(sim, my_id, cfg);
                     candidates.push_back(MatchCandidate{
                         .score = sc,
                         .parent_idx = p_idx,
                         .my_act = 255,
-                        .enemy_act = e_act,
+                        .enemy_act = 255,
                         .is_terminal = 0,
                         ._pad = 0
                     });
                 }
-            } else {
-                // 決定待ちなし（試合進行中）
-                PuyotanMatch sim = parent.match;
-                sim.stepUntilDecision();
-                int32_t sc = evaluateMatch(sim, my_id, cfg);
-                candidates.push_back(MatchCandidate{
-                    .score = sc,
-                    .parent_idx = p_idx,
-                    .my_act = 255,
-                    .enemy_act = 255,
-                    .is_terminal = 0,
-                    ._pad = 0
-                });
             }
         }
 
@@ -367,19 +554,21 @@ std::pair<int, int32_t> matchBeamSearch(const PuyotanMatch& match,
             // first_action の決定・引き継ぎ
             if (parent.first_action != -1) {
                 child.first_action = parent.first_action;
-            } else if (cand.my_act != 255) {
+            } else if (cand.my_act < kNumRLActions) {
                 child.first_action = cand.my_act;
             } else {
                 child.first_action = -1;
             }
 
-            child.my_depth = parent.my_depth + (cand.my_act != 255 ? 1 : 0);
+            child.my_depth = parent.my_depth + (cand.my_act < kNumRLActions ? 1 : 0);
 
             // シミュレーションを実行して子状態を確定
-            if (cand.my_act != 255) {
+            if (cand.my_act == 254) {
+                child.match.setAction(my_id, Action{ActionType::Pass});
+            } else if (cand.my_act < kNumRLActions) {
                 child.match.setAction(my_id, getRLAction(cand.my_act));
             }
-            if (cand.enemy_act != 255) {
+            if (cand.enemy_act < kNumRLActions) {
                 child.match.setAction(enemy_id, getRLAction(cand.enemy_act));
             }
             child.match.stepUntilDecision();

@@ -63,18 +63,19 @@ struct VsEvalContext {
  * @brief Tunable weights for the Match-simulation beam search evaluation function.
  *
  * 評価式（自分目線での優位スコア）:
- *   score = logPot(me) - logPot(enemy)          // 対数量子化ポテンシャル差
- *         + w_board * (boardQuality(me) - boardQuality(enemy))  // 盤面形質差
- *         - w_ojama_active  * C * (me.active_ojama^2)           // 落下確定おじゃま 二乗ペナルティ
- *         - w_ojama_pending * me.non_active_ojama               // 保留おじゃまペナルティ
- *         + w_ojama_active  * C * (enemy.active_ojama^2)        // 相手への同等ボーナス
- *         + w_ojama_pending * enemy.non_active_ojama            // 相手の保留ボーナス
- *         - w_height * dangerHeight(me)                         // 盤面高さ危険ペナルティ
+ *   score = (sqrt(my_pot) - sqrt(enemy_pot)) * potential_score_scale  // ポテンシャル差（平方根正規化）
+ *         + boardQuality(me) - boardQuality(enemy)                    // 盤面形質差
+ *         - active_ojama_coeff * me.active_ojama^2                   // 落下確定おじゃま 二乗ペナルティ
+ *         - pending_ojama_penalty * me.non_active_ojama              // 保留おじゃまペナルティ
+ *         + active_ojama_coeff * enemy.active_ojama^2               // 相手への同等ボーナス
+ *         + pending_ojama_penalty * enemy.non_active_ojama          // 相手の保留ボーナス
+ *         - heightDanger(me)                                         // 盤面高さ危険ペナルティ
+ *         + (me.score - enemy.score) * actual_score_weight / 100    // 累積スコア差（対応モード時）
+ *         - reckless_fire_penalty_permille * my_raw_pot / 1000      // 平時発火ペナルティ
  */
 struct MatchBeamEvalWeights {
-    // --- Potential score (log-quantized) ---
-    int32_t potential_score_scale   = 1;   ///< ポテンシャルスコアのスケール係数
-    int32_t log_pot_base_permille   = 1000; ///< log量子化の底 (1000 = log base 自然, 実際はint近似)
+    // --- Potential score (sqrt-normalized, replaces log-quantized) ---
+    int32_t potential_score_scale   = 30;  ///< √スコア差1あたりの評価点 (例: sqrt差100→3000点)
 
     // --- Board quality (self - enemy) ---
     int32_t connectivity_bonus      = 15;   ///< 連結ぷよボーナス (per puyo with >=2 neighbors)
@@ -88,6 +89,13 @@ struct MatchBeamEvalWeights {
     // --- Height danger (my field) ---
     int32_t height_danger_threshold = 10;   ///< 危険とみなす最低高さ (0-indexed, 10 = row 11)
     int32_t height_danger_penalty   = -300; ///< 危険列1本あたりのペナルティ
+
+    // --- Actual score diff (non-terminal) ---
+    int32_t actual_score_weight     = 0;    ///< 非終局時の累積スコア差の重み (0=無効, 1〜100推奨)
+
+    // --- Reckless fire penalty (buildup mode) ---
+    // 相手からおじゃま攻撃がない平時に自分が連鎖を発火した場合のペナルティ
+    int32_t reckless_fire_penalty_permille = 500; ///< 平時発火ペナルティ (√自分pot × permille / 1000)
 
     // --- Terminal state scores ---
     int32_t win_score               = 10000000;  ///< 勝利確定スコア

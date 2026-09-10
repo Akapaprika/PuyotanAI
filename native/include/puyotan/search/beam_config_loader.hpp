@@ -122,17 +122,18 @@ class BeamConfigLoader {
     static void applyPatch(MatchBeamEvalWeights& w, const nlohmann::json& patch) {
         for (auto& [key, val] : patch.items()) {
             if (key.starts_with("_comment")) continue;
-            if      (key == "potential_score_scale"   && val.is_number()) w.potential_score_scale   = static_cast<int32_t>(val.get<double>());
-            else if (key == "log_pot_base_permille"   && val.is_number()) w.log_pot_base_permille    = static_cast<int32_t>(val.get<double>());
-            else if (key == "connectivity_bonus"      && val.is_number()) w.connectivity_bonus       = static_cast<int32_t>(val.get<double>());
-            else if (key == "isolated_penalty"        && val.is_number()) w.isolated_penalty         = static_cast<int32_t>(val.get<double>());
-            else if (key == "buried_penalty"          && val.is_number()) w.buried_penalty           = static_cast<int32_t>(val.get<double>());
-            else if (key == "active_ojama_coeff"      && val.is_number()) w.active_ojama_coeff       = static_cast<int32_t>(val.get<double>());
-            else if (key == "pending_ojama_penalty"   && val.is_number()) w.pending_ojama_penalty    = static_cast<int32_t>(val.get<double>());
-            else if (key == "height_danger_threshold" && val.is_number()) w.height_danger_threshold  = static_cast<int32_t>(val.get<double>());
-            else if (key == "height_danger_penalty"   && val.is_number()) w.height_danger_penalty    = static_cast<int32_t>(val.get<double>());
-            else if (key == "win_score"               && val.is_number()) w.win_score                = static_cast<int32_t>(val.get<double>());
-            else if (key == "draw_score"              && val.is_number()) w.draw_score               = static_cast<int32_t>(val.get<double>());
+            if      (key == "potential_score_scale"           && val.is_number()) w.potential_score_scale           = static_cast<int32_t>(val.get<double>());
+            else if (key == "reckless_fire_penalty_permille"  && val.is_number()) w.reckless_fire_penalty_permille  = static_cast<int32_t>(val.get<double>());
+            else if (key == "actual_score_weight"             && val.is_number()) w.actual_score_weight             = static_cast<int32_t>(val.get<double>());
+            else if (key == "connectivity_bonus"              && val.is_number()) w.connectivity_bonus              = static_cast<int32_t>(val.get<double>());
+            else if (key == "isolated_penalty"                && val.is_number()) w.isolated_penalty                = static_cast<int32_t>(val.get<double>());
+            else if (key == "buried_penalty"                  && val.is_number()) w.buried_penalty                  = static_cast<int32_t>(val.get<double>());
+            else if (key == "active_ojama_coeff"              && val.is_number()) w.active_ojama_coeff              = static_cast<int32_t>(val.get<double>());
+            else if (key == "pending_ojama_penalty"           && val.is_number()) w.pending_ojama_penalty           = static_cast<int32_t>(val.get<double>());
+            else if (key == "height_danger_threshold"         && val.is_number()) w.height_danger_threshold         = static_cast<int32_t>(val.get<double>());
+            else if (key == "height_danger_penalty"           && val.is_number()) w.height_danger_penalty           = static_cast<int32_t>(val.get<double>());
+            else if (key == "win_score"                       && val.is_number()) w.win_score                       = static_cast<int32_t>(val.get<double>());
+            else if (key == "draw_score"                      && val.is_number()) w.draw_score                      = static_cast<int32_t>(val.get<double>());
         }
     }
 
@@ -272,17 +273,18 @@ class BeamConfigLoader {
 
         const auto& w = cfg.eval_weights;
         auto& ew = match_sec["eval_weights"];
-        ew["potential_score_scale"]   = w.potential_score_scale;
-        ew["log_pot_base_permille"]   = w.log_pot_base_permille;
-        ew["connectivity_bonus"]      = w.connectivity_bonus;
-        ew["isolated_penalty"]        = w.isolated_penalty;
-        ew["buried_penalty"]          = w.buried_penalty;
-        ew["active_ojama_coeff"]      = w.active_ojama_coeff;
-        ew["pending_ojama_penalty"]   = w.pending_ojama_penalty;
-        ew["height_danger_threshold"] = w.height_danger_threshold;
-        ew["height_danger_penalty"]   = w.height_danger_penalty;
-        ew["win_score"]               = w.win_score;
-        ew["draw_score"]              = w.draw_score;
+        ew["potential_score_scale"]          = w.potential_score_scale;
+        ew["reckless_fire_penalty_permille"] = w.reckless_fire_penalty_permille;
+        ew["actual_score_weight"]            = w.actual_score_weight;
+        ew["connectivity_bonus"]             = w.connectivity_bonus;
+        ew["isolated_penalty"]               = w.isolated_penalty;
+        ew["buried_penalty"]                 = w.buried_penalty;
+        ew["active_ojama_coeff"]             = w.active_ojama_coeff;
+        ew["pending_ojama_penalty"]          = w.pending_ojama_penalty;
+        ew["height_danger_threshold"]        = w.height_danger_threshold;
+        ew["height_danger_penalty"]          = w.height_danger_penalty;
+        ew["win_score"]                      = w.win_score;
+        ew["draw_score"]                     = w.draw_score;
 
         { std::ofstream ofs(path); ofs << j.dump(2); }
         updateCache(path, j);
