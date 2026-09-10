@@ -37,54 +37,64 @@ struct MatchCandidate {
 // 盤面品質スコア（連結ボーナス・孤立ペナルティ・埋没ペナルティ）
 // ────────────────────────────────────────────────────────────────────────────
 inline int32_t boardQuality(const Board& board, const MatchBeamEvalWeights& w) noexcept {
-    int32_t r = 0;
-
-    __m128i all_has2 = _mm_setzero_si128();
-    __m128i all_iso  = _mm_setzero_si128();
-
-    for (int c = 0; c < config::Rule::kColors; ++c) {
-        const BitBoard& bb = board.getBitboard(static_cast<Cell>(c));
-        if (bb.empty())
-            continue;
-
-        const __m128i bbm = bb.m128;
-        const __m128i U = _mm_slli_epi64(bbm, 1);
-        const __m128i D = _mm_srli_epi64(bbm, 1);
-        const __m128i L = _mm_srli_si128(bbm, 2);
-        const __m128i R = _mm_slli_si128(bbm, 2);
-
-        const __m128i UD = _mm_or_si128(U, D);
-        const __m128i LR = _mm_or_si128(L, R);
-
-        // >= 2 same-color neighbors
-        const __m128i has2 = _mm_and_si128(bbm,
-            _mm_or_si128(_mm_or_si128(_mm_and_si128(U, D), _mm_and_si128(L, R)),
-                         _mm_and_si128(UD, LR)));
-        all_has2 = _mm_or_si128(all_has2, has2);
-
-        // Isolated: no same-color neighbors
-        const __m128i iso_m = _mm_andnot_si128(_mm_or_si128(UD, LR), bbm);
-        all_iso = _mm_or_si128(all_iso, iso_m);
+    // 重みがすべて0なら評価処理を完全にスキップ
+    if (w.connectivity_bonus == 0 && w.isolated_penalty == 0 && w.buried_penalty == 0) {
+        return 0;
     }
 
-    const BitBoard b_has2(all_has2);
-    const BitBoard b_iso(all_iso);
+    int32_t r = 0;
 
-    r += b_has2.popcount() * w.connectivity_bonus;
-    r += b_iso.popcount()  * w.isolated_penalty;
+    // 連結・孤立判定（どちらかの重みが非ゼロの時のみSIMD走査を実行）
+    if (w.connectivity_bonus != 0 || w.isolated_penalty != 0) {
+        __m128i all_has2 = _mm_setzero_si128();
+        __m128i all_iso  = _mm_setzero_si128();
 
-    // Buried under ojama
-    const BitBoard& oj = board.getBitboard(Cell::Ojama);
-    if (!oj.empty()) {
-        __m128i s_reg = oj.m128;
-        s_reg = _mm_or_si128(s_reg, _mm_srli_epi64(s_reg, 1));
-        s_reg = _mm_or_si128(s_reg, _mm_srli_epi64(s_reg, 2));
-        s_reg = _mm_or_si128(s_reg, _mm_srli_epi64(s_reg, 4));
-        s_reg = _mm_or_si128(s_reg, _mm_srli_epi64(s_reg, 8));
+        for (int c = 0; c < config::Rule::kColors; ++c) {
+            const BitBoard& bb = board.getBitboard(static_cast<Cell>(c));
+            if (bb.empty())
+                continue;
 
-        const __m128i all_colored = _mm_andnot_si128(oj.m128, board.getOccupied().m128);
-        const BitBoard buried_bb(_mm_and_si128(all_colored, s_reg));
-        r += buried_bb.popcount() * w.buried_penalty;
+            const __m128i bbm = bb.m128;
+            const __m128i U = _mm_slli_epi64(bbm, 1);
+            const __m128i D = _mm_srli_epi64(bbm, 1);
+            const __m128i L = _mm_srli_si128(bbm, 2);
+            const __m128i R = _mm_slli_si128(bbm, 2);
+
+            const __m128i UD = _mm_or_si128(U, D);
+            const __m128i LR = _mm_or_si128(L, R);
+
+            // >= 2 same-color neighbors
+            const __m128i has2 = _mm_and_si128(bbm,
+                _mm_or_si128(_mm_or_si128(_mm_and_si128(U, D), _mm_and_si128(L, R)),
+                             _mm_and_si128(UD, LR)));
+            all_has2 = _mm_or_si128(all_has2, has2);
+
+            // Isolated: no same-color neighbors
+            const __m128i iso_m = _mm_andnot_si128(_mm_or_si128(UD, LR), bbm);
+            all_iso = _mm_or_si128(all_iso, iso_m);
+        }
+
+        const BitBoard b_has2(all_has2);
+        const BitBoard b_iso(all_iso);
+
+        if (w.connectivity_bonus != 0) r += b_has2.popcount() * w.connectivity_bonus;
+        if (w.isolated_penalty != 0)   r += b_iso.popcount()  * w.isolated_penalty;
+    }
+
+    // Buried under ojama（埋没ペナルティが有効な時のみ実行）
+    if (w.buried_penalty != 0) {
+        const BitBoard& oj = board.getBitboard(Cell::Ojama);
+        if (!oj.empty()) {
+            __m128i s_reg = oj.m128;
+            s_reg = _mm_or_si128(s_reg, _mm_srli_epi64(s_reg, 1));
+            s_reg = _mm_or_si128(s_reg, _mm_srli_epi64(s_reg, 2));
+            s_reg = _mm_or_si128(s_reg, _mm_srli_epi64(s_reg, 4));
+            s_reg = _mm_or_si128(s_reg, _mm_srli_epi64(s_reg, 8));
+
+            const __m128i all_colored = _mm_andnot_si128(oj.m128, board.getOccupied().m128);
+            const BitBoard buried_bb(_mm_and_si128(all_colored, s_reg));
+            r += buried_bb.popcount() * w.buried_penalty;
+        }
     }
 
     return r;
@@ -94,6 +104,11 @@ inline int32_t boardQuality(const Board& board, const MatchBeamEvalWeights& w) n
 // 高さ危険ペナルティ：上段（危険閾値より上の列）の本数に比例
 // ────────────────────────────────────────────────────────────────────────────
 inline int32_t heightDangerPenalty(const Board& board, const MatchBeamEvalWeights& w) noexcept {
+    // 重みが0なら計算せず即スキップ
+    if (w.height_danger_penalty == 0) {
+        return 0;
+    }
+
     // BitBoard では各列が epi16 の 1ワードに対応。occupied の各列の最上ビット位置が高さ。
     // 危険閾値 h_thresh を超えた列数をカウント。
     // occupied の epi16 各ワードをフラグとして使い、bit popcount で代替。
