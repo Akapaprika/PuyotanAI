@@ -98,8 +98,8 @@ struct MatchBeamEvalWeights {
     int32_t reckless_fire_penalty_permille = 500; ///< 平時発火ペナルティ (√自分pot × permille / 1000)
 
     // --- Terminal state scores ---
-    int32_t win_score               = 10000000;  ///< 勝利確定スコア
-    int32_t draw_score              = -5000000;  ///< 引き分けスコア（やや不利）
+    int32_t win_score               = 10000;    ///< 勝利確定スコア
+    int32_t draw_score              = -500000;  ///< 引き分けスコア（やや不利）
 };
 
 } // namespace puyotan::search

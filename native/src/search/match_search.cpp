@@ -188,25 +188,21 @@ inline int32_t evaluateMatchRaw(const PuyotanMatch& match, int my_id, const Matc
                           || (my_id == 1 && st == MatchStatus::WinP2);
         const bool my_loss = (my_id == 0 && st == MatchStatus::WinP2)
                           || (my_id == 1 && st == MatchStatus::WinP1);
-        if (my_win)  return  w.win_score  + (me.score - enemy.score);
-        if (my_loss) return -w.win_score  + (me.score - enemy.score);
+        // 勝利報酬は小さく抑え（10,000点程度）、小連鎖で相手を即死させて勝った気になる錯覚を防止
+        // 敗北は絶対に回避するため大ペナルティ
+        if (my_win)  return  w.win_score;
+        if (my_loss) return -500000;
         return w.draw_score;
     }
 
-    // ── ポテンシャルスコア（平方根正規化差分）──────────────────────────────────
-    const uint32_t my_h     = packHeights(me.field);
-    const uint32_t enemy_h  = packHeights(enemy.field);
-    const int32_t my_raw_pot    = computeMaxPotentialScore(me.field, my_h);
-    const int32_t enemy_raw_pot = computeMaxPotentialScore(enemy.field, enemy_h);
-    // 対数圧縮を廃止し、平方根で正規化（指数的増加を恩和しつつ大連鎖の優位性を正しく反映）
-    const int32_t my_sqrt_pot    = static_cast<int32_t>(sqrtPotential(my_raw_pot));
-    const int32_t enemy_sqrt_pot = static_cast<int32_t>(sqrtPotential(enemy_raw_pot));
-    const int32_t pot_diff = (my_sqrt_pot - enemy_sqrt_pot) * w.potential_score_scale;
+    // ── ポテンシャルスコア（自分のポテンシャルのみ評価。相手との差分は取らない）──
+    const uint32_t my_h      = packHeights(me.field);
+    const int32_t my_raw_pot = computeMaxPotentialScore(me.field, my_h);
+    const int32_t my_sqrt_pot = static_cast<int32_t>(sqrtPotential(my_raw_pot));
+    const int32_t pot_score   = my_sqrt_pot * w.potential_score_scale;
 
-    // ── 盤面形質差分（連結・孤立・埋没）──────────────────────────────────
-    const int32_t my_quality    = boardQuality(me.field, w);
-    const int32_t enemy_quality = boardQuality(enemy.field, w);
-    const int32_t quality_diff  = my_quality - enemy_quality;
+    // ── 自分の盤面形質（連結・孤立・埋没）────────────────────────────────
+    const int32_t quality_score = boardQuality(me.field, w);
 
     // ── おじゃまペナルティ（自分のみ評価、相手へのおじゃま補正は0）────────────
     // ぷよたんは後出し優位のため、相手へのおじゃま送付による加点を0にする。
@@ -247,7 +243,7 @@ inline int32_t evaluateMatchRaw(const PuyotanMatch& match, int my_id, const Matc
     }
 
     // ── 合計スコア ─────────────────────────────────────────────────────────────────
-    return pot_diff + quality_diff + ojama_diff + height_pen + reckless_pen + score_diff;
+    return pot_score + quality_score + ojama_diff + height_pen + reckless_pen + score_diff;
 }
 
 // 連鎖中やおじゃま保留中がある場合は「置いた結果が決着するまで」同期進行させてから評価する
@@ -430,11 +426,13 @@ std::pair<int, int32_t> matchBeamSearch(const PuyotanMatch& match,
                         PuyotanMatch sim = parent.match;
                         sim.setAction(my_id, getRLAction(m_act));
 
+                        uint8_t e_act_chosen = 255;
                         if (buildup) {
                             // 平時ビルドアップモード: 相手はPass固定（静かに積んでいると仮定）
                             // 相手が次ターン発火してくるWorst-caseパニックを回避し、自分の連鎖構築に専念
                             sim.setAction(enemy_id, Action{ActionType::Pass});
                             sim.stepUntilDecision();
+                            e_act_chosen = 254; // 254 = Pass
                         } else {
                             // 対応モード: 相手はMin手（自分にとって最悪な手）
                             uint8_t worst_e_act = 0;
@@ -449,6 +447,7 @@ std::pair<int, int32_t> matchBeamSearch(const PuyotanMatch& match,
                             }
                             sim.setAction(enemy_id, getRLAction(worst_e_act));
                             sim.stepUntilDecision();
+                            e_act_chosen = worst_e_act;
                         }
 
                         int32_t sc = evaluateMatch(sim, my_id, cfg);
@@ -456,7 +455,7 @@ std::pair<int, int32_t> matchBeamSearch(const PuyotanMatch& match,
                             .score = sc,
                             .parent_idx = p_idx,
                             .my_act = m_act,
-                            .enemy_act = 255,
+                            .enemy_act = e_act_chosen,
                             .is_terminal = 0,
                             ._pad = 0
                         });
@@ -568,7 +567,9 @@ std::pair<int, int32_t> matchBeamSearch(const PuyotanMatch& match,
             } else if (cand.my_act < kNumRLActions) {
                 child.match.setAction(my_id, getRLAction(cand.my_act));
             }
-            if (cand.enemy_act < kNumRLActions) {
+            if (cand.enemy_act == 254) {
+                child.match.setAction(enemy_id, Action{ActionType::Pass});
+            } else if (cand.enemy_act < kNumRLActions) {
                 child.match.setAction(enemy_id, getRLAction(cand.enemy_act));
             }
             child.match.stepUntilDecision();
