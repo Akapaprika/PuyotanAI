@@ -152,6 +152,8 @@ class BeamConfigLoader {
             cfg.elite_keep = section["elite_keep"].get<int>();
         if (section.contains("micro_ply") && section["micro_ply"].is_number_integer())
             cfg.micro_ply = std::max(1, section["micro_ply"].get<int>());
+        if (section.contains("fire_trigger_empty_cells") && section["fire_trigger_empty_cells"].is_number_integer())
+            cfg.fire_trigger_empty_cells = section["fire_trigger_empty_cells"].get<int>();
         if (section.contains("eval_weights") && section["eval_weights"].is_object())
             applyPatch(cfg.eval_weights, section["eval_weights"]);
         cfg.recompute_beam_widths();
@@ -205,6 +207,7 @@ class BeamConfigLoader {
         solo["min_beam_width_ratio"]     = cfg.min_beam_width_ratio;
         solo["main_chain_threshold"]     = cfg.main_chain_threshold;
         solo["dynamic_lookahead_margin"] = cfg.dynamic_lookahead_margin;
+        solo["fire_trigger_empty_cells"] = cfg.fire_trigger_empty_cells;
 
         auto& ew = solo["eval_weights"];
         ew["potential_score_scale"] = cfg.eval_weights.potential_score_scale;

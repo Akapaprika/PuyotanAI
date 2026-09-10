@@ -7,7 +7,7 @@
     "_comment_dbs_max_similar": "DBSの開始許容重複件数（空きマス55以上。0でDBS無効, 1〜65535でDBS有効）",
     "dbs_max_similar": 3,
     "_comment_dbs_max_similar_end": "DBSの終盤到達許容重複件数（空きマス18以下。0または dbs_max_similar と同じなら固定値運用）",
-    "dbs_max_similar_end": 10,
+    "dbs_max_similar_end": 6,
     "_comment_dbs_empty_threshold_high": "DBSが開始値（dbs_max_similar）となる空きマス数の閾値（全78マス中。例: 55マス以上空いていれば3）",
     "dbs_empty_threshold_high": 66,
     "_comment_dbs_empty_threshold_low": "DBSが終盤値（dbs_max_similar_end）となる空きマス数の閾値（全78マス中。例: 18マス以下なら8固定）",

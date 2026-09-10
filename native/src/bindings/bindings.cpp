@@ -246,6 +246,7 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("min_beam_width_ratio",     &search::SoloBeamConfig::min_beam_width_ratio)
         .def_readwrite("main_chain_threshold",     &search::SoloBeamConfig::main_chain_threshold)
         .def_readwrite("dynamic_lookahead_margin", &search::SoloBeamConfig::dynamic_lookahead_margin)
+        .def_readwrite("fire_trigger_empty_cells", &search::SoloBeamConfig::fire_trigger_empty_cells)
         .def_readwrite("eval_weights",             &search::SoloBeamConfig::eval_weights)
         .def("recompute_beam_widths",              &search::SoloBeamConfig::recompute_beam_widths);
 

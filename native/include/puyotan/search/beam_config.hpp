@@ -100,6 +100,7 @@ struct SoloBeamConfig {
     float min_beam_width_ratio   = 1.0f;
     int   main_chain_threshold   = 20000;
     int   dynamic_lookahead_margin = 90;
+    int   fire_trigger_empty_cells = 2; ///< 空きマスがこの値以下かつ大連鎖が撃てる場合に即時発火 (0で無効)
     SoloBeamEvalWeights eval_weights;
     std::array<int, 64> target_beam_widths{};
 

@@ -582,6 +582,35 @@ std::pair<int, int32_t> soloBeamSearchPV(const PuyotanPlayer& player,
     uint32_t packed_heights_root = packHeights(player.field);
     const uint64_t root_hash = Zobrist::hashBoard(player.field);
 
+    // ★ 即時発火ショートサーキット
+    // 空きマスが fire_trigger_empty_cells 以下かつ大連鎖が撃てる場合、
+    // ビーム探索を行わず今すぐ最高得点の発火手を強制選択する。
+    // （ツモ捨てループ・計画スコア後退ループを根絶する）
+    if (cfg.fire_trigger_empty_cells > 0 && cfg.main_chain_threshold > 0) {
+        const int empty_cells_sc = 78 - player.field.getOccupied().popcount();
+        if (empty_cells_sc <= cfg.fire_trigger_empty_cells) {
+            int32_t sc_piece_idx = tsumo_base;
+            const PuyoPiece sc_piece = tsumo.get(sc_piece_idx);
+            const auto& sc_actions = (sc_piece.axis == sc_piece.sub) ? getZoroActions() : getPutActions();
+            int best_fire_action = -1;
+            int32_t best_fire_score = 0;
+            for (const auto& ba : sc_actions) {
+                PlaceResult pr;
+                simulatePlacement(player.field, sc_piece, ba, packed_heights_root, pr);
+                if (!pr.dead && static_cast<int32_t>(pr.score) >= cfg.main_chain_threshold) {
+                    if (static_cast<int32_t>(pr.score) > best_fire_score) {
+                        best_fire_score = pr.score;
+                        best_fire_action = ba.idx;
+                    }
+                }
+            }
+            if (best_fire_action >= 0) {
+                if (plan) plan->reset();
+                return { best_fire_action, best_fire_score };
+            }
+        }
+    }
+
     tl_current_beam.clear();
     tl_current_beam.reserve(static_cast<std::size_t>(cfg.beam_width));
     tl_prev_beam.clear();
