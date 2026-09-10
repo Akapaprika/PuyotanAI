@@ -257,13 +257,53 @@ inline int32_t evaluateMatch(const PuyotanMatch& match, int my_id, const MatchBe
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// 平時ビルドアップモード判定：相手から攻撃が一切ない平和時は true
+// 相手がおじゃまの脅威に晒されているか判定（被攻撃・予告おじゃま・自連鎖中は true）
 // ────────────────────────────────────────────────────────────────────────────
-inline bool isBuildupMode(const PuyotanMatch& match, int my_id) noexcept {
-    const auto& enemy = match.getPlayer(1 - my_id);
-    return enemy.chain_count == 0
-        && enemy.active_ojama == 0
-        && enemy.non_active_ojama == 0;
+inline bool isEnemyThreatened(const PuyotanMatch& match, int enemy_id) noexcept {
+    const int my_id = 1 - enemy_id;
+    const auto& enemy = match.getPlayer(enemy_id);
+    const auto& me    = match.getPlayer(my_id);
+    return enemy.active_ojama > 0
+        || enemy.non_active_ojama > 0
+        || me.chain_count > 0;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 相手が平時に連鎖を伸ばす最善手（ポテンシャル最大手）を1手選択
+// ────────────────────────────────────────────────────────────────────────────
+inline uint8_t selectEnemyBuildMove(const PuyotanMatch& match, int enemy_id, const MatchBeamConfig& cfg) noexcept {
+    uint8_t best_act = 0;
+    int32_t best_score = -2000000000;
+    bool found_non_firing = false;
+
+    for (uint8_t act = 0; act < kNumRLActions; ++act) {
+        PuyotanMatch sim = match;
+        sim.setAction(enemy_id, getRLAction(act));
+        sim.stepUntilDecision();
+
+        const auto& p = sim.getPlayer(enemy_id);
+        const bool firing = (p.chain_count > 0);
+
+        const uint32_t h = packHeights(p.field);
+        const int32_t raw_pot = computeMaxPotentialScore(p.field, h);
+        const int32_t sqrt_pot = static_cast<int32_t>(sqrtPotential(raw_pot));
+        const int32_t sc = sqrt_pot * cfg.eval_weights.potential_score_scale + boardQuality(p.field, cfg.eval_weights);
+
+        // 平時なので非発火手を優先（無駄な暴発を防ぎビルドアップに専念）
+        if (!firing) {
+            if (!found_non_firing || sc > best_score) {
+                best_score = sc;
+                best_act = act;
+                found_non_firing = true;
+            }
+        } else if (!found_non_firing) {
+            if (sc > best_score) {
+                best_score = sc;
+                best_act = act;
+            }
+        }
+    }
+    return best_act;
 }
 
 } // namespace
@@ -419,22 +459,34 @@ std::pair<int, int32_t> matchBeamSearch(const PuyotanMatch& match,
                 // 通常ターンフェーズ (ply < min_turns)
                 // ────────────────────────────────────────────────────────────
                 if (my_turn && enemy_turn) {
-                    // 平時モード判定：相手から攻撃が一切ない場合は平時ビルドアップモード
-                    const bool buildup = isBuildupMode(parent.match, my_id);
+                    // 相手が脅威（被攻撃・保留おじゃま・自連鎖）に晒されているか判定
+                    const bool enemy_threatened = isEnemyThreatened(parent.match, enemy_id);
 
-                    for (uint8_t m_act = 0; m_act < kNumRLActions; ++m_act) {
-                        PuyotanMatch sim = parent.match;
-                        sim.setAction(my_id, getRLAction(m_act));
+                    if (!enemy_threatened) {
+                        // 平時ビルドアップモード:
+                        // 相手も連鎖を伸ばすプレイヤーとして最善の積み手 (enemy_build_act) を打つ
+                        const uint8_t enemy_build_act = selectEnemyBuildMove(parent.match, enemy_id, cfg);
 
-                        uint8_t e_act_chosen = 255;
-                        if (buildup) {
-                            // 平時ビルドアップモード: 相手はPass固定（静かに積んでいると仮定）
-                            // 相手が次ターン発火してくるWorst-caseパニックを回避し、自分の連鎖構築に専念
-                            sim.setAction(enemy_id, Action{ActionType::Pass});
+                        for (uint8_t m_act = 0; m_act < kNumRLActions; ++m_act) {
+                            PuyotanMatch sim = parent.match;
+                            sim.setAction(my_id, getRLAction(m_act));
+                            sim.setAction(enemy_id, getRLAction(enemy_build_act));
                             sim.stepUntilDecision();
-                            e_act_chosen = 254; // 254 = Pass
-                        } else {
-                            // 対応モード: 相手はMin手（自分にとって最悪な手）
+
+                            int32_t sc = evaluateMatch(sim, my_id, cfg);
+                            candidates.push_back(MatchCandidate{
+                                .score = sc,
+                                .parent_idx = p_idx,
+                                .my_act = m_act,
+                                .enemy_act = enemy_build_act,
+                                .is_terminal = 0,
+                                ._pad = 0
+                            });
+                        }
+                    } else {
+                        // 反撃・対応モード:
+                        // 相手はこちらの攻撃に対し、最も痛い反撃・相殺 (Min手) を打ってくる
+                        for (uint8_t m_act = 0; m_act < kNumRLActions; ++m_act) {
                             uint8_t worst_e_act = 0;
                             int32_t worst_sc = 2000000000;
                             for (uint8_t e_act = 0; e_act < kNumRLActions; ++e_act) {
@@ -445,20 +497,16 @@ std::pair<int, int32_t> matchBeamSearch(const PuyotanMatch& match,
                                 int32_t sc2 = evaluateMatch(esim, my_id, cfg);
                                 if (sc2 < worst_sc) { worst_sc = sc2; worst_e_act = e_act; }
                             }
-                            sim.setAction(enemy_id, getRLAction(worst_e_act));
-                            sim.stepUntilDecision();
-                            e_act_chosen = worst_e_act;
-                        }
 
-                        int32_t sc = evaluateMatch(sim, my_id, cfg);
-                        candidates.push_back(MatchCandidate{
-                            .score = sc,
-                            .parent_idx = p_idx,
-                            .my_act = m_act,
-                            .enemy_act = e_act_chosen,
-                            .is_terminal = 0,
-                            ._pad = 0
-                        });
+                            candidates.push_back(MatchCandidate{
+                                .score = worst_sc,
+                                .parent_idx = p_idx,
+                                .my_act = m_act,
+                                .enemy_act = worst_e_act,
+                                .is_terminal = 0,
+                                ._pad = 0
+                            });
+                        }
                     }
 
                 } else if (my_turn) {
@@ -479,27 +527,40 @@ std::pair<int, int32_t> matchBeamSearch(const PuyotanMatch& match,
                         });
                     }
                 } else if (enemy_turn) {
-                    // 相手だけ手番: 相手は自分にとって最悪な手 (Min) を選ぶ
-                    uint8_t worst_e_act = 0;
-                    int32_t worst_sc = 2000000000;
+                    // 相手だけ手番:
+                    const bool enemy_threatened = isEnemyThreatened(parent.match, enemy_id);
+                    uint8_t chosen_e_act = 0;
+                    int32_t chosen_sc = 0;
 
-                    for (uint8_t e_act = 0; e_act < kNumRLActions; ++e_act) {
+                    if (!enemy_threatened) {
+                        // 平時: 相手は最善の積み手を打つ
+                        chosen_e_act = selectEnemyBuildMove(parent.match, enemy_id, cfg);
                         PuyotanMatch sim = parent.match;
-                        sim.setAction(enemy_id, getRLAction(e_act));
+                        sim.setAction(enemy_id, getRLAction(chosen_e_act));
                         sim.stepUntilDecision();
+                        chosen_sc = evaluateMatch(sim, my_id, cfg);
+                    } else {
+                        // 被攻撃時: 相手は自分にとって最悪な手 (Min) を選ぶ
+                        int32_t worst_sc = 2000000000;
+                        for (uint8_t e_act = 0; e_act < kNumRLActions; ++e_act) {
+                            PuyotanMatch sim = parent.match;
+                            sim.setAction(enemy_id, getRLAction(e_act));
+                            sim.stepUntilDecision();
 
-                        int32_t sc = evaluateMatch(sim, my_id, cfg);
-                        if (sc < worst_sc) {
-                            worst_sc = sc;
-                            worst_e_act = e_act;
+                            int32_t sc = evaluateMatch(sim, my_id, cfg);
+                            if (sc < worst_sc) {
+                                worst_sc = sc;
+                                chosen_e_act = e_act;
+                            }
                         }
+                        chosen_sc = worst_sc;
                     }
 
                     candidates.push_back(MatchCandidate{
-                        .score = worst_sc,
+                        .score = chosen_sc,
                         .parent_idx = p_idx,
                         .my_act = 255,
-                        .enemy_act = worst_e_act,
+                        .enemy_act = chosen_e_act,
                         .is_terminal = 0,
                         ._pad = 0
                     });
