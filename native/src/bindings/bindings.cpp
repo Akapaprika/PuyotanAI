@@ -218,6 +218,7 @@ PYBIND11_MODULE(puyotan_native, m) {
     pybind11::class_<search::MatchBeamEvalWeights>(m, "MatchBeamEvalWeights")
         .def(pybind11::init<>())
         .def_readwrite("potential_score_scale",           &search::MatchBeamEvalWeights::potential_score_scale)
+        .def_readwrite("diversity_weight_permille",       &search::MatchBeamEvalWeights::diversity_weight_permille)
         .def_readwrite("reckless_fire_penalty_permille",  &search::MatchBeamEvalWeights::reckless_fire_penalty_permille)
         .def_readwrite("actual_score_weight",             &search::MatchBeamEvalWeights::actual_score_weight)
         .def_readwrite("connectivity_bonus",              &search::MatchBeamEvalWeights::connectivity_bonus)

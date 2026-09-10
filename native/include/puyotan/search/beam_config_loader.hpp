@@ -123,6 +123,8 @@ class BeamConfigLoader {
         for (auto& [key, val] : patch.items()) {
             if (key.starts_with("_comment")) continue;
             if      (key == "potential_score_scale"           && val.is_number()) w.potential_score_scale           = static_cast<int32_t>(val.get<double>());
+            else if (key == "diversity_weight"                && val.is_number()) w.diversity_weight_permille        = static_cast<int32_t>(val.get<double>() * 1000.0);
+            else if (key == "diversity_weight_permille"       && val.is_number()) w.diversity_weight_permille        = static_cast<int32_t>(val.get<double>());
             else if (key == "reckless_fire_penalty_permille"  && val.is_number()) w.reckless_fire_penalty_permille  = static_cast<int32_t>(val.get<double>());
             else if (key == "actual_score_weight"             && val.is_number()) w.actual_score_weight             = static_cast<int32_t>(val.get<double>());
             else if (key == "connectivity_bonus"              && val.is_number()) w.connectivity_bonus              = static_cast<int32_t>(val.get<double>());
@@ -274,6 +276,7 @@ class BeamConfigLoader {
         const auto& w = cfg.eval_weights;
         auto& ew = match_sec["eval_weights"];
         ew["potential_score_scale"]          = w.potential_score_scale;
+        ew["diversity_weight"]               = w.diversity_weight_permille / 1000.0;
         ew["reckless_fire_penalty_permille"] = w.reckless_fire_penalty_permille;
         ew["actual_score_weight"]            = w.actual_score_weight;
         ew["connectivity_bonus"]             = w.connectivity_bonus;

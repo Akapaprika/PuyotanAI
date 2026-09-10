@@ -76,6 +76,7 @@ struct VsEvalContext {
 struct MatchBeamEvalWeights {
     // --- Potential score (sqrt-normalized, replaces log-quantized) ---
     int32_t potential_score_scale   = 30;  ///< √スコア差1あたりの評価点 (例: sqrt差100→3000点)
+    int32_t diversity_weight_permille = 200; ///< 連鎖バリエーション重み (累積偏差和 sum sqrt(x_max - x_i) の重み * 1000)
 
     // --- Board quality (self - enemy) ---
     int32_t connectivity_bonus      = 15;   ///< 連結ぷよボーナス (per puyo with >=2 neighbors)

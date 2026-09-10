@@ -63,7 +63,7 @@
   },
   "vs_match": {
     "_comment_beam_width": "探索中に保持する最大盤面数（試合シミュレーション用ノード数）",
-    "beam_width": 20000,
+    "beam_width": 10000,
     "_comment_look_ahead": "先読みターン数（試合進行ターン基準。連鎖中やおじゃま着弾中等は決着まで自動延長）",
     "look_ahead": 15,
     "_comment_dbs_max_similar": "同一高さプロファイルを持つ盤面の最大許容重複件数 (0で無効)",
@@ -79,6 +79,8 @@
     "eval_weights": {
       "_comment_potential_score_scale": "√(ポテンシャルスコア)差1あたりの評価点。対数圧縮を廃止し平方根正規化を採用（2連鎖と12連鎖で約30,000点差）",
       "potential_score_scale": 30,
+      "_comment_diversity_weight": "連鎖バリエーション重み（工夫案A：累積偏差和 sum sqrt(x_max - x_i) の重み係数。0.2 = 本線に対し小連鎖多発火点が加点）",
+      "diversity_weight": 0.2,
       "_comment_connectivity_bonus": "同色隣接が2つ以上あるぷよ1個あたりのボーナス（整数, 点）",
       "connectivity_bonus": 0,
       "_comment_isolated_penalty": "同色隣接ゼロの孤立ぷよ1個あたりのペナルティ（整数, 点, 負の値）",
@@ -96,11 +98,11 @@
       "_comment_actual_score_weight": "非終局時の累積スコア差の重み。対応モード（相手が連鎖中・おじゃま送付中）のみ有効 (0=無効, 1〜100推奨)",
       "actual_score_weight": 0,
       "_comment_reckless_fire_penalty_permille": "平時（相手から攻撃なし）に自分が連鎖を発火した場合の暇打ちペナルティ (√自分pot × permille / 1000). 500=小連鎖を大きく抑制",
-      "reckless_fire_penalty_permille": 500,
+      "reckless_fire_penalty_permille": 0,
       "_comment_win_score": "勝利確定時の基本スコア（小連鎖での疑似即死による先打ちを防ぐため10,000に抑制）",
       "win_score": 10000,
       "_comment_draw_score": "引き分け時のスコア（やや不利扱い）",
-      "draw_score": -500000
+      "draw_score": -50000
     }
   }
 }

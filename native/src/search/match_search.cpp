@@ -195,11 +195,11 @@ inline int32_t evaluateMatchRaw(const PuyotanMatch& match, int my_id, const Matc
         return w.draw_score;
     }
 
-    // ── ポテンシャルスコア（自分のポテンシャルのみ評価。相手との差分は取らない）──
-    const uint32_t my_h      = packHeights(me.field);
-    const int32_t my_raw_pot = computeMaxPotentialScore(me.field, my_h);
-    const int32_t my_sqrt_pot = static_cast<int32_t>(sqrtPotential(my_raw_pot));
-    const int32_t pot_score   = my_sqrt_pot * w.potential_score_scale;
+    // ── ポテンシャル ＋ 連鎖バリエーション（工夫案A：累積偏差和）────────────────
+    // 2ぷよ落とし（576通り）により、大連鎖の保持力と幅広い発火点（小連鎖対応手）を同時に評価
+    const float div_w = w.diversity_weight_permille / 1000.0f;
+    const auto port = computeChainPortfolio(me.field, div_w);
+    const int32_t pot_score = static_cast<int32_t>(port.total_score * w.potential_score_scale);
 
     // ── 自分の盤面形質（連結・孤立・埋没）────────────────────────────────
     const int32_t quality_score = boardQuality(me.field, w);
@@ -226,7 +226,7 @@ inline int32_t evaluateMatchRaw(const PuyotanMatch& match, int my_id, const Matc
         const bool i_am_firing = (me.chain_count > 0);
         if (i_am_firing && !enemy_attacking) {
             // 平時に発火中: 発火後の相手のポテンシャル超過をペナルティ化
-            reckless_pen = -w.reckless_fire_penalty_permille * my_sqrt_pot / 1000;
+            reckless_pen = -w.reckless_fire_penalty_permille * static_cast<int32_t>(port.max_sqrt) / 1000;
         }
     }
 
