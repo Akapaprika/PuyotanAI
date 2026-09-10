@@ -231,13 +231,16 @@ inline int32_t evaluateMatchRaw(const PuyotanMatch& match, int my_id, const Matc
     // ── 高さ危険ペナルティ（自分のみ）────────────────────────────────────
     const int32_t height_pen = heightDangerPenalty(me.field, w);
 
+    // ── 相手の攻撃状態判定 ───────────────────────────────────────────────────────
+    // 相手が連鎖中、または自分におじゃまが予告（落下確定・保留）されている状態を攻撃中と判定
+    const bool enemy_attacking = (enemy.chain_count > 0 ||
+                                  me.active_ojama > 0 ||
+                                  me.non_active_ojama > 0);
+
     // ── 平時発火ペナルティ ───────────────────────────────────────────────────────
     // 相手からのおじゃま攻撃がない平時に自分が連鎖を発火するのは暇打ちなので消極的に扱う
     int32_t reckless_pen = 0;
     if (w.reckless_fire_penalty_permille > 0) {
-        const bool enemy_attacking = (enemy.chain_count > 0 ||
-                                      enemy.active_ojama > 0 ||
-                                      enemy.non_active_ojama > 0);
         const bool i_am_firing = (me.chain_count > 0);
         if (i_am_firing && !enemy_attacking) {
             // 平時に発火中: 発火後の相手のポテンシャル超過をペナルティ化
@@ -248,9 +251,6 @@ inline int32_t evaluateMatchRaw(const PuyotanMatch& match, int my_id, const Matc
     // ── 累積スコア差（非終局時は対応モード時のみ考慮）────────────────────
     int32_t score_diff = 0;
     if (w.actual_score_weight > 0) {
-        const bool enemy_attacking = (enemy.chain_count > 0 ||
-                                      enemy.active_ojama > 0 ||
-                                      enemy.non_active_ojama > 0);
         if (enemy_attacking) {
             // 対応モード（相手が攻撃中）では累積スコア差を考慮
             score_diff = (me.score - enemy.score) * w.actual_score_weight / 100;
