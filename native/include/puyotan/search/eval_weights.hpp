@@ -62,16 +62,14 @@ struct VsEvalContext {
  * @struct MatchBeamEvalWeights
  * @brief Tunable weights for the Match-simulation beam search evaluation function.
  *
- * 評価式（自分目線での優位スコア）:
- *   score = (sqrt(my_pot) - sqrt(enemy_pot)) * potential_score_scale  // ポテンシャル差（平方根正規化）
- *         + boardQuality(me) - boardQuality(enemy)                    // 盤面形質差
+ * 評価式（MatchBeamEvaluator::evaluateRaw による自分目線評価）:
+ *   score = port.total_score * potential_score_scale                 // ポテンシャル＋連鎖バリエーション（工夫案A：累積偏差和）
+ *         + boardQuality(me)                                         // 盤面形質（連結・孤立・埋没）
  *         - active_ojama_coeff * me.active_ojama^2                   // 落下確定おじゃま 二乗ペナルティ
  *         - pending_ojama_penalty * me.non_active_ojama              // 保留おじゃまペナルティ
- *         + active_ojama_coeff * enemy.active_ojama^2               // 相手への同等ボーナス
- *         + pending_ojama_penalty * enemy.non_active_ojama          // 相手の保留ボーナス
  *         - heightDanger(me)                                         // 盤面高さ危険ペナルティ
- *         + (me.score - enemy.score) * actual_score_weight / 100    // 累積スコア差（対応モード時）
- *         - reckless_fire_penalty_permille * my_raw_pot / 1000      // 平時発火ペナルティ
+ *         - reckless_fire_penalty_permille * port.max_sqrt / 1000   // 平時発火ペナルティ（相手平時かつ自発火時）
+ *         + (me.score - enemy.score) * actual_score_weight / 100    // 累積スコア差（相手攻撃中の対応モード時のみ考慮）
  */
 struct MatchBeamEvalWeights {
     // --- Potential score (sqrt-normalized, replaces log-quantized) ---

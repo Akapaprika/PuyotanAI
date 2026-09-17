@@ -63,9 +63,9 @@
   },
   "vs_match": {
     "_comment_beam_width": "探索中に保持する最大盤面数（試合シミュレーション用ノード数）",
-    "beam_width": 10000,
+    "beam_width": 6000,
     "_comment_look_ahead": "先読みターン数（試合進行ターン基準。連鎖中やおじゃま着弾中等は決着まで自動延長）",
-    "look_ahead": 15,
+    "look_ahead": 10,
     "_comment_dbs_max_similar": "同一高さプロファイルを持つ盤面の最大許容重複件数 (0で無効)",
     "dbs_max_similar": 3,
     "_comment_full_beam_depth": "ビーム幅を100%保持する探索深さ（0〜N手目）",
