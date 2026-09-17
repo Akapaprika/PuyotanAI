@@ -74,9 +74,17 @@ class BeamConfigLoader {
             if (section.contains(k) && section[k].is_number())
                 dst = section[k].template get<float>();
         };
+        auto getBool  = [&](const char* k, bool& dst) {
+            if (section.contains(k) && section[k].is_boolean())
+                dst = section[k].template get<bool>();
+        };
         getInt  ("beam_width",               cfg.beam_width);
         getInt  ("look_ahead",               cfg.look_ahead);
         getInt  ("dbs_max_similar",          cfg.dbs_max_similar);
+        getInt  ("dbs_max_similar_end",      cfg.dbs_max_similar_end);
+        getInt  ("dbs_empty_threshold_high", cfg.dbs_empty_threshold_high);
+        getInt  ("dbs_empty_threshold_low",  cfg.dbs_empty_threshold_low);
+        getBool ("dbs_auto_fill",            cfg.dbs_auto_fill);
         getInt  ("full_beam_depth",          cfg.full_beam_depth);
         getFloat("min_beam_width_ratio",     cfg.min_beam_width_ratio);
         getInt  ("main_chain_threshold",     cfg.main_chain_threshold);
@@ -111,6 +119,26 @@ class BeamConfigLoader {
         }
     }
 
+    static void applyPatch(MatchBeamEvalWeights& w, const nlohmann::json& patch) {
+        for (auto& [key, val] : patch.items()) {
+            if (key.starts_with("_comment")) continue;
+            if      (key == "potential_score_scale"           && val.is_number()) w.potential_score_scale           = static_cast<int32_t>(val.get<double>());
+            else if (key == "diversity_weight"                && val.is_number()) w.diversity_weight_permille        = static_cast<int32_t>(val.get<double>() * 1000.0);
+            else if (key == "diversity_weight_permille"       && val.is_number()) w.diversity_weight_permille        = static_cast<int32_t>(val.get<double>());
+            else if (key == "reckless_fire_penalty_permille"  && val.is_number()) w.reckless_fire_penalty_permille  = static_cast<int32_t>(val.get<double>());
+            else if (key == "actual_score_weight"             && val.is_number()) w.actual_score_weight             = static_cast<int32_t>(val.get<double>());
+            else if (key == "connectivity_bonus"              && val.is_number()) w.connectivity_bonus              = static_cast<int32_t>(val.get<double>());
+            else if (key == "isolated_penalty"                && val.is_number()) w.isolated_penalty                = static_cast<int32_t>(val.get<double>());
+            else if (key == "buried_penalty"                  && val.is_number()) w.buried_penalty                  = static_cast<int32_t>(val.get<double>());
+            else if (key == "active_ojama_coeff"              && val.is_number()) w.active_ojama_coeff              = static_cast<int32_t>(val.get<double>());
+            else if (key == "pending_ojama_penalty"           && val.is_number()) w.pending_ojama_penalty           = static_cast<int32_t>(val.get<double>());
+            else if (key == "height_danger_threshold"         && val.is_number()) w.height_danger_threshold         = static_cast<int32_t>(val.get<double>());
+            else if (key == "height_danger_penalty"           && val.is_number()) w.height_danger_penalty           = static_cast<int32_t>(val.get<double>());
+            else if (key == "win_score"                       && val.is_number()) w.win_score                       = static_cast<int32_t>(val.get<double>());
+            else if (key == "draw_score"                      && val.is_number()) w.draw_score                      = static_cast<int32_t>(val.get<double>());
+        }
+    }
+
   public:
     // ── Load ─────────────────────────────────────────────────────────────────
 
@@ -127,6 +155,8 @@ class BeamConfigLoader {
             cfg.elite_keep = section["elite_keep"].get<int>();
         if (section.contains("micro_ply") && section["micro_ply"].is_number_integer())
             cfg.micro_ply = std::max(1, section["micro_ply"].get<int>());
+        if (section.contains("fire_trigger_empty_cells") && section["fire_trigger_empty_cells"].is_number_integer())
+            cfg.fire_trigger_empty_cells = section["fire_trigger_empty_cells"].get<int>();
         if (section.contains("eval_weights") && section["eval_weights"].is_object())
             applyPatch(cfg.eval_weights, section["eval_weights"]);
         cfg.recompute_beam_widths();
@@ -146,6 +176,19 @@ class BeamConfigLoader {
         return cfg;
     }
 
+    static MatchBeamConfig loadMatch(const std::string& path) {
+        MatchBeamConfig cfg{};
+        nlohmann::json j = getJson(path);
+        if (j.is_discarded() || j.empty() || !j.contains("vs_match") || !j["vs_match"].is_object())
+            return cfg;
+        const auto& section = j["vs_match"];
+        loadCommonSection(cfg, section);
+        if (section.contains("eval_weights") && section["eval_weights"].is_object())
+            applyPatch(cfg.eval_weights, section["eval_weights"]);
+        cfg.recompute_beam_widths();
+        return cfg;
+    }
+
     // ── Save ─────────────────────────────────────────────────────────────────
 
     static void saveSolo(const std::string& path, const SoloBeamConfig& cfg) {
@@ -156,6 +199,10 @@ class BeamConfigLoader {
         solo["beam_width"]               = cfg.beam_width;
         solo["look_ahead"]               = cfg.look_ahead;
         solo["dbs_max_similar"]          = cfg.dbs_max_similar;
+        solo["dbs_max_similar_end"]      = cfg.dbs_max_similar_end;
+        solo["dbs_empty_threshold_high"] = cfg.dbs_empty_threshold_high;
+        solo["dbs_empty_threshold_low"]  = cfg.dbs_empty_threshold_low;
+        solo["dbs_auto_fill"]            = cfg.dbs_auto_fill;
         solo["pv_elite_count"]           = cfg.pv_elite_count;
         solo["elite_keep"]               = cfg.elite_keep;
         solo["micro_ply"]                = cfg.micro_ply;
@@ -163,6 +210,7 @@ class BeamConfigLoader {
         solo["min_beam_width_ratio"]     = cfg.min_beam_width_ratio;
         solo["main_chain_threshold"]     = cfg.main_chain_threshold;
         solo["dynamic_lookahead_margin"] = cfg.dynamic_lookahead_margin;
+        solo["fire_trigger_empty_cells"] = cfg.fire_trigger_empty_cells;
 
         auto& ew = solo["eval_weights"];
         ew["potential_score_scale"] = cfg.eval_weights.potential_score_scale;
@@ -179,6 +227,10 @@ class BeamConfigLoader {
         vs["beam_width"]               = cfg.beam_width;
         vs["look_ahead"]               = cfg.look_ahead;
         vs["dbs_max_similar"]          = cfg.dbs_max_similar;
+        vs["dbs_max_similar_end"]      = cfg.dbs_max_similar_end;
+        vs["dbs_empty_threshold_high"] = cfg.dbs_empty_threshold_high;
+        vs["dbs_empty_threshold_low"]  = cfg.dbs_empty_threshold_low;
+        vs["dbs_auto_fill"]            = cfg.dbs_auto_fill;
         vs["full_beam_depth"]          = cfg.full_beam_depth;
         vs["min_beam_width_ratio"]     = cfg.min_beam_width_ratio;
         vs["main_chain_threshold"]     = cfg.main_chain_threshold;
@@ -199,6 +251,43 @@ class BeamConfigLoader {
         ew["urgency_weight"]                  = w.urgency_weight_permille / 1000.0;
         ew["lethal_danger_scale"]             = w.lethal_danger_scale;
         ew["effective_strike_multiplier"]     = w.effective_strike_multiplier_permille / 1000.0;
+
+        { std::ofstream ofs(path); ofs << j.dump(2); }
+        updateCache(path, j);
+    }
+
+    static void saveMatch(const std::string& path, const MatchBeamConfig& cfg) {
+        nlohmann::json j = getJson(path);
+        if (j.empty() || j.is_discarded()) j = nlohmann::json::object();
+
+        auto& match_sec = j["vs_match"];
+        match_sec["beam_width"]               = cfg.beam_width;
+        match_sec["look_ahead"]               = cfg.look_ahead;
+        match_sec["dbs_max_similar"]          = cfg.dbs_max_similar;
+        match_sec["dbs_max_similar_end"]      = cfg.dbs_max_similar_end;
+        match_sec["dbs_empty_threshold_high"] = cfg.dbs_empty_threshold_high;
+        match_sec["dbs_empty_threshold_low"]  = cfg.dbs_empty_threshold_low;
+        match_sec["dbs_auto_fill"]            = cfg.dbs_auto_fill;
+        match_sec["full_beam_depth"]          = cfg.full_beam_depth;
+        match_sec["min_beam_width_ratio"]     = cfg.min_beam_width_ratio;
+        match_sec["main_chain_threshold"]     = cfg.main_chain_threshold;
+        match_sec["dynamic_lookahead_margin"] = cfg.dynamic_lookahead_margin;
+
+        const auto& w = cfg.eval_weights;
+        auto& ew = match_sec["eval_weights"];
+        ew["potential_score_scale"]          = w.potential_score_scale;
+        ew["diversity_weight"]               = w.diversity_weight_permille / 1000.0;
+        ew["reckless_fire_penalty_permille"] = w.reckless_fire_penalty_permille;
+        ew["actual_score_weight"]            = w.actual_score_weight;
+        ew["connectivity_bonus"]             = w.connectivity_bonus;
+        ew["isolated_penalty"]               = w.isolated_penalty;
+        ew["buried_penalty"]                 = w.buried_penalty;
+        ew["active_ojama_coeff"]             = w.active_ojama_coeff;
+        ew["pending_ojama_penalty"]          = w.pending_ojama_penalty;
+        ew["height_danger_threshold"]        = w.height_danger_threshold;
+        ew["height_danger_penalty"]          = w.height_danger_penalty;
+        ew["win_score"]                      = w.win_score;
+        ew["draw_score"]                     = w.draw_score;
 
         { std::ofstream ofs(path); ofs << j.dump(2); }
         updateCache(path, j);

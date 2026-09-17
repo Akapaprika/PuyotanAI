@@ -51,7 +51,7 @@ class VsBeamEvaluator {
         int32_t r = 0;
 
         // --- Board metrics (BitBoard-level, branchless & 遅延 popcount) ---
-        {
+        if (w.connectivity_bonus != 0 || w.isolated_penalty != 0) {
             __m128i all_has2 = _mm_setzero_si128();
             __m128i all_iso  = _mm_setzero_si128();
 
@@ -84,12 +84,12 @@ class VsBeamEvaluator {
             const BitBoard b_has2(all_has2);
             const BitBoard b_iso(all_iso);
 
-            r += b_has2.popcount() * w.connectivity_bonus;
-            r += b_iso.popcount() * w.isolated_penalty;
+            if (w.connectivity_bonus != 0) r += b_has2.popcount() * w.connectivity_bonus;
+            if (w.isolated_penalty != 0)   r += b_iso.popcount()  * w.isolated_penalty;
         }
 
         // --- Buried puyo count (colored puyos beneath any ojama shadow) ---
-        {
+        if (w.buried_penalty != 0) {
             const BitBoard& oj = board.getBitboard(Cell::Ojama);
             if (!oj.empty()) {
                 __m128i s_reg = oj.m128;

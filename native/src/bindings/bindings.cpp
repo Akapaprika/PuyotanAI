@@ -7,6 +7,7 @@
 #include <puyotan/search/beam_config_loader.hpp>
 #include <puyotan/search/beam_evaluator.hpp>
 #include <puyotan/search/beam_search.hpp>
+#include <puyotan/search/match_search.hpp>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
@@ -214,11 +215,32 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def(pybind11::init<>())
         .def_readwrite("potential_score_scale", &search::SoloBeamEvalWeights::potential_score_scale);
 
+    pybind11::class_<search::MatchBeamEvalWeights>(m, "MatchBeamEvalWeights")
+        .def(pybind11::init<>())
+        .def_readwrite("potential_score_scale",           &search::MatchBeamEvalWeights::potential_score_scale)
+        .def_readwrite("diversity_weight_permille",       &search::MatchBeamEvalWeights::diversity_weight_permille)
+        .def_readwrite("reckless_fire_penalty_permille",  &search::MatchBeamEvalWeights::reckless_fire_penalty_permille)
+        .def_readwrite("actual_score_weight",             &search::MatchBeamEvalWeights::actual_score_weight)
+        .def_readwrite("connectivity_bonus",              &search::MatchBeamEvalWeights::connectivity_bonus)
+        .def_readwrite("isolated_penalty",                &search::MatchBeamEvalWeights::isolated_penalty)
+        .def_readwrite("buried_penalty",                  &search::MatchBeamEvalWeights::buried_penalty)
+        .def_readwrite("active_ojama_coeff",              &search::MatchBeamEvalWeights::active_ojama_coeff)
+        .def_readwrite("pending_ojama_penalty",           &search::MatchBeamEvalWeights::pending_ojama_penalty)
+        .def_readwrite("height_danger_threshold",         &search::MatchBeamEvalWeights::height_danger_threshold)
+        .def_readwrite("height_danger_penalty",           &search::MatchBeamEvalWeights::height_danger_penalty)
+        .def_readwrite("win_score",                       &search::MatchBeamEvalWeights::win_score)
+        .def_readwrite("draw_score",                      &search::MatchBeamEvalWeights::draw_score);
+
     pybind11::class_<search::SoloBeamConfig>(m, "SoloBeamConfig")
         .def(pybind11::init<>())
         .def_readwrite("beam_width",               &search::SoloBeamConfig::beam_width)
         .def_readwrite("look_ahead",               &search::SoloBeamConfig::look_ahead)
         .def_readwrite("dbs_max_similar",          &search::SoloBeamConfig::dbs_max_similar)
+        .def_readwrite("dbs_max_similar_end",      &search::SoloBeamConfig::dbs_max_similar_end)
+        .def_readwrite("dbs_empty_threshold_high", &search::SoloBeamConfig::dbs_empty_threshold_high)
+        .def_readwrite("dbs_empty_threshold_low",  &search::SoloBeamConfig::dbs_empty_threshold_low)
+        .def_readwrite("dbs_auto_fill",            &search::SoloBeamConfig::dbs_auto_fill)
+        .def("get_dbs_limit_by_empty",             &search::SoloBeamConfig::get_dbs_limit_by_empty, pybind11::arg("empty_cells"))
         .def_readwrite("pv_elite_count",           &search::SoloBeamConfig::pv_elite_count)
         .def_readwrite("elite_keep",               &search::SoloBeamConfig::elite_keep)
         .def_readwrite("micro_ply",                &search::SoloBeamConfig::micro_ply)
@@ -226,6 +248,7 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("min_beam_width_ratio",     &search::SoloBeamConfig::min_beam_width_ratio)
         .def_readwrite("main_chain_threshold",     &search::SoloBeamConfig::main_chain_threshold)
         .def_readwrite("dynamic_lookahead_margin", &search::SoloBeamConfig::dynamic_lookahead_margin)
+        .def_readwrite("fire_trigger_empty_cells", &search::SoloBeamConfig::fire_trigger_empty_cells)
         .def_readwrite("eval_weights",             &search::SoloBeamConfig::eval_weights)
         .def("recompute_beam_widths",              &search::SoloBeamConfig::recompute_beam_widths);
 
@@ -234,6 +257,11 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("beam_width",               &search::VsBeamConfig::beam_width)
         .def_readwrite("look_ahead",               &search::VsBeamConfig::look_ahead)
         .def_readwrite("dbs_max_similar",          &search::VsBeamConfig::dbs_max_similar)
+        .def_readwrite("dbs_max_similar_end",      &search::VsBeamConfig::dbs_max_similar_end)
+        .def_readwrite("dbs_empty_threshold_high", &search::VsBeamConfig::dbs_empty_threshold_high)
+        .def_readwrite("dbs_empty_threshold_low",  &search::VsBeamConfig::dbs_empty_threshold_low)
+        .def_readwrite("dbs_auto_fill",            &search::VsBeamConfig::dbs_auto_fill)
+        .def("get_dbs_limit_by_empty",             &search::VsBeamConfig::get_dbs_limit_by_empty, pybind11::arg("empty_cells"))
         .def_readwrite("full_beam_depth",          &search::VsBeamConfig::full_beam_depth)
         .def_readwrite("min_beam_width_ratio",     &search::VsBeamConfig::min_beam_width_ratio)
         .def_readwrite("main_chain_threshold",     &search::VsBeamConfig::main_chain_threshold)
@@ -243,12 +271,34 @@ PYBIND11_MODULE(puyotan_native, m) {
         .def_readwrite("context",                  &search::VsBeamConfig::context)
         .def("recompute_beam_widths",              &search::VsBeamConfig::recompute_beam_widths);
 
+    pybind11::class_<search::MatchBeamConfig>(m, "MatchBeamConfig")
+        .def(pybind11::init<>())
+        .def_readwrite("beam_width",               &search::MatchBeamConfig::beam_width)
+        .def_readwrite("look_ahead",               &search::MatchBeamConfig::look_ahead)
+        .def_readwrite("dbs_max_similar",          &search::MatchBeamConfig::dbs_max_similar)
+        .def_readwrite("dbs_max_similar_end",      &search::MatchBeamConfig::dbs_max_similar_end)
+        .def_readwrite("dbs_empty_threshold_high", &search::MatchBeamConfig::dbs_empty_threshold_high)
+        .def_readwrite("dbs_empty_threshold_low",  &search::MatchBeamConfig::dbs_empty_threshold_low)
+        .def_readwrite("dbs_auto_fill",            &search::MatchBeamConfig::dbs_auto_fill)
+        .def("get_dbs_limit_by_empty",             &search::MatchBeamConfig::get_dbs_limit_by_empty, pybind11::arg("empty_cells"))
+        .def_readwrite("full_beam_depth",          &search::MatchBeamConfig::full_beam_depth)
+        .def_readwrite("min_beam_width_ratio",     &search::MatchBeamConfig::min_beam_width_ratio)
+        .def_readwrite("main_chain_threshold",     &search::MatchBeamConfig::main_chain_threshold)
+        .def_readwrite("dynamic_lookahead_margin", &search::MatchBeamConfig::dynamic_lookahead_margin)
+        .def_readwrite("eval_weights",             &search::MatchBeamConfig::eval_weights)
+        .def("recompute_beam_widths",              &search::MatchBeamConfig::recompute_beam_widths);
+
     m.def("load_solo_config", &search::BeamConfigLoader::loadSolo, pybind11::arg("path"),
           "Load SoloBeamConfig from JSON");
 
     m.def("load_vs_config", &search::BeamConfigLoader::loadVs, pybind11::arg("path"),
           "Load VsBeamConfig from JSON");
 
+    m.def("load_match_config", &search::BeamConfigLoader::loadMatch, pybind11::arg("path"),
+          "Load MatchBeamConfig from JSON");
+
+    m.def("save_match_config", &search::BeamConfigLoader::saveMatch, pybind11::arg("path"), pybind11::arg("cfg"),
+          "Save MatchBeamConfig to JSON");
 
     // Pure Solo beam search
     m.def(
@@ -291,5 +341,16 @@ PYBIND11_MODULE(puyotan_native, m) {
         pybind11::arg("player"), pybind11::arg("tsumo"),
         pybind11::arg("cfg"), pybind11::arg("session") = nullptr,
         "Run VS beam search with a VsBeamConfig. Returns (RL action index, expected score).");
+
+    // Match-simulation-based beam search
+    m.def(
+        "match_beam_search",
+        [](const PuyotanMatch& match, int my_id,
+           const search::MatchBeamConfig& cfg) {
+            pybind11::gil_scoped_release release;
+            return search::matchBeamSearch(match, my_id, cfg);
+        },
+        pybind11::arg("match"), pybind11::arg("my_id"), pybind11::arg("cfg"),
+        "Run Match-simulation-based beam search. Returns (RL action index, expected score).");
 }
 } // namespace puyotan

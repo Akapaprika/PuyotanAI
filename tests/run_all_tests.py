@@ -93,9 +93,12 @@ def main():
     import tests.test_agent_factory as t_factory
     runner.run_module("5. AgentFactory Mode & Instantiation", t_factory.run_all)
 
+    import tests.test_match_search as t_match_search
+    runner.run_module("6. Match-Simulation Beam Search AI", t_match_search.run_all)
+
     # 2. C++ ネイティブバイナリの回帰テスト (高速・一瞬で完了)
     if _BENCHMARK_EXE.exists():
-        runner.run_executable("6. Native C++ Executable Benchmark (-r)", [str(_BENCHMARK_EXE), "-r"])
+        runner.run_executable("7. Native C++ Executable Benchmark (-r)", [str(_BENCHMARK_EXE), "-r"])
 
     print("=" * 70)
     if runner.failed == 0:

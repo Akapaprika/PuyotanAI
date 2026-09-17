@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <bit>
+#include <cmath>
 #include <cstdint>
 #include <immintrin.h>
+#include <vector>
 #include <puyotan/common/config.hpp>
 #include <puyotan/core/board.hpp>
 #include <puyotan/core/chain.hpp>
@@ -146,6 +148,111 @@ namespace puyotan::search {
     }
 
     return max_pot_score;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 盤面で発火が起きる場合の連鎖得点をシミュレーション（非発火なら 0）
+// ────────────────────────────────────────────────────────────────────────────
+inline int simulateChainScore(Board board, uint32_t color_mask) noexcept {
+    ErasureData ed;
+    Chain::scanGroups(board, ed, color_mask);
+    if (ed.num_erased == 0) return 0;
+
+    int chain = 0;
+    int score = 0;
+    while (ed.num_erased > 0) {
+        ++chain;
+        score += Scorer::calculateStepScore(ed, chain);
+        Chain::applyErasure(board, ed);
+        const uint32_t fallen = Gravity::execute(board);
+        if (fallen == 0) break;
+        Chain::scanGroups(board, ed, fallen);
+    }
+    return score;
+}
+
+struct PortfolioResult {
+    float max_sqrt = 0.0f;        ///< 大連鎖の高さ (x_max = sqrt(max_score))
+    float diversity_score = 0.0f; ///< 累積偏差和 (sum sqrt(x_max - x_i))
+    float total_score = 0.0f;     ///< x_max + alpha * diversity_score
+    int   valid_fire_count = 0;   ///< 発火ルート総数
+    int   max_raw_score = 0;      ///< 最大得点（素点）
+};
+
+/**
+ * @brief 2ぷよ落とし（576通り）による連鎖ポートフォリオ解析と工夫案A（累積偏差和）の算出
+ * 
+ * 1つ目のぷよを6列×4色落とし、非発火の盤面からさらに2つ目のぷよを6列×4色落とす。
+ * 発生した全連鎖得点 S = {s_1, ..., s_N} に対し、
+ *   Score = x_max + alpha * sum(sqrt(x_max - x_i))  (x = sqrt(s))
+ * を計算する。
+ */
+inline PortfolioResult computeChainPortfolio(const Board& board, float diversity_weight = 0.2f) noexcept {
+    PortfolioResult res{};
+    std::vector<float> x_list;
+    x_list.reserve(64);
+
+    int heights[config::Board::kWidth];
+    for (int x = 0; x < config::Board::kWidth; ++x) {
+        heights[x] = board.getColumnHeight(x);
+    }
+
+    // 1手目：24通り (6列 × 4色)
+    for (int c1 = 0; c1 < config::Board::kWidth; ++c1) {
+        const int y1 = heights[c1];
+        if (y1 >= config::Board::kChainableRows) continue;
+
+        for (int col1 = 0; col1 < config::Rule::kColors; ++col1) {
+            Board b1 = board;
+            b1.dropNewPiece(c1, y1, static_cast<Cell>(col1));
+
+            // 1手目で発火するか判定
+            int sc1 = simulateChainScore(b1, 1u << col1);
+            if (sc1 > 0) {
+                res.max_raw_score = std::max(res.max_raw_score, sc1);
+                x_list.push_back(std::sqrt(static_cast<float>(sc1)));
+                continue; // 1手目で消えた場合は完了
+            }
+
+            // 1手目で発火しなかった場合、ぷよが1個残った盤面 b1 に対して2手目を落とす
+            const int h1_c1 = y1 + 1;
+            for (int c2 = 0; c2 < config::Board::kWidth; ++c2) {
+                const int y2 = (c2 == c1) ? h1_c1 : heights[c2];
+                if (y2 >= config::Board::kChainableRows) continue;
+
+                for (int col2 = 0; col2 < config::Rule::kColors; ++col2) {
+                    Board b2 = b1;
+                    b2.dropNewPiece(c2, y2, static_cast<Cell>(col2));
+
+                    int sc2 = simulateChainScore(b2, 1u << col2);
+                    if (sc2 > 0) {
+                        res.max_raw_score = std::max(res.max_raw_score, sc2);
+                        x_list.push_back(std::sqrt(static_cast<float>(sc2)));
+                    }
+                }
+            }
+        }
+    }
+
+    res.valid_fire_count = static_cast<int>(x_list.size());
+    if (x_list.empty()) {
+        return res;
+    }
+
+    float max_x = 0.0f;
+    for (float x : x_list) {
+        if (x > max_x) max_x = x;
+    }
+    res.max_sqrt = max_x;
+
+    float div_sum = 0.0f;
+    for (float x : x_list) {
+        div_sum += std::sqrt(max_x - x);
+    }
+    res.diversity_score = div_sum;
+    res.total_score = max_x + diversity_weight * div_sum;
+
+    return res;
 }
 
 } // namespace puyotan::search

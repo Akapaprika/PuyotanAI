@@ -58,4 +58,47 @@ struct VsEvalContext {
     uint16_t   my_non_active_ojama    = 0;              // my ojama still cancelable
 };
 
+/**
+ * @struct MatchBeamEvalWeights
+ * @brief Tunable weights for the Match-simulation beam search evaluation function.
+ *
+ * 評価式（MatchBeamEvaluator::evaluateRaw による自分目線評価）:
+ *   score = port.total_score * potential_score_scale                 // ポテンシャル＋連鎖バリエーション（工夫案A：累積偏差和）
+ *         + boardQuality(me)                                         // 盤面形質（連結・孤立・埋没）
+ *         - active_ojama_coeff * me.active_ojama^2                   // 落下確定おじゃま 二乗ペナルティ
+ *         - pending_ojama_penalty * me.non_active_ojama              // 保留おじゃまペナルティ
+ *         - heightDanger(me)                                         // 盤面高さ危険ペナルティ
+ *         - reckless_fire_penalty_permille * port.max_sqrt / 1000   // 平時発火ペナルティ（相手平時かつ自発火時）
+ *         + (me.score - enemy.score) * actual_score_weight / 100    // 累積スコア差（相手攻撃中の対応モード時のみ考慮）
+ */
+struct MatchBeamEvalWeights {
+    // --- Potential score (sqrt-normalized, replaces log-quantized) ---
+    int32_t potential_score_scale   = 30;  ///< √スコア差1あたりの評価点 (例: sqrt差100→3000点)
+    int32_t diversity_weight_permille = 200; ///< 連鎖バリエーション重み (累積偏差和 sum sqrt(x_max - x_i) の重み * 1000)
+
+    // --- Board quality (self - enemy) ---
+    int32_t connectivity_bonus      = 15;   ///< 連結ぷよボーナス (per puyo with >=2 neighbors)
+    int32_t isolated_penalty        = -30;  ///< 孤立ぷよペナルティ (per isolated puyo)
+    int32_t buried_penalty          = -80;  ///< おじゃま下の埋没ペナルティ (per buried colored puyo)
+
+    // --- Ojama pressure (quadratic for active, linear for pending) ---
+    int32_t active_ojama_coeff      = 70;   ///< C: 落下確定おじゃま二乗係数 (score = -C * n^2)
+    int32_t pending_ojama_penalty   = 40;   ///< 保留おじゃまペナルティ (per ojama)
+
+    // --- Height danger (my field) ---
+    int32_t height_danger_threshold = 10;   ///< 危険とみなす最低高さ (0-indexed, 10 = row 11)
+    int32_t height_danger_penalty   = -300; ///< 危険列1本あたりのペナルティ
+
+    // --- Actual score diff (non-terminal) ---
+    int32_t actual_score_weight     = 0;    ///< 非終局時の累積スコア差の重み (0=無効, 1〜100推奨)
+
+    // --- Reckless fire penalty (buildup mode) ---
+    // 相手からおじゃま攻撃がない平時に自分が連鎖を発火した場合のペナルティ
+    int32_t reckless_fire_penalty_permille = 500; ///< 平時発火ペナルティ (√自分pot × permille / 1000)
+
+    // --- Terminal state scores ---
+    int32_t win_score               = 10000;    ///< 勝利確定スコア
+    int32_t draw_score              = -500000;  ///< 引き分けスコア（やや不利）
+};
+
 } // namespace puyotan::search

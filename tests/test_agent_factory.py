@@ -20,6 +20,7 @@ from ai import (
     EmptyPlayerAgent,
     SoloBeamAgent,
     VsBeamAgent,
+    MatchBeamAgent,
     BeamSearchAgent,
     VsBeamSearchAgent,
 )
@@ -49,7 +50,7 @@ def test_agent_factory_create():
     assert err is None and isinstance(agent, EmptyPlayerAgent)
 
     agent, err = AgentFactory.create_agent(PlayerMode.AI, is_solo=False)
-    assert err is None and isinstance(agent, VsBeamAgent)
+    assert err is None and isinstance(agent, MatchBeamAgent)
 
     agent, err = AgentFactory.create_agent(PlayerMode.AI, is_solo=True)
     assert err is None and isinstance(agent, SoloBeamAgent)
@@ -59,7 +60,7 @@ def test_agent_factory_create():
     assert err is None and isinstance(agent, HumanPlayerAgent)
 
     agent, err = AgentFactory.create_agent("AI", is_solo=False)
-    assert err is None and isinstance(agent, VsBeamAgent)
+    assert err is None and isinstance(agent, MatchBeamAgent)
 
     agent, err = AgentFactory.create_agent("AI", is_solo=True)
     assert err is None and isinstance(agent, SoloBeamAgent)

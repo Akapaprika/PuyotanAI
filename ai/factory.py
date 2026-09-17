@@ -8,6 +8,7 @@ from .beam_agents import (
     EmptyPlayerAgent,
     SoloBeamAgent,
     VsBeamAgent,
+    MatchBeamAgent,
     BeamSearchAgent,
     VsBeamSearchAgent,
 )
@@ -66,7 +67,7 @@ class AgentFactory:
         elif mode == PlayerMode.EMPTY:
             return EmptyPlayerAgent(), None
         elif mode == PlayerMode.AI:
-            agent_cls = SoloBeamAgent if is_solo else VsBeamAgent
+            agent_cls = SoloBeamAgent if is_solo else MatchBeamAgent
             return agent_cls(beam_width=width, look_ahead=depth, dbs_max_similar=dbs), None
 
         return None, f"Unknown mode: {mode}"

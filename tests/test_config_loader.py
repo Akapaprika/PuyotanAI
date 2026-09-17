@@ -19,6 +19,25 @@ def test_load_solo_config():
     assert cfg.look_ahead > 0
     assert hasattr(cfg, "full_beam_depth")
     assert hasattr(cfg, "min_beam_width_ratio")
+    assert hasattr(cfg, "dbs_max_similar")
+    assert hasattr(cfg, "dbs_max_similar_end")
+    assert hasattr(cfg, "dbs_empty_threshold_high")
+    assert hasattr(cfg, "dbs_empty_threshold_low")
+    assert hasattr(cfg, "dbs_auto_fill")
+    assert hasattr(cfg, "get_dbs_limit_by_empty")
+    assert hasattr(cfg, "fire_trigger_empty_cells")
+    assert cfg.fire_trigger_empty_cells == 2
+    assert cfg.dbs_auto_fill is True
+    assert cfg.dbs_empty_threshold_high == 66
+    assert cfg.dbs_empty_threshold_low == 18
+    # 空きマス連動（78マス基準）のテスト: high以上でdbs_max_similar、low以下でdbs_max_similar_end
+    assert cfg.get_dbs_limit_by_empty(78) == cfg.dbs_max_similar
+    assert cfg.get_dbs_limit_by_empty(cfg.dbs_empty_threshold_high) == cfg.dbs_max_similar
+    assert cfg.get_dbs_limit_by_empty(cfg.dbs_empty_threshold_low) == cfg.dbs_max_similar_end
+    assert cfg.get_dbs_limit_by_empty(0) == cfg.dbs_max_similar_end
+    # 中間値の線形性チェック (low〜highの間で空きマス減少に伴い緩和)
+    for e in range(cfg.dbs_empty_threshold_high - 1, cfg.dbs_empty_threshold_low, -1):
+        assert cfg.get_dbs_limit_by_empty(e) >= cfg.get_dbs_limit_by_empty(e + 1)
 
 def test_load_vs_config():
     cfg = p.load_vs_config(_CONFIG_PATH)
